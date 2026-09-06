@@ -31,18 +31,22 @@ jobs:
           mkdir -p www
           cp index.html www/index.html
 
-      - name: Use fixed keystore
-        run: |
-          mkdir -p ~/.android
-          cp debug.keystore ~/.android/debug.keystore
-
       - name: Add Android platform
         run: npx cap add android
+
       - name: Apply version
         run: |
           source version.txt
           sed -i "s/versionCode 1/versionCode $versionCode/" android/app/build.gradle
           sed -i "s/versionName \"1.0\"/versionName \"$versionName\"/" android/app/build.gradle
+
+      - name: Force fixed debug signing
+        run: |
+          cp debug.keystore android/app/debug.keystore
+          echo 'android.signingConfigs.debug.storeFile = file("debug.keystore")' >> android/app/build.gradle
+          echo 'android.signingConfigs.debug.storePassword = "android"' >> android/app/build.gradle
+          echo 'android.signingConfigs.debug.keyAlias = "androiddebugkey"' >> android/app/build.gradle
+          echo 'android.signingConfigs.debug.keyPassword = "android"' >> android/app/build.gradle
 
       - name: Sync Capacitor
         run: npx cap sync android
@@ -52,6 +56,7 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
+
       - name: Print APK signing fingerprint
         run: |
           keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk
