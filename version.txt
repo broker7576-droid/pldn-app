@@ -1,2 +1,2 @@
-versionName=1.0.000
-versionCode=1
+versionName=2.0.000
+versionCode=2
