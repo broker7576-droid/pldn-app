@@ -1,0 +1,6 @@
+{
+  "appId": "com.pldn.app",
+  "appName": "PLDN",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
