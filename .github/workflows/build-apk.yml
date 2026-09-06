@@ -31,6 +31,11 @@ jobs:
           mkdir -p www
           cp index.html www/index.html
 
+      - name: Use fixed keystore
+        run: |
+          mkdir -p ~/.android
+          cp debug.keystore ~/.android/debug.keystore
+
       - name: Add Android platform
         run: npx cap add android
 
