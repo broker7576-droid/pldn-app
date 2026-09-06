@@ -52,6 +52,9 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
+      - name: Print APK signing fingerprint
+        run: |
+          keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
