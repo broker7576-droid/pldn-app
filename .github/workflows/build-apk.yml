@@ -34,6 +34,9 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
+      - name: Generate app icon
+        run: npx capacitor-assets generate --android
+
       - name: Apply version
         run: |
           source version.txt
