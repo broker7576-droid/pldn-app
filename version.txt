@@ -1,2 +1,2 @@
-versionName=6.0.000
-versionCode=6
+versionName=7.0.000
+versionCode=7
