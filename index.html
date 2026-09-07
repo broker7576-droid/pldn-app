@@ -4388,9 +4388,24 @@
     });
   });
 
-  // "Telefon kontaktlaridan qo'shish" — Contact Picker API mavjud bo'lsa ishlatiladi
-  // (faqat HTTPS + qo'llab-quvvatlaydigan Chrome/Android brauzerida ishlaydi).
   document.getElementById('importPhoneContactsBtn').addEventListener('click', async () => {
+    if (window.Capacitor && window.CapacitorContacts) {
+      try {
+        const perm = await window.CapacitorContacts.requestPermissions();
+        if (perm.contacts !== 'granted') { alert(t('k29')); return; }
+        const result = await window.CapacitorContacts.getContacts({ projection: { name: true } });
+        let added = 0;
+        result.contacts.forEach(c => {
+          const name = c.name && c.name.display ? c.name.display : "Noma'lum";
+          if (!demoContacts.some(dc => dc.name === name)) {
+            demoContacts.push({ name, color: contactColors[demoContacts.length % contactColors.length] });
+            added++;
+          }
+        });
+        if (added > 0) renderContactsList();
+      } catch (err) {}
+      return;
+    }
     if (!(navigator.contacts && window.ContactsManager)) {
       alert(t('k29'));
       return;
@@ -4406,9 +4421,7 @@
         }
       });
       if (added > 0) renderContactsList();
-    } catch (err) {
-      // Foydalanuvchi bekor qilgan yoki ruxsat berilmagan — jim o'tkazamiz
-    }
+    } catch (err) {}
   });
 
   renderContactsList();
