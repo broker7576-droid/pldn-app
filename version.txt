@@ -1,2 +1,2 @@
-versionName=7.0.000
-versionCode=7
+versionName=8.0.000
+versionCode=8
