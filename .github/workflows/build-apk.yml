@@ -51,9 +51,9 @@ jobs:
           echo 'android.signingConfigs.debug.keyAlias = "androiddebugkey"' >> android/app/build.gradle
           echo 'android.signingConfigs.debug.keyPassword = "android"' >> android/app/build.gradle
 
-      - name: Add microphone permission
+      - name: Add microphone and contacts permission
         run: |
-          sed -i 's#</manifest>#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+          sed -i 's#</manifest>#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n<uses-permission android:name="android.permission.READ_CONTACTS" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
 
       - name: Fix microphone permission in WebView
         run: |
