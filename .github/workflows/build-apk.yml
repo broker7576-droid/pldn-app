@@ -51,6 +51,10 @@ jobs:
           echo 'android.signingConfigs.debug.keyAlias = "androiddebugkey"' >> android/app/build.gradle
           echo 'android.signingConfigs.debug.keyPassword = "android"' >> android/app/build.gradle
 
+      - name: Add microphone permission
+        run: |
+          sed -i 's#</manifest>#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+
       - name: Sync Capacitor
         run: npx cap sync android
 
