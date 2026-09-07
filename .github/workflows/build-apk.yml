@@ -55,6 +55,38 @@ jobs:
         run: |
           sed -i 's#</manifest>#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
 
+      - name: Fix microphone permission in WebView
+        run: |
+          MAINACT=$(find android/app/src/main/java -name MainActivity.java)
+          PKG=$(grep applicationId android/app/build.gradle | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          cat > "$MAINACT" <<EOF
+          package $PKG;
+
+          import android.Manifest;
+          import android.content.pm.PackageManager;
+          import android.webkit.PermissionRequest;
+          import android.webkit.WebChromeClient;
+          import androidx.core.app.ActivityCompat;
+          import androidx.core.content.ContextCompat;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onStart() {
+                  super.onStart();
+                  if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                      ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
+                  }
+                  getBridge().getWebView().setWebChromeClient(new WebChromeClient() {
+                      @Override
+                      public void onPermissionRequest(final PermissionRequest request) {
+                          runOnUiThread(() -> request.grant(request.getResources()));
+                      }
+                  });
+              }
+          }
+          EOF
+     
       - name: Sync Capacitor
         run: npx cap sync android
 
