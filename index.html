@@ -4404,9 +4404,11 @@
           }
         });
         if (added > 0) renderContactsList();
-      } catch (err) {}
+      } catch (err) {
+        alert('XATO: ' + (err && err.message ? err.message : JSON.stringify(err)));
+      }
       return;
-    }
+ }
     if (!(navigator.contacts && window.ContactsManager)) {
       alert(t('k29'));
       return;
