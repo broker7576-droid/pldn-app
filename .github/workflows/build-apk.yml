@@ -57,7 +57,7 @@ jobs:
 
       - name: Add microphone and contacts permission
         run: |
-          sed -i 's#</manifest>#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n<uses-permission android:name="android.permission.READ_CONTACTS" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+          sed -i 's#</manifest>#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n<uses-permission android:name="android.permission.READ_CONTACTS" />\n<uses-permission android:name="android.permission.WRITE_CONTACTS" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
 
       - name: Fix microphone permission in WebView
         run: |
