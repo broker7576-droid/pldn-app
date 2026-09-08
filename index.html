@@ -4392,9 +4392,13 @@
   alert('Capacitor: ' + !!window.Capacitor + ' | Plugins: ' + (window.Capacitor && window.Capacitor.Plugins ? Object.keys(window.Capacitor.Plugins).join(', ') : 'yoq'));
    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Contacts) {
       try {
+        alert('1-qadam: requestPermissions chaqirilmoqda');
         const perm = await window.Capacitor.Plugins.Contacts.requestPermissions();
+        alert('2-qadam: perm natijasi = ' + JSON.stringify(perm));
         if (perm.contacts !== 'granted') { alert(t('k29')); return; }
+        alert('3-qadam: getContacts chaqirilmoqda');
         const result = await window.Capacitor.Plugins.Contacts.getContacts({ projection: { name: true } });
+        alert('4-qadam: kontaktlar soni = ' + (result.contacts ? result.contacts.length : 'result.contacts yoq'));
         let added = 0;
         result.contacts.forEach(c => {
           const name = c.name && c.name.display ? c.name.display : "Noma'lum";
@@ -4403,12 +4407,13 @@
             added++;
           }
         });
+        alert('5-qadam: qoshildi = ' + added);
         if (added > 0) renderContactsList();
       } catch (err) {
         alert('XATO: ' + (err && err.message ? err.message : JSON.stringify(err)));
       }
       return;
- }
+   }
     if (!(navigator.contacts && window.ContactsManager)) {
       alert(t('k29'));
       return;
