@@ -4389,7 +4389,8 @@
   });
 
   document.getElementById('importPhoneContactsBtn').addEventListener('click', async () => {
-    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Contacts) {
+  alert('Capacitor: ' + !!window.Capacitor + ' | Plugins: ' + (window.Capacitor && window.Capacitor.Plugins ? Object.keys(window.Capacitor.Plugins).join(', ') : 'yoq'));
+   if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Contacts) {
       try {
         const perm = await window.Capacitor.Plugins.Contacts.requestPermissions();
         if (perm.contacts !== 'granted') { alert(t('k29')); return; }
