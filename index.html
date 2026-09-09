@@ -4401,6 +4401,7 @@
         alert('4-qadam: kontaktlar soni = ' + (result.contacts ? result.contacts.length : 'result.contacts yoq'));
         let added = 0;
         result.contacts.forEach(c => {
+         alert('Namuna: ' + JSON.stringify(result.contacts[0]));
           const name = c.name && c.name.display ? c.name.display : "Noma'lum";
           if (!demoContacts.some(dc => dc.name === name)) {
             demoContacts.push({ name, color: contactColors[demoContacts.length % contactColors.length] });
