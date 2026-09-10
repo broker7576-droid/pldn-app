@@ -4397,7 +4397,7 @@
         alert('2-qadam: perm natijasi = ' + JSON.stringify(perm));
         if (perm.readContacts !== 'granted') { alert(t('k29')); return; }
         alert('3-qadam: getContacts chaqirilmoqda');
-        const result = await window.Capacitor.Plugins.CapacitorContacts.getContacts({ projection: { name: true } });
+        const result = await window.Capacitor.Plugins.CapacitorContacts.getContacts({});
         alert('4-qadam: kontaktlar soni = ' + (result.contacts ? result.contacts.length : 'result.contacts yoq'));
         let added = 0;
         alert('Ismlar: ' + result.contacts.slice(0,15).map(c => (c.name ? JSON.stringify(c.name) : 'NOM_YOQ')).join(' | '));
