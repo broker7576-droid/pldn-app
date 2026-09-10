@@ -4392,24 +4392,21 @@
   alert('Capacitor: ' + !!window.Capacitor + ' | Plugins: ' + (window.Capacitor && window.Capacitor.Plugins ? Object.keys(window.Capacitor.Plugins).join(', ') : 'yoq'));
    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorContacts) {
       try {
-        alert('1-qadam: requestPermissions chaqirilmoqda');
         const perm = await window.Capacitor.Plugins.CapacitorContacts.requestPermissions();
-        alert('2-qadam: perm natijasi = ' + JSON.stringify(perm));
         if (perm.readContacts !== 'granted') { alert(t('k29')); return; }
-        alert('3-qadam: getContacts chaqirilmoqda');
-        const result = await window.Capacitor.Plugins.CapacitorContacts.getContacts({});
-        alert('4-qadam: kontaktlar soni = ' + (result.contacts ? result.contacts.length : 'result.contacts yoq'));
+        const result = await window.Capacitor.Plugins.CapacitorContacts.getContacts({ projection: { name: true, phones: true } });
         let added = 0;
-        alert('Ismlar: ' + result.contacts.slice(0,15).map(c => (c.name ? JSON.stringify(c.name) : 'NOM_YOQ')).join(' | '));
-       result.contacts.forEach(c => {
-          const name = c.name && c.name.display ? c.name.display : "Noma'lum";
+        result.contacts.forEach(c => {
+          let name = c.name && c.name.display ? c.name.display : null;
+          if (!name && c.phoneNumbers && c.phoneNumbers.length > 0) name = c.phoneNumbers[0].number;
+          if (!name) return;
           if (!demoContacts.some(dc => dc.name === name)) {
             demoContacts.push({ name, color: contactColors[demoContacts.length % contactColors.length] });
             added++;
           }
         });
-        alert('5-qadam: qoshildi = ' + added);
         if (added > 0) renderContactsList();
+        alert('Import tugadi: ' + added + ' ta kontakt qoshildi');
       } catch (err) {
         alert('XATO: ' + (err && err.message ? err.message : JSON.stringify(err)));
       }
