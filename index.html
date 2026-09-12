@@ -117,6 +117,58 @@
     z-index: 10;
   }
 
+  .top-controls-row {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 10;
+  }
+
+  .ui-style-toggle {
+    display: flex;
+    align-items: center;
+    background: var(--bg-card);
+    border-radius: 20px;
+    padding: 3px;
+    gap: 2px;
+  }
+
+  .ui-style-seg {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 6px 11px;
+    border-radius: 16px;
+    color: var(--text-secondary);
+    transition: background .2s ease, color .2s ease;
+  }
+
+  .ui-style-seg.active {
+    background: #2AABEE;
+    color: #fff;
+  }
+
+  body.pro-ui .ui-style-seg[data-style="pro"].active {
+    background: #0E7C7B;
+  }
+
+  .style-transition-overlay {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-page);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 999;
+    transition: opacity .2s ease;
+  }
+  .style-transition-overlay.show { opacity: 1; }
+
   h1 {
     font-size: 22px;
     font-weight: 600;
@@ -313,6 +365,147 @@
   .slide-track.completed .slide-thumb {
     background: #34C759;
   }
+
+  /* ======================================================= */
+  /* ===== PRO REJIMI: alohida, toʻliq kenglikdagi maydon ===== */
+  /* ======================================================= */
+  .pro-field-wrap {
+    position: relative;
+    width: 100%;
+  }
+
+  .pro-field {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 46px;
+    background: var(--bg-elevated);
+    border: 1.5px solid var(--border-color-strong);
+    border-radius: 14px;
+    padding: 4px;
+    overflow: hidden;
+    touch-action: none;
+    transition: border-color 0.2s ease;
+  }
+  .pro-field:focus-within { border-color: #0E7C7B; }
+
+  .pro-field-fill {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 0;
+    background: #E3F2F1;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .pro-chip {
+    position: absolute;
+    top: 4px; left: 4px;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 38px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: #E3F2F1;
+    font-weight: 800;
+    font-size: 13px;
+    color: #0B6362;
+    white-space: nowrap;
+    transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, left 0.15s ease;
+  }
+  .pro-chip.armed {
+    cursor: grab;
+    background: #0E7C7B;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(14,124,123,0.35);
+  }
+  .pro-chip.armed:active { cursor: grabbing; }
+  .pro-chip.confirmed {
+    background: #0B6362;
+    padding: 0;
+    width: 38px;
+    justify-content: center;
+  }
+  .pro-chip.confirmed span { display: none; }
+
+  .pro-chip-icon { display: none; width: 12px; height: 12px; }
+  .pro-chip.armed .pro-chip-arrow { display: block; }
+  .pro-chip.confirmed .pro-chip-check { display: block; }
+  .pro-chip.confirmed .pro-chip-arrow { display: none; }
+
+  .pro-field input {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    padding: 8px 12px 8px 10px;
+  }
+
+  .pro-field-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 4px 0 6px;
+    min-height: 18px;
+  }
+
+  .pro-hint-row { display: flex; align-items: center; gap: 6px; }
+  .pro-hint-icon { width: 14px; height: 14px; flex-shrink: 0; }
+  .pro-hint-text { font-size: 12.5px; color: var(--text-secondary); }
+  .pro-hint-text.error { color: #E14B42; font-weight: 600; }
+  .pro-hint-text.armed { color: #0B6362; font-weight: 700; }
+  .pro-counter { font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+  .pro-counter.full { color: #0E7C7B; font-weight: 700; }
+
+  /* ===== "Suring" paytida qochib ketadigan harflar animatsiyasi ===== */
+  .username-box input.has-letters-overlay { color: var(--text-primary); }
+  .pro-field input.has-letters-overlay { color: transparent; caret-color: var(--text-primary); }
+
+  .letters-overlay {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    overflow: visible;
+    pointer-events: none;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .letters-overlay .letter {
+    display: inline-block;
+    transition: transform 0.4s cubic-bezier(.34,1.56,.64,1);
+    will-change: transform;
+  }
+
+  .flee-caption {
+    position: absolute;
+    top: -20px;
+    right: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #0B6362;
+    opacity: 0;
+    transform: translateY(4px) scale(.9);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 3;
+  }
+
+  .flee-caption.show { opacity: 1; transform: translateY(0) scale(1); }
 
   .footer-note {
     font-size: 12px;
@@ -2176,24 +2369,55 @@
   <!-- ============ 1-EKRAN: USERNAME ============ -->
   <div class="screen active" id="screen1">
 
-    <button class="lang-btn" id="langBtn">
-      <span id="langFlag">🇺🇿</span> <span id="langCode">UZ</span> ▾
-    </button>
+    <div class="top-controls-row">
+      <div class="ui-style-toggle" id="uiStyleToggle">
+        <button type="button" class="ui-style-seg active" data-style="simple">Oddiy</button>
+        <button type="button" class="ui-style-seg" data-style="pro">Pro</button>
+      </div>
+      <button class="lang-btn" id="langBtn" style="position:static; top:auto; right:auto;">
+        <span id="langFlag">🇺🇿</span> <span id="langCode">UZ</span> ▾
+      </button>
+    </div>
+    <div class="style-transition-overlay" id="styleTransitionOverlay"></div>
 
     <h1 data-i18n="k1">Foydalanuvchi nomini kiriting</h1>
     <p class="subtitle" data-i18n="k2">Faqat lotin harflari (a-z) va raqamlar (0-9) ishlatiladi (eng kami 4ta  eng koʻpi 12ta) </p>
 
     <div class="field-group">
-      <div class="username-box username-slide-box">
-        <input type="text" id="username" data-i18n-placeholder="k136" placeholder="Foydalanuvchi nomi" maxlength="12" autocomplete="off">
+      <div class="username-box username-slide-box" id="usernameShellSimple">
+        <input type="text" id="username" class="has-letters-overlay" data-i18n-placeholder="k136" placeholder="Foydalanuvchi nomi" maxlength="12" autocomplete="off">
         <div class="slide-track" id="slideTrack">
           <span class="slide-track-label" id="slideTrackLabel"></span>
           <div class="slide-thumb pldn-thumb-text" id="slideThumb">PLDN/-</div>
         </div>
       </div>
+
+      <div class="pro-field-wrap" id="usernameShellPro" style="display:none;">
+        <div class="pro-field" id="proField">
+          <div class="pro-field-fill" id="proFieldFill"></div>
+          <div class="pro-chip" id="proChip">
+            <span>PLDN/-</span>
+            <svg class="pro-chip-icon pro-chip-arrow" viewBox="0 0 14 14" fill="none"><path d="M5 3L9 7L5 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg class="pro-chip-icon pro-chip-check" viewBox="0 0 14 14" fill="none"><path d="M3 7.2L5.8 10L11 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="letters-overlay" id="usernameLettersOverlay"></div>
+        </div>
+        <div class="pro-field-meta">
+          <div class="pro-hint-row">
+            <svg class="pro-hint-icon" viewBox="0 0 14 14" fill="none">
+              <circle cx="7" cy="7" r="6" stroke="#9FADAF" stroke-width="1.3"/>
+              <path d="M7 6.2V10" stroke="#9FADAF" stroke-width="1.3" stroke-linecap="round"/>
+              <circle cx="7" cy="4.1" r="0.9" fill="#9FADAF"/>
+            </svg>
+            <span class="pro-hint-text" id="proHintText">Kamida 4 ta belgi kerak</span>
+          </div>
+          <span class="pro-counter" id="proCounter">0/12</span>
+        </div>
+        <div class="flee-caption" id="usernameFleeCaption">Yugurmoqda 🏃💨</div>
+      </div>
     </div>
     <p class="slide-hint" id="slideHint" data-i18n="k3">Foydalanuvchi nomini kiriting...</p>
-    <div class="char-count"><span id="count">0</span>/12</div>
+    <div class="char-count" id="simpleCharCount"><span id="count">0</span>/12</div>
 
     <p class="footer-note" data-i18n="k4">Ro'yxatdan o'tish orqali siz Xizmat ko'rsatish shartlariga rozilik bildirasiz</p>
 
@@ -3341,16 +3565,154 @@
   const slideThumb = document.getElementById('slideThumb');
   const slideTrackLabel = document.getElementById('slideTrackLabel');
   const slideHint = document.getElementById('slideHint');
+  const usernameShellSimple = document.getElementById('usernameShellSimple');
+  const usernameShellPro = document.getElementById('usernameShellPro');
+  const simpleCharCount = document.getElementById('simpleCharCount');
 
   let isUsernameValid = false;
+
+  // ===== PRO rejimi: to'liq kenglikdagi PLDN/- chip =====
+  const proField = document.getElementById('proField');
+  const proChip = document.getElementById('proChip');
+  const proFieldFill = document.getElementById('proFieldFill');
+  const proHintText = document.getElementById('proHintText');
+  const proCounter = document.getElementById('proCounter');
+
+  // ===== "Suring" paytida harflar qochib ketishi (o'yinqaroq effekt, faqat Pro) =====
+  const usernameLettersOverlay = document.getElementById('usernameLettersOverlay');
+  const usernameFleeCaption = document.getElementById('usernameFleeCaption');
+
+  function renderUsernameLetters() {
+    if (!usernameLettersOverlay) return;
+    usernameLettersOverlay.innerHTML = '';
+    usernameInput.value.split('').forEach((ch) => {
+      const s = document.createElement('span');
+      s.className = 'letter';
+      s.textContent = ch;
+      usernameLettersOverlay.appendChild(s);
+    });
+  }
+
+  function fleeUsernameLetters(progress) {
+    if (!usernameLettersOverlay) return;
+    const letters = usernameLettersOverlay.children;
+    const n = letters.length;
+    for (let i = 0; i < n; i++) {
+      const dx = progress * (14 + i * 5) + (i - n / 2) * 3 * progress;
+      const wiggle = Math.sin(progress * Math.PI * (3 + i * 0.4)) * (6 - Math.min(i, 4)) * (1 - progress * 0.6);
+      const escape = Math.pow(progress, 2) * 30;
+      const rot = Math.sin(progress * 9 + i) * 12 * progress;
+      const dy = -(Math.abs(wiggle) + escape);
+      letters[i].style.transform = 'translate(' + dx + 'px,' + dy + 'px) rotate(' + rot + 'deg)';
+    }
+    if (usernameFleeCaption) usernameFleeCaption.classList.toggle('show', progress > 0.15);
+  }
+
+  function resetUsernameLettersAnim() {
+    if (!usernameLettersOverlay) return;
+    const letters = usernameLettersOverlay.children;
+    for (let i = 0; i < letters.length; i++) {
+      letters[i].style.transform = 'translate(0,0) rotate(0deg)';
+    }
+    if (usernameFleeCaption) usernameFleeCaption.classList.remove('show');
+  }
+
+  function updateProInputOffset() {
+    if (!proChip || !usernameInput || !usernameLettersOverlay) return;
+    const wasArmed = proChip.classList.contains('armed');
+    const wasConfirmed = proChip.classList.contains('confirmed');
+    proChip.classList.remove('confirmed');
+    proChip.classList.add('armed'); // eng kengaygan (strelkali) holatni o'lchaymiz
+    const maxW = proChip.offsetWidth;
+    proChip.classList.toggle('armed', wasArmed);
+    proChip.classList.toggle('confirmed', wasConfirmed);
+    const offset = maxW + 14;
+    usernameInput.style.paddingLeft = offset + 'px';
+    usernameLettersOverlay.style.left = offset + 'px';
+    usernameLettersOverlay.style.right = '12px';
+  }
+
+  function resetProChip() {
+    if (!proChip) return;
+    proChip.classList.remove('confirmed');
+    proChip.style.transition = '';
+    proChip.style.left = '4px';
+    if (proFieldFill) proFieldFill.style.width = '0px';
+    resetUsernameLettersAnim();
+  }
+
+  // ===== Oddiy / Pro dizayn tanlovi =====
+  const uiStyleToggle = document.getElementById('uiStyleToggle');
+  const styleTransitionOverlay = document.getElementById('styleTransitionOverlay');
+
+  function applyUiStyle(style, animate) {
+    const isPro = style === 'pro';
+    const doApply = () => {
+      document.body.classList.toggle('pro-ui', isPro);
+      if (uiStyleToggle) {
+        uiStyleToggle.querySelectorAll('.ui-style-seg').forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.style === style);
+        });
+      }
+
+      if (isPro) {
+        // input'ni Simple qutisidan Pro maydoniga jismonan ko'chiramiz
+        if (usernameInput.parentElement !== proField) {
+          proField.insertBefore(usernameInput, usernameLettersOverlay);
+        }
+        usernameShellSimple.style.display = 'none';
+        usernameShellPro.style.display = 'block';
+        slideHint.style.display = 'none';
+        if (simpleCharCount) simpleCharCount.style.display = 'none';
+        updateProInputOffset();
+        renderUsernameLetters();
+      } else {
+        // input'ni Pro maydonidan Simple qutisiga qaytaramiz
+        if (usernameInput.parentElement !== usernameShellSimple) {
+          usernameShellSimple.insertBefore(usernameInput, slideTrack);
+        }
+        usernameShellPro.style.display = 'none';
+        usernameShellSimple.style.display = 'flex';
+        slideHint.style.display = '';
+        if (simpleCharCount) simpleCharCount.style.display = '';
+        resetProChip();
+      }
+    };
+    if (animate && styleTransitionOverlay) {
+      styleTransitionOverlay.classList.add('show');
+      setTimeout(() => {
+        doApply();
+        setTimeout(() => {
+          styleTransitionOverlay.classList.remove('show');
+        }, 30);
+      }, 220);
+    } else {
+      doApply();
+    }
+  }
+
+  if (uiStyleToggle) {
+    const savedUiStyle = localStorage.getItem('pldnUiStyle') || 'simple';
+    applyUiStyle(savedUiStyle, false);
+
+    uiStyleToggle.querySelectorAll('.ui-style-seg').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const chosen = btn.dataset.style;
+        if (document.body.classList.contains('pro-ui') === (chosen === 'pro')) return;
+        localStorage.setItem('pldnUiStyle', chosen);
+        applyUiStyle(chosen, true);
+      });
+    });
+  }
 
   usernameInput.addEventListener('input', () => {
     let value = usernameInput.value.toLowerCase().replace(/[^a-z0-9]/g, '');
     value = value.slice(0, 12);
     usernameInput.value = value;
 
-    countEl.textContent = value.length;
-    isUsernameValid = value.length >= 4;
+    const len = value.length;
+    countEl.textContent = len;
+    isUsernameValid = len >= 4;
     slideTrack.classList.toggle('disabled-track', !isUsernameValid);
 
     if (isUsernameValid) {
@@ -3360,6 +3722,30 @@
       slideHint.textContent = t('k3');
       slideHint.classList.remove('hint-ready');
     }
+
+    if (proCounter) {
+      proCounter.textContent = len + '/12';
+      proCounter.classList.toggle('full', len === 12);
+    }
+    if (proHintText) {
+      if (len === 0) {
+        proHintText.textContent = 'Kamida 4 ta belgi kerak';
+        proHintText.className = 'pro-hint-text';
+      } else if (len < 4) {
+        proHintText.textContent = 'Yana ' + (4 - len) + ' ta belgi kerak';
+        proHintText.className = 'pro-hint-text error';
+      } else {
+        proHintText.textContent = 'Suring →';
+        proHintText.className = 'pro-hint-text armed';
+      }
+    }
+    if (proChip) {
+      proChip.classList.toggle('armed', isUsernameValid);
+      if (!isUsernameValid) resetProChip();
+    }
+
+    renderUsernameLetters();
+    if (!isUsernameValid) resetUsernameLettersAnim();
   });
 
   slideTrack.classList.add('disabled-track');
@@ -3377,6 +3763,7 @@
       slideTrack.classList.remove('completed');
       void slideThumb.offsetWidth;
       slideThumb.style.transition = '';
+      resetProChip();
     }, 400);
   }
 
@@ -3411,6 +3798,7 @@
       const progress = maxTravel ? offset / maxTravel : 0;
       setThumbOffset(offset);
       slideThumb.style.opacity = String(1 - progress * 0.9);
+      fleeUsernameLetters(progress);
     }
 
     function onDragEnd() {
@@ -3428,6 +3816,7 @@
         thumbOffset = 0;
         setThumbOffset(0);
         slideThumb.style.opacity = '1';
+        resetUsernameLettersAnim();
       }
     }
 
@@ -3462,6 +3851,103 @@
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
+  })();
+
+  // ===== PRO rejimi: PLDN/- chipni butun maydon bo'ylab surish =====
+  (() => {
+    if (!proChip || !proField) return;
+
+    let dragging = false;
+    let startX = 0;
+    let chipStartLeft = 4;
+    let maxDrag = 0;
+    let confirmed = false;
+
+    function fieldWidth() { return proField.clientWidth; }
+    function chipWidth() { return proChip.offsetWidth; }
+
+    function setChipX(x) {
+      maxDrag = fieldWidth() - chipWidth() - 4;
+      const clamped = Math.max(4, Math.min(x, maxDrag));
+      proChip.style.left = clamped + 'px';
+      if (proFieldFill) proFieldFill.style.width = (clamped + chipWidth()) + 'px';
+      const progress = maxDrag > 4 ? (clamped - 4) / (maxDrag - 4) : 0;
+      fleeUsernameLetters(progress);
+      return clamped;
+    }
+
+    function onDragStart(clientX) {
+      if (!isUsernameValid || confirmed) return;
+      dragging = true;
+      proChip.style.transition = 'none';
+      startX = clientX;
+      chipStartLeft = proChip.offsetLeft;
+    }
+
+    function onDragMove(clientX) {
+      if (!dragging) return;
+      const dx = clientX - startX;
+      setChipX(chipStartLeft + dx);
+    }
+
+    function onDragEnd() {
+      if (!dragging) return;
+      dragging = false;
+      const currentLeft = parseFloat(proChip.style.left || '4');
+      const target = fieldWidth() - chipWidth() - 4;
+      if (currentLeft >= target * 0.8) {
+        confirmed = true;
+        proChip.style.left = target + 'px';
+        if (proFieldFill) proFieldFill.style.width = (target + chipWidth()) + 'px';
+        proChip.classList.add('confirmed');
+        requestAnimationFrame(() => {
+          proChip.style.transition = 'left .15s ease, background .18s ease, color .18s ease';
+          const finalLeft = fieldWidth() - proChip.offsetWidth - 4;
+          proChip.style.left = finalLeft + 'px';
+        });
+        completeUsernameSlide();
+        setTimeout(() => { confirmed = false; }, 450);
+      } else {
+        proChip.style.transition = 'left .3s cubic-bezier(.34,1.56,.64,1)';
+        proChip.style.left = '4px';
+        if (proFieldFill) proFieldFill.style.width = '0px';
+        resetUsernameLettersAnim();
+      }
+    }
+
+    proChip.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try { proChip.setPointerCapture(e.pointerId); } catch (err) {}
+      onDragStart(e.clientX);
+    });
+    proChip.addEventListener('pointermove', (e) => onDragMove(e.clientX));
+    proChip.addEventListener('pointerup', onDragEnd);
+    proChip.addEventListener('pointercancel', onDragEnd);
+
+    proChip.addEventListener('touchstart', (e) => {
+      const tch = e.touches[0];
+      if (tch) onDragStart(tch.clientX);
+    }, { passive: true });
+    proChip.addEventListener('touchmove', (e) => {
+      const tch = e.touches[0];
+      if (tch) { e.preventDefault(); onDragMove(tch.clientX); }
+    }, { passive: false });
+    proChip.addEventListener('touchend', onDragEnd);
+    proChip.addEventListener('touchcancel', onDragEnd);
+
+    proChip.addEventListener('mousedown', (e) => {
+      onDragStart(e.clientX);
+      function onMove(ev) { onDragMove(ev.clientX); }
+      function onUp() {
+        onDragEnd();
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    window.addEventListener('resize', () => { if (document.body.classList.contains('pro-ui')) updateProInputOffset(); });
   })();
 
   document.getElementById('helpBtn').addEventListener('click', () => {
