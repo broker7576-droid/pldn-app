@@ -1,4 +1,4 @@
-<!-- VERSION: i18n-uz-ru-v4-fix-tdz (2026-09-06) -->
+<!-- VERSION: contacts-import-phones-field-fix-v1 (2026-09-12) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -4874,8 +4874,8 @@
     });
   });
 
+  // VERSION: contacts-import-phones-field-fix-v1
   document.getElementById('importPhoneContactsBtn').addEventListener('click', async () => {
-  alert('Capacitor: ' + !!window.Capacitor + ' | Plugins: ' + (window.Capacitor && window.Capacitor.Plugins ? Object.keys(window.Capacitor.Plugins).join(', ') : 'yoq'));
    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorContacts) {
       try {
         const perm = await window.Capacitor.Plugins.CapacitorContacts.requestPermissions();
@@ -4884,7 +4884,7 @@
         let added = 0;
         result.contacts.forEach(c => {
           let name = c.name && c.name.display ? c.name.display : null;
-          if (!name && c.phoneNumbers && c.phoneNumbers.length > 0) name = c.phoneNumbers[0].number;
+          if (!name && c.phones && c.phones.length > 0) name = c.phones[0].number;
           if (!name) return;
           if (!demoContacts.some(dc => dc.name === name)) {
             demoContacts.push({ name, color: contactColors[demoContacts.length % contactColors.length] });
