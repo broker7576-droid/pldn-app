@@ -1,4 +1,4 @@
-<!-- VERSION: contacts-import-phones-field-fix-v1 (2026-09-12) -->
+<!-- VERSION: contacts-import-multimethod-v3 (2026-09-14) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -4874,46 +4874,85 @@
     });
   });
 
-  // VERSION: contacts-import-phones-field-fix-v1
-  document.getElementById('importPhoneContactsBtn').addEventListener('click', async () => {
-   if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorContacts) {
+  // VERSION: contacts-import-multimethod-v3
+  async function pldnImportContacts() {
+    let imported = [];
+
+    // Usul 1: @capgo/capacitor-contacts (loyihada o'rnatilgan asosiy plagin)
+    if (imported.length === 0 && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorContacts) {
       try {
-        const perm = await window.Capacitor.Plugins.CapacitorContacts.requestPermissions();
-        if (perm.readContacts !== 'granted') { alert(t('k29')); return; }
-        const result = await window.Capacitor.Plugins.CapacitorContacts.getContacts({ projection: { name: true, phones: true } });
-        let added = 0;
-        result.contacts.forEach(c => {
-          let name = c.name && c.name.display ? c.name.display : null;
-          if (!name && c.phones && c.phones.length > 0) name = c.phones[0].number;
-          if (!name) return;
-          if (!demoContacts.some(dc => dc.name === name)) {
-            demoContacts.push({ name, color: contactColors[demoContacts.length % contactColors.length] });
-            added++;
+        const CC = window.Capacitor.Plugins.CapacitorContacts;
+        const perm = await CC.requestPermissions();
+        if (perm && (perm.readContacts === 'granted' || perm.contacts === 'granted')) {
+          const result = await CC.getContacts({ projection: { name: true, phones: true } });
+          if (result && result.contacts) {
+            imported = result.contacts.map(c => {
+              let name = null;
+              if (c.name) {
+                if (c.name.display) name = c.name.display;
+                else if (c.name.given || c.name.family) name = ((c.name.given || '') + ' ' + (c.name.family || '')).trim();
+              }
+              const phone = (c.phones && c.phones.length > 0) ? c.phones[0].number : '';
+              if (!name && phone) name = phone;
+              return name ? { name, phone } : null;
+            }).filter(Boolean);
           }
-        });
-        if (added > 0) renderContactsList();
-        alert('Import tugadi: ' + added + ' ta kontakt qoshildi');
-      } catch (err) {
-        alert('XATO: ' + (err && err.message ? err.message : JSON.stringify(err)));
-      }
-      return;
-   }
-    if (!(navigator.contacts && window.ContactsManager)) {
-      alert(t('k29'));
-      return;
+        }
+      } catch (e) { console.warn('[PLDN] Usul1 (CapacitorContacts) xato:', e); }
     }
+
+    // Usul 2: @capacitor/contacts rasmiy plagini (agar loyihada mavjud bo'lsa)
+    if (imported.length === 0 && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Contacts) {
+      try {
+        const CP = window.Capacitor.Plugins.Contacts;
+        const perm2 = await CP.requestPermissions();
+        if (perm2 && perm2.contacts === 'granted') {
+          const result2 = await CP.getContacts({ projection: { name: true, phones: true } });
+          imported = (result2.contacts || []).map(c => {
+            const name = (c.name && c.name.display) ? c.name.display : null;
+            const phone = (c.phones && c.phones.length > 0) ? c.phones[0].number : '';
+            const finalName = name || phone;
+            return finalName ? { name: finalName, phone } : null;
+          }).filter(Boolean);
+        }
+      } catch (e) { console.warn('[PLDN] Usul2 (Contacts) xato:', e); }
+    }
+
+    // Usul 3: Web Contact Picker API (Android Chrome, faqat foydalanuvchi bosganda)
+    if (imported.length === 0 && 'contacts' in navigator && 'ContactsManager' in window) {
+      try {
+        const webContacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
+        imported = (webContacts || []).map(c => {
+          const name = (c.name && c.name.length > 0) ? c.name[0] : null;
+          const phone = (c.tel && c.tel.length > 0) ? c.tel[0] : '';
+          const finalName = name || phone;
+          return finalName ? { name: finalName, phone } : null;
+        }).filter(Boolean);
+      } catch (e) { console.warn('[PLDN] Usul3 (Web Picker) xato:', e); }
+    }
+
+    return imported;
+  }
+
+  document.getElementById('importPhoneContactsBtn').addEventListener('click', async () => {
     try {
-      const selected = await navigator.contacts.select(['name'], { multiple: true });
+      const imported = await pldnImportContacts();
+      if (imported.length === 0) {
+        alert("Kontaktlar topilmadi. Ilovaga kontaktlarni o'qish ruxsati berilganiga ishonch hosil qiling.");
+        return;
+      }
       let added = 0;
-      selected.forEach(c => {
-        const name = (c.name && c.name[0]) ? c.name[0] : "Noma'lum";
-        if (!demoContacts.some(dc => dc.name === name)) {
-          demoContacts.push({ name, color: contactColors[demoContacts.length % contactColors.length] });
+      imported.forEach(c => {
+        if (!demoContacts.some(dc => dc.name === c.name)) {
+          demoContacts.push({ name: c.name, color: contactColors[demoContacts.length % contactColors.length] });
           added++;
         }
       });
       if (added > 0) renderContactsList();
-    } catch (err) {}
+      alert('Import tugadi: ' + added + " ta yangi kontakt qo'shildi (jami topilgan: " + imported.length + ")");
+    } catch (err) {
+      alert('XATO: ' + (err && err.message ? err.message : JSON.stringify(err)));
+    }
   });
 
   renderContactsList();
