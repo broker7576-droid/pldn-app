@@ -1,4 +1,4 @@
-<!-- VERSION: contacts-import-multimethod-v3 (2026-09-14) -->
+<!-- VERSION: contacts-import-debug-v5 (2026-09-14) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -4874,17 +4874,23 @@
     });
   });
 
-  // VERSION: contacts-import-multimethod-v3
+  // VERSION: contacts-import-debug-v5
   async function pldnImportContacts() {
     let imported = [];
+    alert('BUILD: contacts-import-debug-v5 ishlamoqda');
 
     // Usul 1: @capgo/capacitor-contacts (loyihada o'rnatilgan asosiy plagin)
     if (imported.length === 0 && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorContacts) {
       try {
         const CC = window.Capacitor.Plugins.CapacitorContacts;
         const perm = await CC.requestPermissions();
+        alert('DEBUG perm: ' + JSON.stringify(perm));
         if (perm && (perm.readContacts === 'granted' || perm.contacts === 'granted')) {
           const result = await CC.getContacts({ projection: { name: true, phones: true } });
+          const n = result && result.contacts ? result.contacts.length : 0;
+          alert('DEBUG soni: ' + n);
+          alert('DEBUG XOM 1-kontakt (toliq):\n' + JSON.stringify(result.contacts[0], null, 1));
+          alert('DEBUG XOM 2-kontakt (toliq):\n' + JSON.stringify(result.contacts[1], null, 1));
           if (result && result.contacts) {
             imported = result.contacts.map(c => {
               let name = null;
