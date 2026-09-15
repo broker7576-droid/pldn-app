@@ -1,4 +1,4 @@
-<!-- VERSION: contacts-import-debug-v5 (2026-09-14) -->
+<!-- VERSION: contacts-import-real-fields-v6 (2026-09-14) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -4874,31 +4874,26 @@
     });
   });
 
-  // VERSION: contacts-import-debug-v5
+  // VERSION: contacts-import-real-fields-v6
   async function pldnImportContacts() {
     let imported = [];
-    alert('BUILD: contacts-import-debug-v5 ishlamoqda');
 
-    // Usul 1: @capgo/capacitor-contacts (loyihada o'rnatilgan asosiy plagin)
+    // Usul 1: real plugin bridge (CapacitorContacts) - haqiqiy maydonlar: displayName/fullName/givenName + phoneNumbers
     if (imported.length === 0 && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorContacts) {
       try {
         const CC = window.Capacitor.Plugins.CapacitorContacts;
         const perm = await CC.requestPermissions();
-        alert('DEBUG perm: ' + JSON.stringify(perm));
         if (perm && (perm.readContacts === 'granted' || perm.contacts === 'granted')) {
           const result = await CC.getContacts({ projection: { name: true, phones: true } });
-          const n = result && result.contacts ? result.contacts.length : 0;
-          alert('DEBUG soni: ' + n);
-          alert('DEBUG XOM 1-kontakt (toliq):\n' + JSON.stringify(result.contacts[0], null, 1));
-          alert('DEBUG XOM 2-kontakt (toliq):\n' + JSON.stringify(result.contacts[1], null, 1));
           if (result && result.contacts) {
             imported = result.contacts.map(c => {
-              let name = null;
-              if (c.name) {
-                if (c.name.display) name = c.name.display;
-                else if (c.name.given || c.name.family) name = ((c.name.given || '') + ' ' + (c.name.family || '')).trim();
+              let name = c.displayName || c.fullName || null;
+              if (!name && (c.givenName || c.familyName)) name = ((c.givenName || '') + ' ' + (c.familyName || '')).trim();
+              let phone = '';
+              if (c.phoneNumbers && c.phoneNumbers.length > 0) {
+                const p0 = c.phoneNumbers[0];
+                phone = typeof p0 === 'string' ? p0 : (p0.number || p0.value || '');
               }
-              const phone = (c.phones && c.phones.length > 0) ? c.phones[0].number : '';
               if (!name && phone) name = phone;
               return name ? { name, phone } : null;
             }).filter(Boolean);
