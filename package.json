@@ -5,7 +5,8 @@
   "dependencies": {
     "@capacitor/core": "^6.1.2",
     "@capacitor/android": "^6.1.2",
-   "@capgo/capacitor-contacts": "latest"
+   "@capgo/capacitor-contacts": "latest",
+    "@langx/capacitor-voice-recorder": "^6.0.7"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.1.2",
