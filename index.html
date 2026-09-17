@@ -1,4 +1,4 @@
-<!-- VERSION: contacts-import-real-fields-v6 (2026-09-14) -->
+<!-- VERSION: voice-record-native-v1 (2026-09-14) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -2577,6 +2577,11 @@
         <span class="settings-label" data-i18n="k28">Telefon kontaktlaridan qo'shish</span>
         <span class="settings-arrow">›</span>
       </div>
+      <div class="settings-item" id="addManualContactBtn">
+        <span class="settings-icon">➕</span>
+        <span class="settings-label" data-i18n="k137">Yangi kontakt qo'shish</span>
+        <span class="settings-arrow">›</span>
+      </div>
     </div>
 
     <div class="chat-list" id="contactsList">
@@ -2646,6 +2651,24 @@
     <input type="text" class="name-input" id="newGroupNameInput" data-i18n-placeholder="k36" placeholder="Guruh nomi" maxlength="40">
 
     <button class="done-btn" id="newGroupCreateBtn" disabled data-i18n="k37">Yaratish</button>
+
+  </div>
+
+  <!-- ============ YANGI KONTAKT QO'SHISH ============ -->
+  <div class="screen" id="addContactScreen">
+
+    <button class="back-btn" id="addContactBackBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
+    </button>
+
+    <h1 data-i18n="k138">Yangi kontakt</h1>
+
+    <input type="text" class="name-input" id="addContactNameInput" data-i18n-placeholder="k139" placeholder="Ism" maxlength="40">
+    <input type="tel" class="name-input" id="addContactPhoneInput" data-i18n-placeholder="k140" placeholder="Telefon raqam" maxlength="20" style="margin-top:10px;">
+
+    <button class="done-btn" id="addContactSaveBtn" disabled data-i18n="k141">Saqlash</button>
 
   </div>
 
@@ -3355,6 +3378,11 @@
       k134: "Toshkent · 2 kun oldin faol bo'lgan",
       k135: "Samarqand · Kecha faol bo'lgan",
       k136: "Foydalanuvchi nomi",
+      k137: "Yangi kontakt qo'shish",
+      k138: "Yangi kontakt",
+      k139: "Ism",
+      k140: "Telefon raqam",
+      k141: "Saqlash",
     },
     ru: {
       k1: "Введите имя пользователя",
@@ -3494,6 +3522,11 @@
       k134: "Ташкент · был активен 2 дня назад",
       k135: "Самарканд · был активен вчера",
       k136: "Имя пользователя",
+      k137: "Добавить новый контакт",
+      k138: "Новый контакт",
+      k139: "Имя",
+      k140: "Номер телефона",
+      k141: "Сохранить",
     },
     en: {
       // Inglizcha tarjima hali qo'shilmagan — shu tugagunicha o'zbekcha matn ko'rsatiladi
@@ -4956,6 +4989,44 @@
     }
   });
 
+  // ===== QO'LDA KONTAKT QO'SHISH =====
+  const addContactNameInput = document.getElementById('addContactNameInput');
+  const addContactPhoneInput = document.getElementById('addContactPhoneInput');
+  const addContactSaveBtn = document.getElementById('addContactSaveBtn');
+
+  document.getElementById('addManualContactBtn').addEventListener('click', () => {
+    addContactNameInput.value = '';
+    addContactPhoneInput.value = '';
+    addContactSaveBtn.disabled = true;
+    goToScreen('addContactScreen');
+    setTimeout(() => addContactNameInput.focus(), 200);
+  });
+
+  document.getElementById('addContactBackBtn').addEventListener('click', () => {
+    goToScreen('contactsScreen');
+    setActiveNav('contacts');
+  });
+
+  function updateAddContactSaveState() {
+    addContactSaveBtn.disabled = addContactNameInput.value.trim().length === 0;
+  }
+  addContactNameInput.addEventListener('input', updateAddContactSaveState);
+  addContactPhoneInput.addEventListener('input', updateAddContactSaveState);
+
+  addContactSaveBtn.addEventListener('click', () => {
+    const name = addContactNameInput.value.trim();
+    const phone = addContactPhoneInput.value.trim();
+    if (!name) return;
+
+    demoContacts.push({ name, phone, color: contactColors[demoContacts.length % contactColors.length] });
+    renderContactsList();
+
+    addContactNameInput.value = '';
+    addContactPhoneInput.value = '';
+    goToScreen('contactsScreen');
+    setActiveNav('contacts');
+  });
+
   renderContactsList();
 
   function openNewGroupFlow() {
@@ -5411,6 +5482,7 @@
   });
 
   // ===== OVOZLI XABAR YOZISH =====
+  // VERSION: voice-record-native-v1
   const voiceRecordingIndicator = document.getElementById('voiceRecordingIndicator');
   const voiceRecTimer = document.getElementById('voiceRecTimer');
 
@@ -5422,6 +5494,7 @@
   let recordStartX = 0;
   let recordCancelled = false;
   let isRecordingActive = false;
+  let usingNativeRecorder = false;
 
   async function startVoiceRecording(clientX) {
     if (isRecordingActive || sendMsgBtn.dataset.mode !== 'mic') return;
@@ -5429,6 +5502,7 @@
     recordCancelled = false;
     recordSeconds = 0;
     recordStartX = clientX;
+    usingNativeRecorder = false;
 
     messageInput.style.display = 'none';
     voiceRecordingIndicator.classList.add('active');
@@ -5443,6 +5517,33 @@
     }, 1000);
 
     recordedChunks = [];
+
+    // Usul 1: native Capacitor plagini (capacitor-voice-recorder) - Android WebView'da ishonchli ishlaydi
+    const VR = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.VoiceRecorder;
+    if (VR) {
+      try {
+        const hasPerm = await VR.hasAudioRecordingPermission();
+        if (!hasPerm || hasPerm.value === false) {
+          const reqPerm = await VR.requestAudioRecordingPermission();
+          if (!reqPerm || reqPerm.value === false) {
+            isRecordingActive = false;
+            clearInterval(recordTimerInterval);
+            messageInput.style.display = '';
+            voiceRecordingIndicator.classList.remove('active', 'cancelling');
+            alert("Mikrofon uchun ruxsat berilmadi.");
+            return;
+          }
+        }
+        await VR.startRecording();
+        usingNativeRecorder = true;
+        return;
+      } catch (err) {
+        usingNativeRecorder = false;
+        console.warn('[PLDN] Native VoiceRecorder xato:', err);
+      }
+    }
+
+    // Usul 2 (fallback): veb getUserMedia/MediaRecorder (Capacitor WebView'da odatda ishlamaydi)
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder) {
         recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -5454,6 +5555,7 @@
       }
     } catch (err) {
       mediaRecorder = null;
+      console.warn('[PLDN] Web MediaRecorder xato:', err);
     }
   }
 
@@ -5469,7 +5571,7 @@
     }
   }
 
-  function finishVoiceRecording() {
+  async function finishVoiceRecording() {
     if (!isRecordingActive) return;
     isRecordingActive = false;
     clearInterval(recordTimerInterval);
@@ -5479,6 +5581,27 @@
 
     messageInput.style.display = '';
     voiceRecordingIndicator.classList.remove('active', 'cancelling');
+
+    if (usingNativeRecorder) {
+      const VR = window.Capacitor.Plugins.VoiceRecorder;
+      try {
+        const result = await VR.stopRecording();
+        const rec = result && result.value ? result.value : null;
+        if (!cancelled && duration >= 1 && rec && rec.recordDataBase64) {
+          const mime = rec.mimeType || 'audio/aac';
+          const dataUrl = 'data:' + mime + ';base64,' + rec.recordDataBase64;
+          addVoiceBubble(dataUrl, duration, 'outgoing');
+        } else if (cancelled) {
+          // bekor qilindi, hech narsa qo'shilmaydi
+        } else if (!rec || !rec.recordDataBase64) {
+          alert('XATO: ovoz yozib olinmadi (native natija bosh keldi).');
+        }
+      } catch (err) {
+        alert('XATO (VoiceRecorder stop): ' + (err && err.message ? err.message : JSON.stringify(err)));
+      }
+      usingNativeRecorder = false;
+      return;
+    }
 
     if (mediaRecorder) {
       const finishedRecorder = mediaRecorder;
@@ -5501,7 +5624,7 @@
         recordingStream = null;
       }
       if (!cancelled && duration >= 1) {
-        addVoiceBubble(null, duration, 'outgoing');
+        alert("Ovoz yozib olinmadi: mikrofonga ilova orqali murojaat qilib bo'lmadi.");
       }
     }
   }
