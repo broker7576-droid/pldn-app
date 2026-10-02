@@ -1,4 +1,4 @@
-<!-- VERSION: voice-record-native-v1 (2026-09-14) -->
+<!-- VERSION: firebase-auth-v1 (2026-10-02) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -2485,6 +2485,36 @@
 
   </div>
 
+  <!-- ============ PAROL EKRANI (ro'yxatdan o'tish) ============ -->
+  <div class="screen" id="screenPass">
+    <button class="back-btn" id="regPassBack">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
+    <h1 id="regPassTitle" style="margin-top:40px;">Parol o'ylab toping</h1>
+    <p class="subtitle" id="regPassSub">Hisobingizga kirish uchun parol kerak bo'ladi (kamida 6 ta belgi)</p>
+    <div class="field-group" style="width:100%;">
+      <input type="password" class="name-input" id="regPassword" placeholder="Parol" maxlength="64" autocomplete="new-password">
+      <input type="password" class="name-input" id="regPassword2" placeholder="Parolni takrorlang" maxlength="64" autocomplete="new-password">
+    </div>
+    <p class="subtitle" id="regPassErr" style="color:#FF3B30; min-height:18px;"></p>
+    <button class="done-btn" id="regPassBtn">Davom etish</button>
+  </div>
+
+  <!-- ============ KIRISH EKRANI (avvalgi hisob) ============ -->
+  <div class="screen" id="screenLogin">
+    <button class="back-btn" id="loginBack">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
+    <h1 id="loginTitle" style="margin-top:40px;">Hisobga kirish</h1>
+    <p class="subtitle" id="loginSub">Foydalanuvchi nomingiz (PLDN/- dan keyingi qismi) va parolingizni kiriting</p>
+    <div class="field-group" style="width:100%;">
+      <input type="text" class="name-input" id="loginUsername" placeholder="Foydalanuvchi nomi" maxlength="12" autocomplete="off" autocapitalize="none">
+      <input type="password" class="name-input" id="loginPassword" placeholder="Parol" maxlength="64" autocomplete="current-password">
+    </div>
+    <p class="subtitle" id="loginErr" style="color:#FF3B30; min-height:18px;"></p>
+    <button class="done-btn" id="loginBtn">Kirish</button>
+  </div>
+
   <!-- ============ 3-EKRAN: MUVAFFAQIYATLI ============ -->
   <div class="screen" id="screen3" style="justify-content: center;">
 
@@ -3238,6 +3268,9 @@
 
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
   const PLDN_I18N = {
     uz: {
@@ -3787,7 +3820,10 @@
     isEditMode = false;
     document.getElementById('editUsernameBox').style.display = 'none';
     userData.username = usernameInput.value;
-    goToScreen('screen2');
+    document.getElementById('regPassword').value = '';
+    document.getElementById('regPassword2').value = '';
+    document.getElementById('regPassErr').textContent = '';
+    fbShow('screenPass');
 
     setTimeout(() => {
       slideThumb.style.transition = 'none';
@@ -3988,7 +4024,8 @@
   });
 
   document.getElementById('prevAccountBtn').addEventListener('click', () => {
-    alert(t('k8'));
+    document.getElementById('loginErr').textContent = '';
+    fbShow('screenLogin');
   });
 
   // ===== GLOBAL TIL TANLASH MODAL =====
@@ -4224,7 +4261,43 @@
     finishNameStep(true);
   });
 
-  function finishNameStep(editing) {
+  async function finishNameStep(editing) {
+    if (!fbAuth) {
+      alert(fbT("Firebase yuklanmadi. Internetni tekshirib, ilovani qayta oching.", "Firebase не загрузился. Проверьте интернет и перезапустите приложение."));
+      if (editing) { editDrag.reset(); } else { familiyaDrag.reset(); }
+      return;
+    }
+    if (editing) {
+      // Foydalanuvchi nomi hozircha o'zgartirilmaydi (kirish shu nomga bog'langan)
+      document.getElementById('editUsernameInput').value = userData.username;
+      finishNameStepUI(true);
+      fbSaveProfile().catch(e => console.error('Profil saqlanmadi', e));
+      return;
+    }
+    const fn = firstNameInput.value.trim();
+    const ln = lastNameInput.value.trim();
+    try {
+      await fbRegister(userData.username, fbPendingPassword, fn, ln);
+    } catch (e) {
+      console.error(e);
+      alert(fbErrMsg(e));
+      if (e && e.code === 'auth/email-already-in-use') {
+        ismStepGroup.style.display = '';
+        ismSlideHint.style.display = '';
+        familiyaStepGroup.style.display = 'none';
+        familiyaSlideHint.style.display = 'none';
+        ismDrag.reset();
+        familiyaDrag.reset();
+        goToScreen('screen1');
+      } else {
+        familiyaDrag.reset();
+      }
+      return;
+    }
+    finishNameStepUI(false);
+  }
+
+  function finishNameStepUI(editing) {
       const firstName = editing ? editFirstNameInput.value.trim() : firstNameInput.value.trim();
       const lastName = editing ? editLastNameInput.value.trim() : lastNameInput.value.trim();
 
@@ -6284,7 +6357,11 @@
   });
 
   document.getElementById('logoutConfirmBtn').addEventListener('click', () => {
-    location.reload();
+    if (fbAuth) {
+      fbAuth.signOut().catch(() => {}).then(() => location.reload());
+    } else {
+      location.reload();
+    }
   });
 
   document.getElementById('logoutModalOverlay').addEventListener('click', (e) => {
@@ -6323,6 +6400,191 @@
     if (typeof PLDNRobot !== 'undefined' && PLDNRobot.setVisibleForScreen) {
       PLDNRobot.setVisibleForScreen(screenId);
     }
+  }
+
+  // ===== FIREBASE (Auth + Firestore) =====
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyBBy_I5JXK-pMcM7sNx6Wc8GQygE5lKXac",
+    authDomain: "pldn-35cd6.firebaseapp.com",
+    projectId: "pldn-35cd6",
+    storageBucket: "pldn-35cd6.firebasestorage.app",
+    messagingSenderId: "659938247594",
+    appId: "1:659938247594:web:cc9c67c9c5b0dfb20321d3"
+  };
+
+  let fbAuth = null;
+  let fbDb = null;
+  let fbRegistering = false;
+  let fbPendingPassword = '';
+
+  if (typeof firebase !== 'undefined') {
+    try {
+      firebase.initializeApp(FIREBASE_CONFIG);
+      fbAuth = firebase.auth();
+      fbDb = firebase.firestore();
+    } catch (e) {
+      console.error('Firebase init xatosi', e);
+    }
+  }
+
+  function fbT(uz, ru) {
+    return (currentLang === 'ru') ? ru : uz;
+  }
+
+  function fbEmail(username) {
+    return username + '@pldn.app';
+  }
+
+  function fbErrMsg(e) {
+    const code = (e && e.code) || '';
+    if (code === 'auth/email-already-in-use') return fbT("Bu foydalanuvchi nomi band. Boshqa nom tanlang.", "Это имя пользователя занято. Выберите другое.");
+    if (code === 'auth/weak-password') return fbT("Parol juda oddiy (kamida 6 ta belgi).", "Слишком простой пароль (минимум 6 символов).");
+    if (code === 'auth/network-request-failed') return fbT("Internet aloqasi yo'q.", "Нет подключения к интернету.");
+    if (code === 'auth/invalid-credential' || code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-email') return fbT("Foydalanuvchi nomi yoki parol noto'g'ri.", "Неверное имя пользователя или пароль.");
+    if (code === 'auth/too-many-requests') return fbT("Juda ko'p urinish. Birozdan keyin qayta urinib ko'ring.", "Слишком много попыток. Попробуйте позже.");
+    if (code === 'permission-denied') return fbT("Ruxsat yo'q (Firestore qoidalarini tekshiring).", "Нет доступа (проверьте правила Firestore).");
+    return fbT("Xatolik: ", "Ошибка: ") + (code || (e && e.message) || '');
+  }
+
+  function fbApplyLang() {
+    const set = (id, uz, ru) => { const el = document.getElementById(id); if (el) el.textContent = fbT(uz, ru); };
+    const ph = (id, uz, ru) => { const el = document.getElementById(id); if (el) el.placeholder = fbT(uz, ru); };
+    set('regPassTitle', "Parol o'ylab toping", "Придумайте пароль");
+    set('regPassSub', "Hisobingizga kirish uchun parol kerak bo'ladi (kamida 6 ta belgi)", "Пароль нужен для входа в аккаунт (минимум 6 символов)");
+    set('regPassBtn', "Davom etish", "Продолжить");
+    ph('regPassword', "Parol", "Пароль");
+    ph('regPassword2', "Parolni takrorlang", "Повторите пароль");
+    set('loginTitle', "Hisobga kirish", "Вход в аккаунт");
+    set('loginSub', "Foydalanuvchi nomingiz (PLDN/- dan keyingi qismi) va parolingizni kiriting", "Введите имя пользователя (часть после PLDN/-) и пароль");
+    set('loginBtn', "Kirish", "Войти");
+    ph('loginUsername', "Foydalanuvchi nomi", "Имя пользователя");
+    ph('loginPassword', "Parol", "Пароль");
+  }
+
+  function fbShow(screenId) {
+    fbApplyLang();
+    goToScreen(screenId);
+  }
+
+  // Avatarni kichraytirish (256x256 JPEG) — Firestore'ga sig'ishi uchun
+  function fbCompressAvatar(src) {
+    return new Promise((resolve) => {
+      if (!src) return resolve(null);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const S = 256;
+          const side = Math.min(img.width, img.height);
+          const sx = (img.width - side) / 2;
+          const sy = (img.height - side) / 2;
+          const c = document.createElement('canvas');
+          c.width = S; c.height = S;
+          c.getContext('2d').drawImage(img, sx, sy, side, side, 0, 0, S, S);
+          resolve(c.toDataURL('image/jpeg', 0.7));
+        } catch (e) { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  }
+
+  async function fbRegister(username, password, firstName, lastName) {
+    fbRegistering = true;
+    try {
+      const cred = await fbAuth.createUserWithEmailAndPassword(fbEmail(username), password);
+      try {
+        const avatar = await fbCompressAvatar(userData.avatarSrc);
+        await fbDb.collection('users').doc(cred.user.uid).set({
+          username: username,
+          firstName: firstName,
+          lastName: lastName,
+          avatar: avatar || null,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      } catch (e) {
+        // Profil yozilmasa, yarim qolgan hisobni o'chiramiz
+        try { await cred.user.delete(); } catch (_) {}
+        throw e;
+      }
+    } finally {
+      fbRegistering = false;
+    }
+  }
+
+  async function fbLoadProfile(uid) {
+    const snap = await fbDb.collection('users').doc(uid).get();
+    if (snap.exists) {
+      const v = snap.data();
+      userData.username = v.username || '';
+      userData.firstName = v.firstName || '';
+      userData.lastName = v.lastName || '';
+      userData.avatarSrc = v.avatar || null;
+    }
+    updateProfileScreen();
+  }
+
+  async function fbSaveProfile() {
+    const user = fbAuth && fbAuth.currentUser;
+    if (!user) return;
+    const avatar = await fbCompressAvatar(userData.avatarSrc);
+    await fbDb.collection('users').doc(user.uid).set({
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      avatar: avatar || null
+    }, { merge: true });
+  }
+
+  // Parol ekrani
+  document.getElementById('regPassBack').addEventListener('click', () => goToScreen('screen1'));
+  document.getElementById('regPassBtn').addEventListener('click', () => {
+    const p1 = document.getElementById('regPassword').value;
+    const p2 = document.getElementById('regPassword2').value;
+    const err = document.getElementById('regPassErr');
+    if (p1.length < 6) { err.textContent = fbT("Parol kamida 6 ta belgidan iborat bo'lsin", "Пароль должен быть не короче 6 символов"); return; }
+    if (p1 !== p2) { err.textContent = fbT("Parollar bir xil emas", "Пароли не совпадают"); return; }
+    err.textContent = '';
+    fbPendingPassword = p1;
+    goToScreen('screen2');
+  });
+
+  // Kirish ekrani
+  const loginUsernameEl = document.getElementById('loginUsername');
+  loginUsernameEl.addEventListener('input', () => {
+    loginUsernameEl.value = loginUsernameEl.value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  });
+  document.getElementById('loginBack').addEventListener('click', () => goToScreen('screen1'));
+  document.getElementById('loginBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('loginBtn');
+    const err = document.getElementById('loginErr');
+    const u = loginUsernameEl.value.trim();
+    const p = document.getElementById('loginPassword').value;
+    if (u.length < 4 || !p) { err.textContent = fbT("Foydalanuvchi nomi va parolni kiriting", "Введите имя пользователя и пароль"); return; }
+    if (!fbAuth) { err.textContent = fbT("Firebase yuklanmadi. Internetni tekshiring.", "Firebase не загрузился. Проверьте интернет."); return; }
+    err.textContent = '';
+    btn.disabled = true;
+    try {
+      await fbAuth.signInWithEmailAndPassword(fbEmail(u), p);
+      // Keyingi o'tishni onAuthStateChanged bajaradi
+    } catch (e) {
+      console.error(e);
+      err.textContent = fbErrMsg(e);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // Ilova ochilganda / kirilganda: sessiya bor bo'lsa chatlarga o'tish
+  if (fbAuth) {
+    fbAuth.onAuthStateChanged(async (user) => {
+      if (!user || fbRegistering) return;
+      try {
+        await fbLoadProfile(user.uid);
+      } catch (e) {
+        console.error('Profil yuklanmadi', e);
+      }
+      const onAuthScreen = ['screen1', 'screenPass', 'screenLogin'].some(id => document.getElementById(id).classList.contains('active'));
+      if (onAuthScreen) goToScreen('screen4');
+    });
   }
 
   // ===== KLAVIATURA OCHILGANDA EKRANNI MOSLASHTIRISH =====
