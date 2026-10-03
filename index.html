@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-chats-v1 (2026-10-02) -->
+<!-- VERSION: firebase-chats-v3 (2026-10-03) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -3848,6 +3848,8 @@
     userData.username = usernameInput.value;
     document.getElementById('regPassword').value = '';
     document.getElementById('regPassword2').value = '';
+    document.getElementById('regPassword').type = 'password';
+    document.getElementById('regPassword2').type = 'password';
     document.getElementById('regPassErr').textContent = '';
     fbShow('screenPass');
 
@@ -6463,6 +6465,7 @@
       firebase.initializeApp(FIREBASE_CONFIG);
       fbAuth = firebase.auth();
       fbDb = firebase.firestore();
+      try { fbDb.settings({ experimentalAutoDetectLongPolling: true, merge: true }); } catch (_) {}
     } catch (e) {
       console.error('Firebase init xatosi', e);
     }
@@ -6483,6 +6486,7 @@
     if (code === 'auth/network-request-failed') return fbT("Internet aloqasi yo'q.", "Нет подключения к интернету.");
     if (code === 'auth/invalid-credential' || code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-email') return fbT("Foydalanuvchi nomi yoki parol noto'g'ri.", "Неверное имя пользователя или пароль.");
     if (code === 'auth/too-many-requests') return fbT("Juda ko'p urinish. Birozdan keyin qayta urinib ko'ring.", "Слишком много попыток. Попробуйте позже.");
+    if (code === 'pldn/timeout') return fbT("Server bilan aloqa sekin yoki yo'q. Internetni tekshirib, qayta urinib ko'ring.", "Нет связи с сервером или она медленная. Проверьте интернет и повторите.");
     if (code === 'permission-denied') return fbT("Ruxsat yo'q (Firestore qoidalarini tekshiring).", "Нет доступа (проверьте правила Firestore).");
     return fbT("Xatolik: ", "Ошибка: ") + (code || (e && e.message) || '');
   }
@@ -6529,22 +6533,46 @@
     });
   }
 
+  function fbWithTimeout(promise, ms) {
+    let to;
+    const timer = new Promise((_, rej) => { to = setTimeout(() => rej({ code: 'pldn/timeout' }), ms); });
+    return Promise.race([promise, timer]).finally(() => clearTimeout(to));
+  }
+
   async function fbRegister(username, password, firstName, lastName) {
     fbRegistering = true;
     try {
-      const cred = await fbAuth.createUserWithEmailAndPassword(fbEmail(username), password);
+      let cred;
+      let created = false;
+      try {
+        cred = await fbWithTimeout(fbAuth.createUserWithEmailAndPassword(fbEmail(username), password), 20000);
+        created = true;
+      } catch (e) {
+        if (!(e && e.code === 'auth/email-already-in-use')) throw e;
+        // Oldingi urinish yarim qolgan bo'lishi mumkin (hisob bor, profil yo'q)
+        try {
+          cred = await fbWithTimeout(fbAuth.signInWithEmailAndPassword(fbEmail(username), password), 20000);
+        } catch (_) { throw e; }
+        const snap = await fbWithTimeout(fbDb.collection('users').doc(cred.user.uid).get(), 15000);
+        if (snap.exists) {
+          await fbAuth.signOut().catch(() => {});
+          throw e; // to'liq hisob bor: boshqa nom tanlash kerak
+        }
+      }
       try {
         const avatar = await fbCompressAvatar(userData.avatarSrc);
-        await fbDb.collection('users').doc(cred.user.uid).set({
+        await fbWithTimeout(fbDb.collection('users').doc(cred.user.uid).set({
           username: username,
           firstName: firstName,
           lastName: lastName,
           avatar: avatar || null,
           createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+        }), 15000);
       } catch (e) {
-        // Profil yozilmasa, yarim qolgan hisobni o'chiramiz
-        try { await cred.user.delete(); } catch (_) {}
+        // Aloqa muammosida hisobni o'chirmaymiz: qayta urinilganda profil yoziladi
+        if (created && !(e && e.code === 'pldn/timeout')) {
+          try { await cred.user.delete(); } catch (_) {}
+        }
         throw e;
       }
     } finally {
@@ -6562,6 +6590,7 @@
       userData.avatarSrc = v.avatar || null;
     }
     updateProfileScreen();
+    return snap.exists;
   }
 
   async function fbSaveProfile() {
@@ -6574,6 +6603,32 @@
       avatar: avatar || null
     }, { merge: true });
   }
+
+  // Parolni ko'rsatish/yashirish (ko'z tugmasi)
+  function fbAddEye(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input || !input.parentNode) return;
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:relative; width:100%; margin-bottom:14px;';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    input.style.marginBottom = '0';
+    input.style.paddingRight = '50px';
+    input.style.boxSizing = 'border-box';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '👁';
+    btn.setAttribute('aria-label', 'Parolni ko\'rsatish');
+    btn.style.cssText = 'position:absolute; right:4px; top:0; width:44px; height:48px; background:none; border:none; font-size:20px; padding:0; cursor:pointer; opacity:0.7;';
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+    btn.addEventListener('click', () => {
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.textContent = show ? '🙈' : '👁';
+    });
+    wrap.appendChild(btn);
+  }
+  ['regPassword', 'regPassword2', 'loginPassword'].forEach(fbAddEye);
 
   // Parol ekrani
   document.getElementById('regPassBack').addEventListener('click', () => goToScreen('screen1'));
@@ -6618,10 +6673,17 @@
   if (fbAuth) {
     fbAuth.onAuthStateChanged(async (user) => {
       if (!user || fbRegistering) return;
+      let hasProfile = true;
       try {
-        await fbLoadProfile(user.uid);
+        hasProfile = await fbLoadProfile(user.uid);
       } catch (e) {
         console.error('Profil yuklanmadi', e);
+      }
+      if (!hasProfile) {
+        // ro'yxatdan o'tish yakunlanmagan
+        const le = document.getElementById('loginErr');
+        if (le) le.textContent = fbT("Bu hisob uchun ro'yxatdan o'tish yakunlanmagan. Ro'yxatdan o'tishni shu nom va parol bilan qaytadan bajaring.", "Регистрация этого аккаунта не завершена. Пройдите регистрацию заново с этим именем и паролем.");
+        return;
       }
       fbStartChatsListener(user.uid);
       const onAuthScreen = ['screen1', 'screenPass', 'screenLogin'].some(id => document.getElementById(id).classList.contains('active'));
