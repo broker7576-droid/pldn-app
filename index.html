@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-auth-v1 (2026-10-02) -->
+<!-- VERSION: firebase-chats-v1 (2026-10-02) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -2612,6 +2612,11 @@
         <span class="settings-label" data-i18n="k137">Yangi kontakt qo'shish</span>
         <span class="settings-arrow">›</span>
       </div>
+      <div class="settings-item" id="findUserBtn">
+        <span class="settings-icon">🔎</span>
+        <span class="settings-label" id="findUserBtnLabel">Username bo'yicha topish</span>
+        <span class="settings-arrow">›</span>
+      </div>
     </div>
 
     <div class="chat-list" id="contactsList">
@@ -2637,6 +2642,27 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- ============ FOYDALANUVCHINI USERNAME BO'YICHA TOPISH ============ -->
+  <div class="screen" id="findUserScreen">
+    <div class="chat-detail-header">
+      <button class="chat-back-btn" id="findUserBack">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+      </button>
+      <div class="chat-detail-info">
+        <div class="chat-detail-name" id="findUserTitle">Foydalanuvchini topish</div>
+      </div>
+    </div>
+    <div class="settings-body" style="padding:16px;">
+      <p class="subtitle" id="findUserSub" style="margin-bottom:12px;">Do'stingizning foydalanuvchi nomini (PLDN/- dan keyingi qismi) kiriting</p>
+      <input type="text" class="name-input" id="findUserInput" placeholder="Foydalanuvchi nomi" maxlength="12" autocomplete="off" autocapitalize="none">
+      <button class="done-btn" id="findUserSearchBtn">Qidirish</button>
+      <p class="subtitle" id="findUserMsg" style="margin-top:14px; min-height:18px;"></p>
+      <div id="findUserResult" style="margin-top:6px;"></div>
+    </div>
   </div>
 
   <!-- ============ 1-QADAM: A'ZOLARNI TANLASH ============ -->
@@ -4294,6 +4320,7 @@
       }
       return;
     }
+    try { fbStartChatsListener(fbAuth.currentUser.uid); } catch (_) {}
     finishNameStepUI(false);
   }
 
@@ -4826,20 +4853,21 @@
     openChatDetail(chat);
   }
 
-  sampleChats.forEach(chat => {
+  function renderChatItem(chat) {
     const item = document.createElement('div');
     item.className = 'chat-item';
     item.dataset.chatName = chat.name.toLowerCase();
     item.dataset.chatMsg = chat.msg.toLowerCase();
+    const avatarStyle = chat.avatar ? ('url(' + chat.avatar + ') center/cover') : chat.color;
     item.innerHTML = `
-      <div class="chat-avatar" style="background:${chat.color}">${initials(chat.name)}</div>
+      <div class="chat-avatar" style="background:${avatarStyle}">${chat.avatar ? '' : fbEsc(initials(chat.name))}</div>
       <div class="chat-info">
         <div class="chat-top-row">
-          <span class="chat-name">${chat.name}</span>
-          <span class="chat-time">${chat.time}</span>
+          <span class="chat-name">${fbEsc(chat.name)}</span>
+          <span class="chat-time">${fbEsc(chat.time)}</span>
         </div>
         <div class="chat-bottom-row">
-          <span class="chat-msg">${chat.msg}</span>
+          <span class="chat-msg">${fbEsc(chat.msg)}</span>
           ${chat.unread > 0 ? `<span class="unread-badge">${chat.unread}</span>` : ''}
         </div>
       </div>
@@ -4848,7 +4876,9 @@
 
     const isLongPress = attachChatItemLongPress(item);
     item.addEventListener('click', () => handleChatItemClick(item, chat, isLongPress));
-  });
+    return item;
+  }
+  // Demo chatlar endi ko'rsatilmaydi: ro'yxat Firestore'dan to'ldiriladi
 
   renderStoriesRow();
 
@@ -4880,6 +4910,8 @@
   const reactionPicker = document.getElementById('reactionPicker');
 
   function openChatDetail(chat) {
+    if (chat && chat.real) { fbOpenChat(chat, false); return; }
+    fbLeaveChat();
     document.getElementById('chatDetailName').textContent = chat.name;
     document.getElementById('chatDetailAvatar').textContent = initials(chat.name);
     document.getElementById('chatDetailAvatar').style.background = chat.color;
@@ -4894,6 +4926,7 @@
   }
 
   function openChatDetailEmpty(chat) {
+    fbLeaveChat();
     document.getElementById('chatDetailName').textContent = chat.name;
     document.getElementById('chatDetailAvatar').textContent = initials(chat.name);
     document.getElementById('chatDetailAvatar').style.background = chat.color;
@@ -5397,7 +5430,7 @@
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      addImageBubble(event.target.result, 'outgoing');
+      if (!fbBlockMedia()) addImageBubble(event.target.result, 'outgoing');
     };
     reader.readAsDataURL(file);
 
@@ -5415,6 +5448,12 @@
     const text = messageInput.value.trim();
     if (text.length === 0) return;
 
+    if (fbCurrentChat) {
+      fbSendText(text);
+      resetMessageInput();
+      return;
+    }
+
     if (editingBubble) {
       editingBubble.textContent = text;
       resetMessageInput();
@@ -5427,6 +5466,7 @@
 
   // ===== XABAR USTIDAGI MENYU (Tahrirlash / O'chirish) =====
   function openMsgMenu(bubble) {
+    if (fbCurrentChat) return; // haqiqiy chatda tahrirlash/o'chirish hali ulanmagan
     currentMenuBubble = bubble;
     msgEditAction.style.display = (bubble.dataset.kind === 'image' || bubble.dataset.kind === 'voice') ? 'none' : 'block';
     const screenEl = document.getElementById('chatDetailScreen');
@@ -5663,7 +5703,7 @@
         if (!cancelled && duration >= 1 && rec && rec.recordDataBase64) {
           const mime = rec.mimeType || 'audio/aac';
           const dataUrl = 'data:' + mime + ';base64,' + rec.recordDataBase64;
-          addVoiceBubble(dataUrl, duration, 'outgoing');
+          if (!fbBlockMedia()) addVoiceBubble(dataUrl, duration, 'outgoing');
         } else if (cancelled) {
           // bekor qilindi, hech narsa qo'shilmaydi
         } else if (!rec || !rec.recordDataBase64) {
@@ -5686,7 +5726,7 @@
         if (!cancelled && duration >= 1) {
           const blob = new Blob(recordedChunks, { type: 'audio/webm' });
           const url = URL.createObjectURL(blob);
-          addVoiceBubble(url, duration, 'outgoing');
+          if (!fbBlockMedia()) addVoiceBubble(url, duration, 'outgoing');
         }
       };
       finishedRecorder.stop();
@@ -5802,6 +5842,7 @@
   });
 
   chatBackBtn.addEventListener('click', () => {
+    fbLeaveChat();
     goToScreen('screen4');
     setActiveNav('chats');
     resetMessageInput();
@@ -6582,10 +6623,229 @@
       } catch (e) {
         console.error('Profil yuklanmadi', e);
       }
+      fbStartChatsListener(user.uid);
       const onAuthScreen = ['screen1', 'screenPass', 'screenLogin'].some(id => document.getElementById(id).classList.contains('active'));
       if (onAuthScreen) goToScreen('screen4');
     });
   }
+
+  // ===== HAQIQIY CHATLAR (Firestore) =====
+  let fbCurrentChat = null;   // {id, otherUid, name, color, avatar}
+  let fbMsgUnsub = null;
+  let fbChatsUnsub = null;
+  let fbRenderToken = 0;
+  const fbUserCache = {};
+
+  function fbEsc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function fbSafeAvatar(a) {
+    return (typeof a === 'string' && a.length < 200000 && /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(a)) ? a : null;
+  }
+
+  function fbColorFor(uid) {
+    let h = 0;
+    for (const ch of String(uid)) h = (h * 31 + ch.charCodeAt(0)) | 0;
+    return contactColors[Math.abs(h) % contactColors.length];
+  }
+
+  function fbDisplayName(v) {
+    const n = ((v.firstName || '') + ' ' + (v.lastName || '')).trim();
+    return n || ('PLDN/-' + (v.username || ''));
+  }
+
+  async function fbGetUser(uid) {
+    if (fbUserCache[uid]) return fbUserCache[uid];
+    const snap = await fbDb.collection('users').doc(uid).get();
+    const v = snap.exists ? snap.data() : {};
+    const u = { uid: uid, name: fbDisplayName(v), username: v.username || '', avatar: fbSafeAvatar(v.avatar), color: fbColorFor(uid) };
+    fbUserCache[uid] = u;
+    return u;
+  }
+
+  function fbTimeLabel(d) {
+    if (!d) return '';
+    const pad = n => String(n).padStart(2, '0');
+    if (d.toDateString() === new Date().toDateString()) return pad(d.getHours()) + ':' + pad(d.getMinutes());
+    return pad(d.getDate()) + '.' + pad(d.getMonth() + 1);
+  }
+
+  async function fbRenderChats(docs) {
+    const me = fbAuth && fbAuth.currentUser && fbAuth.currentUser.uid;
+    if (!me) return;
+    const token = ++fbRenderToken;
+    const rows = [];
+    for (const d of docs) {
+      const v = d.data({ serverTimestamps: 'estimate' });
+      if (!v.lastText) continue;
+      const other = (v.members || []).find(m => m !== me);
+      if (!other) continue;
+      let u;
+      try { u = await fbGetUser(other); } catch (e) { console.error(e); continue; }
+      const ts = (v.updatedAt && v.updatedAt.toDate) ? v.updatedAt.toDate() : null;
+      rows.push({
+        id: d.id, otherUid: other, name: u.name, color: u.color, avatar: u.avatar,
+        msg: (v.lastFrom === me ? fbT('Siz: ', 'Вы: ') : '') + v.lastText,
+        time: fbTimeLabel(ts), ms: ts ? ts.getTime() : 0, unread: 0, real: true
+      });
+    }
+    if (token !== fbRenderToken) return;
+    rows.sort((a, b) => b.ms - a.ms);
+    chatListEl.innerHTML = '';
+    rows.forEach(r => renderChatItem(r));
+  }
+
+  function fbStartChatsListener(uid) {
+    if (!fbDb) return;
+    if (fbChatsUnsub) fbChatsUnsub();
+    fbChatsUnsub = fbDb.collection('chats').where('members', 'array-contains', uid)
+      .onSnapshot(snap => { fbRenderChats(snap.docs); },
+                  err => console.error('Chatlar ro\'yxati xatosi', err));
+  }
+
+  function fbLeaveChat() {
+    if (fbMsgUnsub) { fbMsgUnsub(); fbMsgUnsub = null; }
+    fbCurrentChat = null;
+  }
+
+  function fbChatId(a, b) { return [a, b].sort().join('_'); }
+
+  async function fbOpenChat(info, ensure) {
+    const me = fbAuth && fbAuth.currentUser;
+    if (!me) return;
+    fbLeaveChat();
+    const chatId = info.id || fbChatId(me.uid, info.otherUid);
+    const myChat = { id: chatId, otherUid: info.otherUid, name: info.name, color: info.color, avatar: info.avatar || null };
+    fbCurrentChat = myChat;
+
+    document.getElementById('chatDetailName').textContent = info.name;
+    const av = document.getElementById('chatDetailAvatar');
+    if (info.avatar) { av.textContent = ''; av.style.background = 'url(' + info.avatar + ') center/cover'; }
+    else { av.textContent = initials(info.name); av.style.background = info.color; }
+    messagesArea.innerHTML = '';
+    goToScreen('chatDetailScreen');
+    resetMessageInput();
+    closeMsgMenu();
+    closeReactionPicker();
+
+    if (ensure) {
+      try {
+        await fbDb.collection('chats').doc(chatId).set({ members: [me.uid, info.otherUid] }, { merge: true });
+      } catch (e) {
+        console.error(e);
+        alert(fbErrMsg(e));
+        if (fbCurrentChat === myChat) { fbLeaveChat(); goToScreen('screen4'); }
+        return;
+      }
+    }
+    if (fbCurrentChat !== myChat) return; // foydalanuvchi orqaga qaytib ketgan
+
+    fbMsgUnsub = fbDb.collection('chats').doc(chatId).collection('messages').orderBy('createdAt')
+      .onSnapshot(snap => {
+        if (fbCurrentChat !== myChat) return;
+        messagesArea.innerHTML = '';
+        snap.forEach(doc => {
+          const m = doc.data({ serverTimestamps: 'estimate' });
+          if (m.type === 'text' && typeof m.text === 'string') {
+            addBubble(m.text, m.from === me.uid ? 'outgoing' : 'incoming');
+          }
+        });
+        messagesArea.scrollTop = messagesArea.scrollHeight;
+      }, err => console.error('Xabarlar xatosi', err));
+  }
+
+  async function fbSendText(text) {
+    const me = fbAuth && fbAuth.currentUser;
+    const chat = fbCurrentChat;
+    if (!me || !chat) return;
+    const chatRef = fbDb.collection('chats').doc(chat.id);
+    const ts = firebase.firestore.FieldValue.serverTimestamp();
+    const batch = fbDb.batch();
+    batch.set(chatRef.collection('messages').doc(), { from: me.uid, text: text.slice(0, 2000), type: 'text', createdAt: ts });
+    batch.set(chatRef, { members: [me.uid, chat.otherUid], lastText: text.slice(0, 100), lastFrom: me.uid, updatedAt: ts }, { merge: true });
+    try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e)); }
+  }
+
+  function fbBlockMedia() {
+    if (!fbCurrentChat) return false;
+    alert(fbT("Rasm va ovozli xabar yuborish keyingi bosqichda ulanadi.", "Отправка фото и голосовых сообщений будет подключена позже."));
+    return true;
+  }
+
+  // ----- Username bo'yicha topish ekrani -----
+  (() => {
+    const input = document.getElementById('findUserInput');
+    const msgEl = document.getElementById('findUserMsg');
+    const resEl = document.getElementById('findUserResult');
+    const btn = document.getElementById('findUserSearchBtn');
+
+    function applyLang() {
+      const set = (id, uz, ru) => { const el = document.getElementById(id); if (el) el.textContent = fbT(uz, ru); };
+      set('findUserBtnLabel', "Username bo'yicha topish", "Найти по имени пользователя");
+      set('findUserTitle', "Foydalanuvchini topish", "Поиск пользователя");
+      set('findUserSub', "Do'stingizning foydalanuvchi nomini (PLDN/- dan keyingi qismi) kiriting", "Введите имя пользователя друга (часть после PLDN/-)");
+      set('findUserSearchBtn', "Qidirish", "Найти");
+      input.placeholder = fbT("Foydalanuvchi nomi", "Имя пользователя");
+    }
+    applyLang();
+
+    document.getElementById('findUserBtn').addEventListener('click', () => {
+      applyLang();
+      input.value = '';
+      msgEl.textContent = '';
+      resEl.innerHTML = '';
+      goToScreen('findUserScreen');
+    });
+    document.getElementById('findUserBack').addEventListener('click', () => goToScreen('contactsScreen'));
+    input.addEventListener('input', () => { input.value = input.value.toLowerCase().replace(/[^a-z0-9]/g, ''); });
+
+    btn.addEventListener('click', async () => {
+      const u = input.value.trim();
+      resEl.innerHTML = '';
+      if (u.length < 4) { msgEl.textContent = fbT("Kamida 4 ta belgi kiriting", "Введите минимум 4 символа"); return; }
+      const me = fbAuth && fbAuth.currentUser;
+      if (!me) { msgEl.textContent = fbT("Avval hisobga kiring", "Сначала войдите в аккаунт"); return; }
+      msgEl.textContent = fbT("Qidirilmoqda...", "Поиск...");
+      btn.disabled = true;
+      try {
+        const snap = await fbDb.collection('users').where('username', '==', u).limit(1).get();
+        if (snap.empty) { msgEl.textContent = fbT("Bunday foydalanuvchi topilmadi", "Пользователь не найден"); return; }
+        const doc = snap.docs[0];
+        if (doc.id === me.uid) { msgEl.textContent = fbT("Bu sizning hisobingiz", "Это ваш аккаунт"); return; }
+        const v = doc.data();
+        const user = { otherUid: doc.id, name: fbDisplayName(v), color: fbColorFor(doc.id), avatar: fbSafeAvatar(v.avatar) };
+        msgEl.textContent = '';
+
+        const item = document.createElement('div');
+        item.className = 'chat-item';
+        const av = document.createElement('div');
+        av.className = 'chat-avatar';
+        if (user.avatar) { av.style.background = 'url(' + user.avatar + ') center/cover'; }
+        else { av.style.background = user.color; av.textContent = initials(user.name); }
+        const info = document.createElement('div');
+        info.className = 'chat-info';
+        info.style.cssText = 'display:flex; flex-direction:column; justify-content:center;';
+        const nm = document.createElement('span');
+        nm.className = 'chat-name';
+        nm.textContent = user.name;
+        const un = document.createElement('span');
+        un.className = 'chat-msg';
+        un.textContent = 'PLDN/-' + (v.username || '');
+        info.appendChild(nm);
+        info.appendChild(un);
+        item.appendChild(av);
+        item.appendChild(info);
+        item.addEventListener('click', () => fbOpenChat(user, true));
+        resEl.appendChild(item);
+      } catch (e) {
+        console.error(e);
+        msgEl.textContent = fbErrMsg(e);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  })();
 
   // ===== KLAVIATURA OCHILGANDA EKRANNI MOSLASHTIRISH =====
   // Klaviatura chiqqanda .phone-frame balandligini ko'rinadigan joyga moslaydi,
