@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-msg-time-v1 (2026-10-05) -->
+<!-- VERSION: firebase-image-viewer-v1 (2026-10-06) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -1292,6 +1292,68 @@
 
   .message-bubble.image-bubble {
     padding: 4px;
+    cursor: pointer;
+  }
+
+  /* ===== RASM KO'RISH (to'liq ekran) ===== */
+  #imageViewer {
+    position: absolute;
+    inset: 0;
+    z-index: 99990;
+    background: #000;
+    display: none;
+    flex-direction: column;
+  }
+  #imageViewer.open { display: flex; }
+  #imageViewer .iv-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.6);
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 2;
+  }
+  #imageViewer .iv-btn {
+    width: 40px; height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    font-size: 20px;
+    cursor: pointer;
+  }
+  #imageViewer .iv-scroll {
+    flex: 1;
+    overflow: auto;
+    display: flex;
+    -webkit-overflow-scrolling: touch;
+  }
+  #imageViewer img {
+    margin: auto;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    user-select: none;
+  }
+  #imageViewer.zoomed img {
+    max-width: none;
+    max-height: none;
+    width: 250%;
+  }
+
+  .message-bubble.image-bubble .msg-time {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    float: none;
+    margin: 0;
+    padding: 3px 7px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    opacity: 1;
   }
 
   .message-bubble.image-bubble img {
@@ -5438,7 +5500,16 @@
           longPressTriggered = false;
           return;
         }
+        if (bubble.dataset.kind === 'image') { openImageViewer(bubble); return; }
         openMsgMenu(bubble);
+      });
+    } else {
+      bubble.addEventListener('click', (e) => {
+        if (longPressTriggered) {
+          longPressTriggered = false;
+          return;
+        }
+        if (bubble.dataset.kind === 'image') { e.stopPropagation(); openImageViewer(bubble); }
       });
     }
   }
@@ -5474,7 +5545,60 @@
     return bubble;
   }
 
-  function addImageBubble(dataUrl, type) {
+  // ===== RASM KO'RISH OYNASI =====
+  let viewerBubble = null;
+  function ensureImageViewer() {
+    let v = document.getElementById('imageViewer');
+    if (v) return v;
+    v = document.createElement('div');
+    v.id = 'imageViewer';
+    v.innerHTML = '<div class="iv-bar"><button class="iv-btn" id="ivClose" aria-label="close">✕</button>' +
+      '<button class="iv-btn" id="ivDelete" aria-label="delete">🗑️</button></div>' +
+      '<div class="iv-scroll"><img id="ivImg" alt="rasm"></div>';
+    document.querySelector('.phone-frame').appendChild(v);
+    document.getElementById('ivClose').addEventListener('click', closeImageViewer);
+    // ikki marta bosish — kattalashtirish / kichraytirish
+    let lastTap = 0;
+    document.getElementById('ivImg').addEventListener('click', () => {
+      const now = Date.now();
+      if (now - lastTap < 320) { v.classList.toggle('zoomed'); lastTap = 0; }
+      else lastTap = now;
+    });
+    document.getElementById('ivDelete').addEventListener('click', () => {
+      const b = viewerBubble;
+      if (!b) return;
+      if (fbCurrentChat && b.dataset.msgId) {
+        if (confirm(fbT("Rasm ikkala tomondan ham o'chiriladi. Davom etasizmi?", "Фото удалится у обоих. Продолжить?"))) {
+          const id = b.dataset.msgId;
+          closeImageViewer();
+          fbDeleteMessage(id);
+        }
+      } else {
+        b.remove();
+        closeImageViewer();
+      }
+    });
+    return v;
+  }
+
+  function openImageViewer(bubble) {
+    const img = bubble.querySelector('img');
+    if (!img) return;
+    const v = ensureImageViewer();
+    viewerBubble = bubble;
+    v.classList.remove('zoomed');
+    document.getElementById('ivImg').src = img.src;
+    document.getElementById('ivDelete').style.display = bubble.classList.contains('outgoing') ? 'block' : 'none';
+    v.classList.add('open');
+  }
+
+  function closeImageViewer() {
+    const v = document.getElementById('imageViewer');
+    if (v) v.classList.remove('open', 'zoomed');
+    viewerBubble = null;
+  }
+
+  function addImageBubble(dataUrl, type, date) {
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble image-bubble ' + type;
     bubble.dataset.kind = 'image';
@@ -5482,6 +5606,12 @@
     img.src = dataUrl;
     img.alt = 'rasm';
     bubble.appendChild(img);
+    if (date) {
+      const tm = document.createElement('span');
+      tm.className = 'msg-time';
+      tm.textContent = bubbleClock(date);
+      bubble.appendChild(tm);
+    }
     messagesArea.appendChild(bubble);
     messagesArea.scrollTop = messagesArea.scrollHeight;
 
@@ -5501,9 +5631,15 @@
     const file = e.target.files[0];
     if (!file) return;
 
+    if (fbCurrentChat) {
+      fbSendImageFile(file);
+      chatImageInput.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
-      if (!fbBlockMedia()) addImageBubble(event.target.result, 'outgoing');
+      addImageBubble(event.target.result, 'outgoing', new Date());
     };
     reader.readAsDataURL(file);
 
@@ -6931,7 +7067,9 @@
         let lastDayKey = '';
         snap.forEach(doc => {
           const m = doc.data({ serverTimestamps: 'estimate' });
-          if (m.type === 'text' && typeof m.text === 'string') {
+          const isText = m.type === 'text' && typeof m.text === 'string';
+          const isImage = m.type === 'image' && typeof m.image === 'string' && m.image.indexOf('data:image/') === 0;
+          if (isText || isImage) {
             const md = (m.createdAt && m.createdAt.toDate) ? m.createdAt.toDate() : new Date();
             const dayKey = md.toDateString();
             if (dayKey !== lastDayKey) {
@@ -6941,7 +7079,8 @@
               sep.textContent = fbDateLabel(md);
               messagesArea.appendChild(sep);
             }
-            const b = addBubble(m.text, m.from === me.uid ? 'outgoing' : 'incoming', md, !!m.editedAt);
+            const dir = m.from === me.uid ? 'outgoing' : 'incoming';
+            const b = isText ? addBubble(m.text, dir, md, !!m.editedAt) : addImageBubble(m.image, dir, md);
             b.dataset.msgId = doc.id;
           }
         });
@@ -6969,7 +7108,7 @@
       await chatRef.set({ lastText: '' }, { merge: true });
     } else {
       const m = snap.docs[0].data();
-      await chatRef.set({ lastText: String(m.text || '').slice(0, 100), lastFrom: m.from }, { merge: true });
+      await chatRef.set({ lastText: (m.type === 'image' ? fbT('📷 Rasm', '📷 Фото') : String(m.text || '')).slice(0, 100), lastFrom: m.from }, { merge: true });
     }
   }
 
@@ -6996,8 +7135,59 @@
 
   function fbBlockMedia() {
     if (!fbCurrentChat) return false;
-    alert(fbT("Rasm va ovozli xabar yuborish keyingi bosqichda ulanadi.", "Отправка фото и голосовых сообщений будет подключена позже."));
+    alert(fbT("Ovozli xabar yuborish keyingi bosqichda ulanadi.", "Отправка голосовых сообщений будет подключена позже."));
     return true;
+  }
+
+  // Rasmni kichraytirib JPEG data-URL qilish (Firestore hujjati 1 MB dan oshmasligi uchun)
+  function fbCompressImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let maxDim = 1000, q = 0.72, out = '';
+          for (let i = 0; i < 6; i++) {
+            const k = Math.min(1, maxDim / Math.max(img.width, img.height));
+            const w = Math.max(1, Math.round(img.width * k));
+            const h = Math.max(1, Math.round(img.height * k));
+            const cv = document.createElement('canvas');
+            cv.width = w; cv.height = h;
+            const ctx = cv.getContext('2d');
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+            out = cv.toDataURL('image/jpeg', q);
+            if (out.length <= 700000) break;
+            maxDim = Math.round(maxDim * 0.75);
+            q = Math.max(0.5, q - 0.08);
+          }
+          URL.revokeObjectURL(url);
+          if (out.length > 900000) reject(new Error('too-big')); else resolve(out);
+        } catch (e) { URL.revokeObjectURL(url); reject(e); }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad-image')); };
+      img.src = url;
+    });
+  }
+
+  async function fbSendImageFile(file) {
+    const me = fbAuth && fbAuth.currentUser;
+    const chat = fbCurrentChat;
+    if (!me || !chat) return;
+    let dataUrl;
+    try { dataUrl = await fbCompressImage(file); }
+    catch (e) {
+      console.error(e);
+      alert(fbT("Rasmni o'qib bo'lmadi. Boshqa rasm tanlang.", "Не удалось обработать фото. Выберите другое."));
+      return;
+    }
+    const chatRef = fbDb.collection('chats').doc(chat.id);
+    const ts = firebase.firestore.FieldValue.serverTimestamp();
+    const batch = fbDb.batch();
+    batch.set(chatRef.collection('messages').doc(), { from: me.uid, type: 'image', image: dataUrl, createdAt: ts });
+    batch.set(chatRef, { members: [me.uid, chat.otherUid], lastText: fbT('📷 Rasm', '📷 Фото'), lastFrom: me.uid, updatedAt: ts, unread: { [chat.otherUid]: firebase.firestore.FieldValue.increment(1) } }, { merge: true });
+    try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e)); }
   }
 
   // ----- Username bo'yicha topish ekrani -----
