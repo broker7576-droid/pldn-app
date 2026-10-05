@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-msg-edit-delete-v1 (2026-10-05) -->
+<!-- VERSION: firebase-date-unread-v1 (2026-10-05) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -1256,6 +1256,17 @@
     flex-direction: column;
     gap: 8px;
     background: var(--bg-chat);
+  }
+
+  .date-sep {
+    align-self: center;
+    background: rgba(0, 0, 0, 0.3);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 4px 12px;
+    border-radius: 14px;
+    margin: 6px 0;
   }
 
   .message-bubble {
@@ -6789,6 +6800,24 @@
     return pad(d.getDate()) + '.' + pad(d.getMonth() + 1);
   }
 
+  // Sana ajratgichi: "4-oktabr" / "4 октября" (boshqa yil bo'lsa yili ham)
+  function fbDateLabel(d) {
+    const uz = ['yanvar','fevral','mart','aprel','may','iyun','iyul','avgust','sentabr','oktabr','noyabr','dekabr'];
+    const ru = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+    const yr = d.getFullYear() !== new Date().getFullYear() ? ' ' + d.getFullYear() : '';
+    if (currentLang === 'ru') return d.getDate() + ' ' + ru[d.getMonth()] + yr;
+    return d.getDate() + '-' + uz[d.getMonth()] + yr;
+  }
+
+  // Chatni o'qilgan deb belgilash (o'qilmagan sonini nolga tushirish)
+  async function fbMarkRead(chatId) {
+    const me = fbAuth && fbAuth.currentUser;
+    if (!me || !fbDb) return;
+    try {
+      await fbDb.collection('chats').doc(chatId).set({ unread: { [me.uid]: 0 } }, { merge: true });
+    } catch (e) { console.error('fbMarkRead', e); }
+  }
+
   async function fbRenderChats(docs) {
     const me = fbAuth && fbAuth.currentUser && fbAuth.currentUser.uid;
     if (!me) return;
@@ -6802,10 +6831,15 @@
       let u;
       try { u = await fbGetUser(other); } catch (e) { console.error(e); continue; }
       const ts = (v.updatedAt && v.updatedAt.toDate) ? v.updatedAt.toDate() : null;
+      let unread = (v.unread && Number(v.unread[me])) || 0;
+      if (unread > 0 && fbCurrentChat && fbCurrentChat.id === d.id) {
+        fbMarkRead(d.id); // chat ochiq turibdi — o'qilgan hisoblanadi
+        unread = 0;
+      }
       rows.push({
         id: d.id, otherUid: other, name: u.name, color: u.color, avatar: u.avatar,
         msg: (v.lastFrom === me ? fbT('Siz: ', 'Вы: ') : '') + v.lastText,
-        time: fbTimeLabel(ts), ms: ts ? ts.getTime() : 0, unread: 0, real: true
+        time: fbTimeLabel(ts), ms: ts ? ts.getTime() : 0, unread: unread, real: true
       });
     }
     if (token !== fbRenderToken) return;
@@ -6858,14 +6892,25 @@
       }
     }
     if (fbCurrentChat !== myChat) return; // foydalanuvchi orqaga qaytib ketgan
+    fbMarkRead(chatId);
 
     fbMsgUnsub = fbDb.collection('chats').doc(chatId).collection('messages').orderBy('createdAt')
       .onSnapshot(snap => {
         if (fbCurrentChat !== myChat) return;
         messagesArea.innerHTML = '';
+        let lastDayKey = '';
         snap.forEach(doc => {
           const m = doc.data({ serverTimestamps: 'estimate' });
           if (m.type === 'text' && typeof m.text === 'string') {
+            const md = (m.createdAt && m.createdAt.toDate) ? m.createdAt.toDate() : new Date();
+            const dayKey = md.toDateString();
+            if (dayKey !== lastDayKey) {
+              lastDayKey = dayKey;
+              const sep = document.createElement('div');
+              sep.className = 'date-sep';
+              sep.textContent = fbDateLabel(md);
+              messagesArea.appendChild(sep);
+            }
             const b = addBubble(m.text, m.from === me.uid ? 'outgoing' : 'incoming');
             b.dataset.msgId = doc.id;
           }
@@ -6882,7 +6927,7 @@
     const ts = firebase.firestore.FieldValue.serverTimestamp();
     const batch = fbDb.batch();
     batch.set(chatRef.collection('messages').doc(), { from: me.uid, text: text.slice(0, 2000), type: 'text', createdAt: ts });
-    batch.set(chatRef, { members: [me.uid, chat.otherUid], lastText: text.slice(0, 100), lastFrom: me.uid, updatedAt: ts }, { merge: true });
+    batch.set(chatRef, { members: [me.uid, chat.otherUid], lastText: text.slice(0, 100), lastFrom: me.uid, updatedAt: ts, unread: { [chat.otherUid]: firebase.firestore.FieldValue.increment(1) } }, { merge: true });
     try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e)); }
   }
 
