@@ -1,4 +1,4 @@
-<!-- VERSION: splash-logo-v2 (2026-10-05) -->
+<!-- VERSION: firebase-msg-edit-delete-v1 (2026-10-05) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -5481,7 +5481,11 @@
     if (text.length === 0) return;
 
     if (fbCurrentChat) {
-      fbSendText(text);
+      if (editingBubble && editingBubble.dataset.msgId) {
+        fbEditText(editingBubble.dataset.msgId, text);
+      } else {
+        fbSendText(text);
+      }
       resetMessageInput();
       return;
     }
@@ -5498,7 +5502,6 @@
 
   // ===== XABAR USTIDAGI MENYU (Tahrirlash / O'chirish) =====
   function openMsgMenu(bubble) {
-    if (fbCurrentChat) return; // haqiqiy chatda tahrirlash/o'chirish hali ulanmagan
     currentMenuBubble = bubble;
     msgEditAction.style.display = (bubble.dataset.kind === 'image' || bubble.dataset.kind === 'voice') ? 'none' : 'block';
     const screenEl = document.getElementById('chatDetailScreen');
@@ -5536,6 +5539,15 @@
   });
 
   msgDeleteAction.addEventListener('click', () => {
+    if (fbCurrentChat && currentMenuBubble && currentMenuBubble.dataset.msgId) {
+      const id = currentMenuBubble.dataset.msgId;
+      if (editingBubble === currentMenuBubble) resetMessageInput();
+      closeMsgMenu();
+      if (confirm(fbT("Xabar ikkala tomondan ham o'chiriladi. Davom etasizmi?", "Сообщение удалится у обоих. Продолжить?"))) {
+        fbDeleteMessage(id);
+      }
+      return;
+    }
     if (currentMenuBubble) {
       if (editingBubble === currentMenuBubble) {
         resetMessageInput();
@@ -6854,7 +6866,8 @@
         snap.forEach(doc => {
           const m = doc.data({ serverTimestamps: 'estimate' });
           if (m.type === 'text' && typeof m.text === 'string') {
-            addBubble(m.text, m.from === me.uid ? 'outgoing' : 'incoming');
+            const b = addBubble(m.text, m.from === me.uid ? 'outgoing' : 'incoming');
+            b.dataset.msgId = doc.id;
           }
         });
         messagesArea.scrollTop = messagesArea.scrollHeight;
@@ -6871,6 +6884,39 @@
     batch.set(chatRef.collection('messages').doc(), { from: me.uid, text: text.slice(0, 2000), type: 'text', createdAt: ts });
     batch.set(chatRef, { members: [me.uid, chat.otherUid], lastText: text.slice(0, 100), lastFrom: me.uid, updatedAt: ts }, { merge: true });
     try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e)); }
+  }
+
+  // Chat ro'yxatidagi oxirgi xabarni (lastText) haqiqiy oxirgi xabarga moslash
+  async function fbRefreshLastText(chatId) {
+    const chatRef = fbDb.collection('chats').doc(chatId);
+    const snap = await chatRef.collection('messages').orderBy('createdAt', 'desc').limit(1).get();
+    if (snap.empty) {
+      await chatRef.set({ lastText: '' }, { merge: true });
+    } else {
+      const m = snap.docs[0].data();
+      await chatRef.set({ lastText: String(m.text || '').slice(0, 100), lastFrom: m.from }, { merge: true });
+    }
+  }
+
+  async function fbEditText(msgId, text) {
+    const me = fbAuth && fbAuth.currentUser;
+    const chat = fbCurrentChat;
+    if (!me || !chat) return;
+    try {
+      await fbDb.collection('chats').doc(chat.id).collection('messages').doc(msgId)
+        .update({ text: text.slice(0, 2000), editedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      await fbRefreshLastText(chat.id);
+    } catch (e) { console.error(e); alert(fbErrMsg(e)); }
+  }
+
+  async function fbDeleteMessage(msgId) {
+    const me = fbAuth && fbAuth.currentUser;
+    const chat = fbCurrentChat;
+    if (!me || !chat) return;
+    try {
+      await fbDb.collection('chats').doc(chat.id).collection('messages').doc(msgId).delete();
+      await fbRefreshLastText(chat.id);
+    } catch (e) { console.error(e); alert(fbErrMsg(e)); }
   }
 
   function fbBlockMedia() {
