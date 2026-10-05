@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-date-unread-v1 (2026-10-05) -->
+<!-- VERSION: firebase-msg-time-v1 (2026-10-05) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -1277,6 +1277,17 @@
     font-size: 14.5px;
     line-height: 1.4;
     word-wrap: break-word;
+  }
+
+  .message-bubble:not(.image-bubble) { display: flow-root; }
+
+  .msg-time {
+    float: right;
+    font-size: 11px;
+    line-height: 1;
+    margin: 7px 0 -3px 10px;
+    opacity: 0.7;
+    user-select: none;
   }
 
   .message-bubble.image-bubble {
@@ -5432,11 +5443,30 @@
     }
   }
 
-  function addBubble(text, type) {
+  function bubbleClock(d) {
+    const pad = n => String(n).padStart(2, '0');
+    return pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function setBubbleText(bubble, text) {
+    bubble.dataset.text = text;
+    const tx = bubble.querySelector('.msg-text');
+    if (tx) tx.textContent = text; else bubble.textContent = text;
+  }
+
+  function addBubble(text, type, date, edited) {
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble ' + type;
     bubble.dataset.kind = 'text';
-    bubble.textContent = text;
+    bubble.dataset.text = text;
+    const tx = document.createElement('span');
+    tx.className = 'msg-text';
+    tx.textContent = text;
+    const tm = document.createElement('span');
+    tm.className = 'msg-time';
+    tm.textContent = (edited ? (currentLang === 'ru' ? 'изменено ' : 'tahrirlangan ') : '') + bubbleClock(date || new Date());
+    bubble.appendChild(tx);
+    bubble.appendChild(tm);
     messagesArea.appendChild(bubble);
     messagesArea.scrollTop = messagesArea.scrollHeight;
 
@@ -5502,7 +5532,7 @@
     }
 
     if (editingBubble) {
-      editingBubble.textContent = text;
+      setBubbleText(editingBubble, text);
       resetMessageInput();
     } else {
       addBubble(text, 'outgoing');
@@ -5541,7 +5571,7 @@
 
   msgEditAction.addEventListener('click', () => {
     if (currentMenuBubble && currentMenuBubble.dataset.kind !== 'image') {
-      messageInput.value = currentMenuBubble.textContent;
+      messageInput.value = (currentMenuBubble.dataset.text !== undefined) ? currentMenuBubble.dataset.text : currentMenuBubble.textContent;
       editingBubble = currentMenuBubble;
       messageInput.placeholder = t('k51');
       messageInput.focus();
@@ -6911,7 +6941,7 @@
               sep.textContent = fbDateLabel(md);
               messagesArea.appendChild(sep);
             }
-            const b = addBubble(m.text, m.from === me.uid ? 'outgoing' : 'incoming');
+            const b = addBubble(m.text, m.from === me.uid ? 'outgoing' : 'incoming', md, !!m.editedAt);
             b.dataset.msgId = doc.id;
           }
         });
