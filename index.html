@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-image-v2-debug (2026-10-06) -->
+<!-- VERSION: firebase-image-native-v3 (2026-10-06) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -5623,8 +5623,30 @@
   const attachImageBtn = document.getElementById('attachImageBtn');
   const chatImageInput = document.getElementById('chatImageInput');
 
-  attachImageBtn.addEventListener('click', () => {
-    chatImageInput.click();
+  // Rasm tanlash: avval native @capacitor/camera (galereya), bo'lmasa oddiy <input type=file>
+  attachImageBtn.addEventListener('click', async () => {
+    const Cam = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Camera;
+    if (!Cam) { chatImageInput.click(); return; }
+    try {
+      const r = await Cam.getPhoto({
+        source: 'PHOTOS',
+        resultType: 'dataUrl',
+        quality: 85,
+        width: 1600,
+        correctOrientation: true
+      });
+      if (!r || !r.dataUrl) return;
+      if (fbCurrentChat) {
+        fbSendImageFile(r.dataUrl).catch(err => alert('Rasm yuborishda xato: ' + ((err && err.message) || err)));
+      } else {
+        addImageBubble(r.dataUrl, 'outgoing', new Date());
+      }
+    } catch (e) {
+      const msg = String((e && (e.message || e.errorMessage)) || e);
+      if (/cancel/i.test(msg)) return; // foydalanuvchi o'zi yopdi
+      alert('Galereya ochilmadi: ' + msg + '\nOddiy usul sinab ko\'riladi.');
+      chatImageInput.click();
+    }
   });
 
   chatImageInput.addEventListener('change', (e) => {
@@ -7140,12 +7162,9 @@
   }
 
   // Rasmni kichraytirib JPEG data-URL qilish (Firestore hujjati 1 MB dan oshmasligi uchun)
-  function fbCompressImage(file) {
+  // data-URL ni kichraytirib JPEG data-URL qilish
+  function fbCompressDataUrl(url) {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error('reader: ' + ((reader.error && reader.error.message) || 'o\'qib bo\'lmadi')));
-      reader.onload = () => {
-      const url = reader.result;
       const img = new Image();
       img.onload = () => {
         try {
@@ -7165,24 +7184,33 @@
             maxDim = Math.round(maxDim * 0.75);
             q = Math.max(0.5, q - 0.08);
           }
-          if (!out || out.length < 100) reject(new Error('canvas bo\'sh qaytdi'));
+          if (!out || out.length < 100) reject(new Error("canvas bo'sh qaytdi"));
           else if (out.length > 900000) reject(new Error('rasm juda katta'));
           else resolve(out);
         } catch (e) { reject(e); }
       };
-      img.onerror = () => reject(new Error('rasm formati qo\'llab-quvvatlanmaydi'));
+      img.onerror = () => reject(new Error("rasm formati qo'llab-quvvatlanmaydi"));
       img.src = url;
-      };
+    });
+  }
+
+  // File obyektini o'qib kichraytirish (brauzer <input type=file> yo'li)
+  function fbCompressImage(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('reader: ' + ((reader.error && reader.error.message) || "o'qib bo'lmadi")));
+      reader.onload = () => fbCompressDataUrl(reader.result).then(resolve, reject);
       reader.readAsDataURL(file);
     });
   }
 
-  async function fbSendImageFile(file) {
+  // src: File yoki data-URL (string)
+  async function fbSendImageFile(src) {
     const me = fbAuth && fbAuth.currentUser;
     const chat = fbCurrentChat;
     if (!me || !chat) return;
     let dataUrl;
-    try { dataUrl = await fbCompressImage(file); }
+    try { dataUrl = (typeof src === 'string') ? await fbCompressDataUrl(src) : await fbCompressImage(src); }
     catch (e) {
       console.error(e);
       alert(fbT("Rasmni o'qib bo'lmadi. Boshqa rasm tanlang.", "Не удалось обработать фото. Выберите другое.") + '\n[' + ((e && e.message) || e) + ']');
