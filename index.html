@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-reactions-v1 (2026-10-06) -->
+<!-- VERSION: firebase-voice-v2 (2026-10-06) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -1659,6 +1659,13 @@
   .voice-duration {
     font-size: 12px;
     opacity: 0.85;
+    flex-shrink: 0;
+  }
+
+  .message-bubble.voice-bubble .msg-time {
+    float: none;
+    margin: 0 0 0 4px;
+    align-self: flex-end;
     flex-shrink: 0;
   }
 
@@ -5957,6 +5964,7 @@
       const m = Math.floor(recordSeconds / 60);
       const s = recordSeconds % 60;
       voiceRecTimer.textContent = m + ':' + String(s).padStart(2, '0');
+      if (recordSeconds >= 45) finishVoiceRecording(); // hajm chegarasi: 45 soniyada o'zi yuboriladi
     }, 1000);
 
     recordedChunks = [];
@@ -6033,7 +6041,7 @@
         if (!cancelled && duration >= 1 && rec && rec.recordDataBase64) {
           const mime = rec.mimeType || 'audio/aac';
           const dataUrl = 'data:' + mime + ';base64,' + rec.recordDataBase64;
-          if (!fbBlockMedia()) addVoiceBubble(dataUrl, duration, 'outgoing');
+          sendVoiceMessage(dataUrl, duration);
         } else if (cancelled) {
           // bekor qilindi, hech narsa qo'shilmaydi
         } else if (!rec || !rec.recordDataBase64) {
@@ -6055,8 +6063,13 @@
         }
         if (!cancelled && duration >= 1) {
           const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-          const url = URL.createObjectURL(blob);
-          if (!fbBlockMedia()) addVoiceBubble(url, duration, 'outgoing');
+          if (fbCurrentChat) {
+            const rd = new FileReader();
+            rd.onload = () => sendVoiceMessage(rd.result, duration);
+            rd.readAsDataURL(blob);
+          } else {
+            addVoiceBubble(URL.createObjectURL(blob), duration, 'outgoing', new Date());
+          }
         }
       };
       finishedRecorder.stop();
@@ -6072,7 +6085,16 @@
     }
   }
 
-  function addVoiceBubble(url, duration, type) {
+  // Ovozli xabarni yuborish: haqiqiy chatda Firestore'ga, aks holda faqat ekranga
+  function sendVoiceMessage(dataUrl, duration) {
+    if (fbCurrentChat) {
+      fbSendVoice(dataUrl, duration).catch(err => alert('Ovozli xabar yuborishda xato: ' + ((err && err.message) || err)));
+    } else {
+      addVoiceBubble(dataUrl, duration, 'outgoing', new Date());
+    }
+  }
+
+  function addVoiceBubble(url, duration, type, date) {
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble voice-bubble ' + type;
     bubble.dataset.kind = 'voice';
@@ -6095,8 +6117,15 @@
     bubble.appendChild(playBtn);
     bubble.appendChild(waveEl);
     bubble.appendChild(durEl);
+    if (date) {
+      const tm = document.createElement('span');
+      tm.className = 'msg-time';
+      tm.textContent = bubbleClock(date);
+      bubble.appendChild(tm);
+    }
 
     let audioEl = url ? new Audio(url) : null;
+    bubble._audio = audioEl;
     let playing = false;
     let demoInterval = null;
 
@@ -7131,8 +7160,13 @@
                   err => console.error('Chatlar ro\'yxati xatosi', err));
   }
 
+  // Ovozli xabar pufakchalari keshi: chat yangilanganda ijro to'xtab qolmasligi uchun
+  const fbVoiceCache = new Map();
+
   function fbLeaveChat() {
     if (fbMsgUnsub) { fbMsgUnsub(); fbMsgUnsub = null; }
+    fbVoiceCache.forEach(b => { if (b._audio) b._audio.pause(); });
+    fbVoiceCache.clear();
     fbCurrentChat = null;
   }
 
@@ -7178,7 +7212,8 @@
           const m = doc.data({ serverTimestamps: 'estimate' });
           const isText = m.type === 'text' && typeof m.text === 'string';
           const isImage = m.type === 'image' && typeof m.image === 'string' && m.image.indexOf('data:image/') === 0;
-          if (isText || isImage) {
+          const isVoice = m.type === 'voice' && typeof m.audio === 'string' && m.audio.indexOf('data:audio/') === 0;
+          if (isText || isImage || isVoice) {
             const md = (m.createdAt && m.createdAt.toDate) ? m.createdAt.toDate() : new Date();
             const dayKey = md.toDateString();
             if (dayKey !== lastDayKey) {
@@ -7189,10 +7224,29 @@
               messagesArea.appendChild(sep);
             }
             const dir = m.from === me.uid ? 'outgoing' : 'incoming';
-            const b = isText ? addBubble(m.text, dir, md, !!m.editedAt) : addImageBubble(m.image, dir, md);
+            let b;
+            if (isVoice) {
+              b = fbVoiceCache.get(doc.id);
+              if (b && b._src === m.audio) {
+                messagesArea.appendChild(b); // eski pufakchani qaytarib qo'yamiz — ijro davom etadi
+              } else {
+                if (b && b._audio) b._audio.pause();
+                b = addVoiceBubble(m.audio, Math.max(0, Math.round(Number(m.duration) || 0)), dir, md);
+                b._src = m.audio;
+                fbVoiceCache.set(doc.id, b);
+              }
+            } else {
+              b = isText ? addBubble(m.text, dir, md, !!m.editedAt) : addImageBubble(m.image, dir, md);
+            }
             b.dataset.msgId = doc.id;
             fbApplyReactions(b, m.reactions, me.uid);
           }
+        });
+        // o'chirilgan ovozli xabarlarni keshdan olib tashlash
+        const liveIds = new Set();
+        snap.forEach(d => liveIds.add(d.id));
+        fbVoiceCache.forEach((vb, id) => {
+          if (!liveIds.has(id)) { if (vb._audio) vb._audio.pause(); fbVoiceCache.delete(id); }
         });
         messagesArea.scrollTop = messagesArea.scrollHeight;
       }, err => console.error('Xabarlar xatosi', err));
@@ -7250,7 +7304,7 @@
       await chatRef.set({ lastText: '' }, { merge: true });
     } else {
       const m = snap.docs[0].data();
-      await chatRef.set({ lastText: (m.type === 'image' ? fbT('📷 Rasm', '📷 Фото') : String(m.text || '')).slice(0, 100), lastFrom: m.from }, { merge: true });
+      await chatRef.set({ lastText: (m.type === 'image' ? fbT('📷 Rasm', '📷 Фото') : m.type === 'voice' ? fbT('🎤 Ovozli xabar', '🎤 Голосовое') : String(m.text || '')).slice(0, 100), lastFrom: m.from }, { merge: true });
     }
   }
 
@@ -7279,6 +7333,25 @@
     if (!fbCurrentChat) return false;
     alert(fbT("Ovozli xabar yuborish keyingi bosqichda ulanadi.", "Отправка голосовых сообщений будет подключена позже."));
     return true;
+  }
+
+  async function fbSendVoice(dataUrl, duration) {
+    const me = fbAuth && fbAuth.currentUser;
+    const chat = fbCurrentChat;
+    if (!me || !chat) return;
+    if (typeof dataUrl !== 'string' || dataUrl.indexOf('data:audio/') !== 0) {
+      throw new Error("ovoz formati noto'g'ri");
+    }
+    if (dataUrl.length > 1000000) {
+      alert(fbT("Ovozli xabar juda uzun. Qisqaroq yozing (45 soniyagacha).", "Голосовое слишком длинное. Записывайте короче (до 45 секунд)."));
+      return;
+    }
+    const chatRef = fbDb.collection('chats').doc(chat.id);
+    const ts = firebase.firestore.FieldValue.serverTimestamp();
+    const batch = fbDb.batch();
+    batch.set(chatRef.collection('messages').doc(), { from: me.uid, type: 'voice', audio: dataUrl, duration: Math.round(duration) || 0, createdAt: ts });
+    batch.set(chatRef, { members: [me.uid, chat.otherUid], lastText: fbT('🎤 Ovozli xabar', '🎤 Голосовое'), lastFrom: me.uid, updatedAt: ts, unread: { [chat.otherUid]: firebase.firestore.FieldValue.increment(1) } }, { merge: true });
+    try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
   }
 
   // Rasmni kichraytirib JPEG data-URL qilish (Firestore hujjati 1 MB dan oshmasligi uchun)
