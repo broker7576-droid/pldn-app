@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-voice-v2 (2026-10-06) -->
+<!-- VERSION: firebase-voice-v3 (2026-10-06) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -5945,6 +5945,16 @@
   let recordCancelled = false;
   let isRecordingActive = false;
   let usingNativeRecorder = false;
+  let recorderStartPromise = null;
+
+  // Yozish oynasini to'liq tozalash (xato yoki bekor bo'lganda qotib qolmasligi uchun)
+  function resetRecordingUi() {
+    isRecordingActive = false;
+    usingNativeRecorder = false;
+    clearInterval(recordTimerInterval);
+    messageInput.style.display = '';
+    voiceRecordingIndicator.classList.remove('active', 'cancelling');
+  }
 
   async function startVoiceRecording(clientX) {
     if (isRecordingActive || sendMsgBtn.dataset.mode !== 'mic') return;
@@ -5972,26 +5982,34 @@
     // Usul 1: native Capacitor plagini (capacitor-voice-recorder) - Android WebView'da ishonchli ishlaydi
     const VR = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.VoiceRecorder;
     if (VR) {
-      try {
+      recorderStartPromise = (async () => {
         const hasPerm = await VR.hasAudioRecordingPermission();
         if (!hasPerm || hasPerm.value === false) {
           const reqPerm = await VR.requestAudioRecordingPermission();
-          if (!reqPerm || reqPerm.value === false) {
-            isRecordingActive = false;
-            clearInterval(recordTimerInterval);
-            messageInput.style.display = '';
-            voiceRecordingIndicator.classList.remove('active', 'cancelling');
-            alert("Mikrofon uchun ruxsat berilmadi.");
-            return;
-          }
+          if (!reqPerm || reqPerm.value === false) return 'denied';
         }
+        // Oldingi yozuv "osilib" qolgan bo'lsa, uni tozalaymiz
+        try {
+          const st = await VR.getCurrentStatus();
+          if (st && st.status && st.status !== 'NONE') await VR.stopRecording();
+        } catch (e) { /* e'tibor bermaymiz */ }
         await VR.startRecording();
         usingNativeRecorder = true;
-        return;
+        return 'ok';
+      })();
+      try {
+        const res = await recorderStartPromise;
+        if (res === 'denied') {
+          resetRecordingUi();
+          alert("Mikrofon uchun ruxsat berilmadi.");
+        }
       } catch (err) {
-        usingNativeRecorder = false;
         console.warn('[PLDN] Native VoiceRecorder xato:', err);
+        resetRecordingUi();
+        alert("Mikrofonni ochib bo'lmadi: " + ((err && (err.code || err.message)) || JSON.stringify(err)));
       }
+      recorderStartPromise = null;
+      return;
     }
 
     // Usul 2 (fallback): veb getUserMedia/MediaRecorder (Capacitor WebView'da odatda ishlamaydi)
@@ -6032,6 +6050,11 @@
 
     messageInput.style.display = '';
     voiceRecordingIndicator.classList.remove('active', 'cancelling');
+
+    // Barmoq erta qo'yib yuborilgan bo'lsa, mikrofon ochilishini kutamiz
+    if (recorderStartPromise) {
+      try { await recorderStartPromise; } catch (e) { /* xato start funksiyasida ko'rsatilgan */ }
+    }
 
     if (usingNativeRecorder) {
       const VR = window.Capacitor.Plugins.VoiceRecorder;
