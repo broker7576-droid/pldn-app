@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-image-native-v3 (2026-10-06) -->
+<!-- VERSION: firebase-reactions-v1 (2026-10-06) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -1438,13 +1438,50 @@
 
   .reaction-picker.open { display: flex; }
 
+  .reaction-picker {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    width: 292px;
+    max-width: calc(100% - 16px);
+  }
+
+  .reaction-picker .rp-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .reaction-picker .rp-more {
+    font-size: 18px;
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    background: rgba(128, 128, 128, 0.18);
+    color: var(--text-secondary, #8e8e93);
+  }
+
+  .reaction-picker .rp-grid {
+    display: none;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    max-height: 178px;
+    overflow-y: auto;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(128, 128, 128, 0.25);
+  }
+
+  .reaction-picker .rp-grid.show { display: grid; }
+
   .reaction-option {
-    font-size: 20px;
+    font-size: 22px;
     padding: 4px;
     cursor: pointer;
     border-radius: 50%;
     transition: transform 0.15s ease;
     line-height: 1;
+    text-align: center;
   }
 
   .reaction-option:active { transform: scale(1.3); }
@@ -5757,25 +5794,73 @@
   });
 
   // ===== REAKSIYA PANELI =====
-  function openReactionPicker(bubble) {
-    currentReactionBubble = bubble;
+  const REACTION_QUICK = ['👍', '❤️', '😂', '😮', '😭', '🥰'];
+  const REACTION_ALL = ['👍','👎','❤️','❤️‍🔥','🥰','😘','💋','😂','😆','😁','😄','🙂','😊','😎','🤩','🥳','😜','😝','🤪','🤗','🤭','🤫','🫢','🫣','🫡','🫠','🫥','🙃','🙂‍↔️','🤨','😑','🙄','😮','😲','🥱','😤','😔','🥲','🥹','😭','😫','😡','🤬','☠️','👏'];
+
+  function makeReactionOption(emoji) {
+    const o = document.createElement('span');
+    o.className = 'reaction-option';
+    o.dataset.emoji = emoji;
+    o.textContent = emoji;
+    o.addEventListener('click', (e) => {
+      e.stopPropagation();
+      pickReaction(emoji);
+    });
+    return o;
+  }
+
+  let reactionGrid = null, reactionMoreBtn = null;
+  function buildReactionPicker() {
+    reactionPicker.innerHTML = '';
+    const row = document.createElement('div');
+    row.className = 'rp-row';
+    REACTION_QUICK.forEach(e => row.appendChild(makeReactionOption(e)));
+    reactionMoreBtn = document.createElement('span');
+    reactionMoreBtn.className = 'rp-more';
+    reactionMoreBtn.textContent = '+';
+    reactionMoreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const show = !reactionGrid.classList.contains('show');
+      reactionGrid.classList.toggle('show', show);
+      reactionMoreBtn.textContent = show ? '×' : '+';
+      positionReactionPicker();
+    });
+    row.appendChild(reactionMoreBtn);
+    reactionGrid = document.createElement('div');
+    reactionGrid.className = 'rp-grid';
+    REACTION_ALL.forEach(e => reactionGrid.appendChild(makeReactionOption(e)));
+    reactionPicker.appendChild(row);
+    reactionPicker.appendChild(reactionGrid);
+  }
+  buildReactionPicker();
+
+  function positionReactionPicker() {
+    const bubble = currentReactionBubble;
+    if (!bubble) return;
     const screenEl = document.getElementById('chatDetailScreen');
     const screenRect = screenEl.getBoundingClientRect();
     const bubbleRect = bubble.getBoundingClientRect();
-    const pickerWidth = 220;
-    const pickerHeight = 44;
+    const w = reactionPicker.offsetWidth;
+    const h = reactionPicker.offsetHeight;
 
-    let left = (bubbleRect.left + bubbleRect.width / 2 - screenRect.left) - pickerWidth / 2;
-    left = Math.max(8, Math.min(left, screenRect.width - pickerWidth - 8));
+    let left = (bubbleRect.left + bubbleRect.width / 2 - screenRect.left) - w / 2;
+    left = Math.max(8, Math.min(left, screenRect.width - w - 8));
 
-    let top = (bubbleRect.top - screenRect.top) - pickerHeight - 10;
-    if (top < 64) {
-      top = (bubbleRect.bottom - screenRect.top) + 10;
-    }
+    let top = (bubbleRect.top - screenRect.top) - h - 10;
+    if (top < 64) top = (bubbleRect.bottom - screenRect.top) + 10;
+    const maxTop = screenRect.height - h - 70;
+    if (top > maxTop) top = Math.max(64, maxTop);
 
     reactionPicker.style.left = left + 'px';
     reactionPicker.style.top = top + 'px';
+  }
+
+  function openReactionPicker(bubble) {
+    currentReactionBubble = bubble;
+    reactionGrid.classList.remove('show');
+    reactionMoreBtn.textContent = '+';
     reactionPicker.classList.add('open');
+    positionReactionPicker();
   }
 
   function closeReactionPicker() {
@@ -5797,15 +5882,17 @@
     badge.textContent = emoji;
   }
 
-  reactionPicker.querySelectorAll('.reaction-option').forEach(opt => {
-    opt.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (currentReactionBubble) {
-        setBubbleReaction(currentReactionBubble, opt.dataset.emoji);
-      }
-      closeReactionPicker();
-    });
-  });
+  // Reaksiyani tanlash: haqiqiy chatda Firestore'ga yoziladi, aks holda faqat ekranda
+  function pickReaction(emoji) {
+    const b = currentReactionBubble;
+    closeReactionPicker();
+    if (!b) return;
+    if (fbCurrentChat && b.dataset.msgId) {
+      fbSetReaction(b.dataset.msgId, b.dataset.myReaction === emoji ? null : emoji);
+    } else {
+      setBubbleReaction(b, emoji);
+    }
+  }
 
   document.addEventListener('click', (e) => {
     if (msgActionMenu.classList.contains('open') && !msgActionMenu.contains(e.target)) {
@@ -7104,6 +7191,7 @@
             const dir = m.from === me.uid ? 'outgoing' : 'incoming';
             const b = isText ? addBubble(m.text, dir, md, !!m.editedAt) : addImageBubble(m.image, dir, md);
             b.dataset.msgId = doc.id;
+            fbApplyReactions(b, m.reactions, me.uid);
           }
         });
         messagesArea.scrollTop = messagesArea.scrollHeight;
@@ -7120,6 +7208,38 @@
     batch.set(chatRef.collection('messages').doc(), { from: me.uid, text: text.slice(0, 2000), type: 'text', createdAt: ts });
     batch.set(chatRef, { members: [me.uid, chat.otherUid], lastText: text.slice(0, 100), lastFrom: me.uid, updatedAt: ts, unread: { [chat.otherUid]: firebase.firestore.FieldValue.increment(1) } }, { merge: true });
     try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e)); }
+  }
+
+  // Reaksiyani saqlash: messages/{id}.reactions.{uid} = emoji (null bo'lsa o'chiriladi)
+  async function fbSetReaction(msgId, emoji) {
+    const me = fbAuth && fbAuth.currentUser;
+    const chat = fbCurrentChat;
+    if (!me || !chat) return;
+    try {
+      await fbDb.collection('chats').doc(chat.id).collection('messages').doc(msgId)
+        .update({ ['reactions.' + me.uid]: emoji ? emoji : firebase.firestore.FieldValue.delete() });
+    } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
+  }
+
+  // Xabar pufakchasiga Firestore'dagi reaksiyalarni chizish
+  function fbApplyReactions(bubble, reactions, myUid) {
+    const old = bubble.querySelector('.msg-reaction-badge');
+    if (old) old.remove();
+    bubble.dataset.myReaction = '';
+    if (!reactions || typeof reactions !== 'object') return;
+    bubble.dataset.myReaction = (typeof reactions[myUid] === 'string') ? reactions[myUid] : '';
+    const counts = {};
+    Object.keys(reactions).forEach(u => {
+      const e = reactions[u];
+      if (typeof e === 'string' && e) counts[e] = (counts[e] || 0) + 1;
+    });
+    const list = Object.keys(counts);
+    if (!list.length) return;
+    const badge = document.createElement('span');
+    badge.className = 'msg-reaction-badge';
+    badge.style.animation = 'none';
+    badge.textContent = list.slice(0, 3).map(e => e + (counts[e] > 1 ? ' ' + counts[e] : '')).join(' ');
+    bubble.appendChild(badge);
   }
 
   // Chat ro'yxatidagi oxirgi xabarni (lastText) haqiqiy oxirgi xabarga moslash
