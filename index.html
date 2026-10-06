@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-image-viewer-v1 (2026-10-06) -->
+<!-- VERSION: firebase-image-v2-debug (2026-10-06) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -5632,7 +5632,7 @@
     if (!file) return;
 
     if (fbCurrentChat) {
-      fbSendImageFile(file);
+      fbSendImageFile(file).catch(err => alert('Rasm yuborishda xato: ' + ((err && err.message) || err)));
       chatImageInput.value = '';
       return;
     }
@@ -7142,7 +7142,10 @@
   // Rasmni kichraytirib JPEG data-URL qilish (Firestore hujjati 1 MB dan oshmasligi uchun)
   function fbCompressImage(file) {
     return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('reader: ' + ((reader.error && reader.error.message) || 'o\'qib bo\'lmadi')));
+      reader.onload = () => {
+      const url = reader.result;
       const img = new Image();
       img.onload = () => {
         try {
@@ -7162,12 +7165,15 @@
             maxDim = Math.round(maxDim * 0.75);
             q = Math.max(0.5, q - 0.08);
           }
-          URL.revokeObjectURL(url);
-          if (out.length > 900000) reject(new Error('too-big')); else resolve(out);
-        } catch (e) { URL.revokeObjectURL(url); reject(e); }
+          if (!out || out.length < 100) reject(new Error('canvas bo\'sh qaytdi'));
+          else if (out.length > 900000) reject(new Error('rasm juda katta'));
+          else resolve(out);
+        } catch (e) { reject(e); }
       };
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad-image')); };
+      img.onerror = () => reject(new Error('rasm formati qo\'llab-quvvatlanmaydi'));
       img.src = url;
+      };
+      reader.readAsDataURL(file);
     });
   }
 
@@ -7179,7 +7185,7 @@
     try { dataUrl = await fbCompressImage(file); }
     catch (e) {
       console.error(e);
-      alert(fbT("Rasmni o'qib bo'lmadi. Boshqa rasm tanlang.", "Не удалось обработать фото. Выберите другое."));
+      alert(fbT("Rasmni o'qib bo'lmadi. Boshqa rasm tanlang.", "Не удалось обработать фото. Выберите другое.") + '\n[' + ((e && e.message) || e) + ']');
       return;
     }
     const chatRef = fbDb.collection('chats').doc(chat.id);
@@ -7187,7 +7193,7 @@
     const batch = fbDb.batch();
     batch.set(chatRef.collection('messages').doc(), { from: me.uid, type: 'image', image: dataUrl, createdAt: ts });
     batch.set(chatRef, { members: [me.uid, chat.otherUid], lastText: fbT('📷 Rasm', '📷 Фото'), lastFrom: me.uid, updatedAt: ts, unread: { [chat.otherUid]: firebase.firestore.FieldValue.increment(1) } }, { merge: true });
-    try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e)); }
+    try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
   }
 
   // ----- Username bo'yicha topish ekrani -----
