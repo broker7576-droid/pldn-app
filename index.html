@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-voice-v3 (2026-10-06) -->
+<!-- VERSION: firebase-secure-v6 (2026-10-07) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -2922,7 +2922,7 @@
       <div class="chat-detail-avatar" id="chatDetailAvatar">A</div>
       <div class="chat-detail-info">
         <div class="chat-detail-name" id="chatDetailName">Ism</div>
-        <div class="chat-detail-status" data-i18n="k46">onlayn</div>
+        <div class="chat-detail-status" id="chatDetailStatus"></div>
       </div>
     </div>
 
@@ -3317,16 +3317,16 @@
     <div class="settings-body">
 
       <div class="settings-group">
-        <div class="settings-item">
+        <div class="settings-item" id="privLastSeenRow">
           <span class="settings-icon">🕘</span>
           <span class="settings-label" data-i18n="k96">Oxirgi faollik</span>
-          <span class="settings-value" data-i18n="k97">Hamma</span>
+          <span class="settings-value" id="privLastSeenVal">Hamma</span>
           <span class="settings-arrow">›</span>
         </div>
-        <div class="settings-item">
+        <div class="settings-item" id="privAvatarRow">
           <span class="settings-icon">🖼️</span>
           <span class="settings-label" data-i18n="k98">Profil rasmi</span>
-          <span class="settings-value" data-i18n="k97">Hamma</span>
+          <span class="settings-value" id="privAvatarVal">Hamma</span>
           <span class="settings-arrow">›</span>
         </div>
         <div class="settings-item">
@@ -3338,6 +3338,11 @@
       </div>
 
       <div class="settings-group">
+        <div class="settings-item" id="changePasswordRow">
+          <span class="settings-icon">🔑</span>
+          <span class="settings-label" id="changePasswordLabel">Parolni almashtirish</span>
+          <span class="settings-arrow">›</span>
+        </div>
         <div class="settings-item" style="cursor: default;">
           <span class="settings-icon">🔐</span>
           <span class="settings-label" data-i18n="k101">Ikki bosqichli autentifikatsiya</span>
@@ -3392,6 +3397,28 @@
 
     </div>
 
+  </div>
+
+  <!-- ============ PAROLNI ALMASHTIRISH MODALI ============ -->
+  <div class="lang-modal-overlay" id="chgPassOverlay">
+    <div class="lang-modal-content">
+      <div class="lang-modal-title" id="chgPassTitle">Parolni almashtirish</div>
+      <input type="password" class="name-input" id="chgPassOld" placeholder="Joriy parol" maxlength="64" autocomplete="current-password">
+      <input type="password" class="name-input" id="chgPassNew" placeholder="Yangi parol" maxlength="64" autocomplete="new-password">
+      <input type="password" class="name-input" id="chgPassNew2" placeholder="Yangi parolni takrorlang" maxlength="64" autocomplete="new-password">
+      <p class="logout-modal-text" id="chgPassErr" style="min-height:20px; color:#FF3B30;"></p>
+      <button class="logout-confirm-btn" id="chgPassSaveBtn" style="background:#2AABEE;">Saqlash</button>
+      <button class="logout-cancel-btn" id="chgPassCancelBtn">Bekor qilish</button>
+    </div>
+  </div>
+
+  <!-- ============ MAXFIYLIK TANLOVI MODALI ============ -->
+  <div class="lang-modal-overlay" id="privOptOverlay">
+    <div class="lang-modal-content">
+      <div class="lang-modal-title" id="privOptTitle"></div>
+      <div class="lang-modal-option" data-v="all"><span class="po-label"></span> <span class="lang-modal-check">✓</span></div>
+      <div class="lang-modal-option" data-v="none"><span class="po-label"></span> <span class="lang-modal-check">✓</span></div>
+    </div>
   </div>
 
   <!-- ============ GLOBAL TIL TANLASH MODAL ============ -->
@@ -5895,7 +5922,7 @@
     closeReactionPicker();
     if (!b) return;
     if (fbCurrentChat && b.dataset.msgId) {
-      fbSetReaction(b.dataset.msgId, b.dataset.myReaction === emoji ? null : emoji);
+      fbSetReaction(b.dataset.msgId, (b.dataset.myReaction && fbEmojiKey(b.dataset.myReaction) === fbEmojiKey(emoji)) ? null : emoji);
     } else {
       setBubbleReaction(b, emoji);
     }
@@ -6348,10 +6375,7 @@
     return browser ? `${os} · ${browser}` : os;
   }
 
-  let otherDevices = [
-    { icon: '💻', name: 'Windows kompyuter · Chrome', meta: "Toshkent · 2 kun oldin faol bo'lgan" },
-    { icon: '📱', name: 'iPhone · Safari', meta: "Samarqand · Kecha faol bo'lgan" },
-  ];
+  let otherDevices = []; // haqiqiy seanslar (Firestore users/{uid}.sessions)
 
   function renderCurrentDevice() {
     document.getElementById('currentDeviceRow').innerHTML = `
@@ -6381,14 +6405,13 @@
       row.innerHTML = `
         <div class="device-icon">${d.icon}</div>
         <div class="device-info">
-          <div class="device-name-row"><span class="device-name">${d.name}</span></div>
-          <div class="device-meta">${d.meta}</div>
+          <div class="device-name-row"><span class="device-name">${fbEsc(d.name)}</span></div>
+          <div class="device-meta">${fbEsc(d.meta)}</div>
         </div>
         <button class="device-end-btn">${t('k112')}</button>
       `;
       row.querySelector('.device-end-btn').addEventListener('click', () => {
-        otherDevices.splice(idx, 1);
-        renderOtherDevices();
+        fbEndSession(d.id);
       });
       wrap.appendChild(row);
     });
@@ -6414,8 +6437,7 @@
   });
 
   document.getElementById('endAllSessionsBtn').addEventListener('click', () => {
-    otherDevices = [];
-    renderOtherDevices();
+    fbEndAllOtherSessions();
   });
 
   document.getElementById('robotToggleInput').addEventListener('change', function () {
@@ -6780,11 +6802,12 @@
   });
 
   document.getElementById('logoutConfirmBtn').addEventListener('click', () => {
-    if (fbAuth) {
-      fbAuth.signOut().catch(() => {}).then(() => location.reload());
-    } else {
-      location.reload();
-    }
+    fbSetHint(false);
+    const doneOut = () => {
+      if (fbAuth) fbAuth.signOut().catch(() => {}).then(() => location.reload());
+      else location.reload();
+    };
+    Promise.race([fbRemoveMySession(), new Promise(r => setTimeout(r, 2500))]).then(doneOut, doneOut);
   });
 
   document.getElementById('logoutModalOverlay').addEventListener('click', (e) => {
@@ -7059,12 +7082,33 @@
     setTimeout(() => sp.remove(), 350);
   }
   // Zaxira: internet sekin bo'lsa ham splash abadiy qotib qolmasin
-  setTimeout(hideSplash, 6000);
+  // Sessiya belgisi: oldin kirgan foydalanuvchi uchun splash uzoqroq turadi va chatlarga darhol o'tiladi
+  function fbHasHint() { try { return localStorage.getItem('pldn_session_v1') === '1'; } catch (_) { return false; } }
+  function fbSetHint(on) { try { if (on) localStorage.setItem('pldn_session_v1', '1'); else localStorage.removeItem('pldn_session_v1'); } catch (_) {} }
+  setTimeout(hideSplash, fbHasHint() ? 20000 : 6000);
   if (!fbAuth) hideSplash();
 
   if (fbAuth) {
     fbAuth.onAuthStateChanged(async (user) => {
-      if (!user || fbRegistering) { hideSplash(); return; }
+      if (!user || fbRegistering) { if (!user) fbSetHint(false); hideSplash(); return; }
+      if (fbHasHint()) {
+        // Qaytib kirgan foydalanuvchi: profilni kutmasdan chatlarga o'tamiz (login ekrani ko'rinib qolmasin)
+        fbStartChatsListener(user.uid);
+        fbRegisterPush();
+        fbStartSelf(user.uid);
+        const onAuthScr = ['screen1', 'screenPass', 'screenLogin'].some(id => document.getElementById(id).classList.contains('active'));
+        if (onAuthScr) goToScreen('screen4');
+        hideSplash();
+        fbLoadProfile(user.uid).then(has => {
+          if (!has) {
+            fbSetHint(false);
+            const le2 = document.getElementById('loginErr');
+            if (le2) le2.textContent = fbT("Bu hisob uchun ro'yxatdan o'tish yakunlanmagan. Ro'yxatdan o'tishni shu nom va parol bilan qaytadan bajaring.", "Регистрация этого аккаунта не завершена. Пройдите регистрацию заново с этим именем и паролем.");
+            goToScreen('screenLogin');
+          }
+        }).catch(e => console.error('Profil yuklanmadi', e));
+        return;
+      }
       let hasProfile = true;
       try {
         hasProfile = await fbLoadProfile(user.uid);
@@ -7078,12 +7122,262 @@
         hideSplash();
         return;
       }
+      fbSetHint(true);
       fbStartChatsListener(user.uid);
+      fbRegisterPush();
+      fbStartSelf(user.uid);
       const onAuthScreen = ['screen1', 'screenPass', 'screenLogin'].some(id => document.getElementById(id).classList.contains('active'));
       if (onAuthScreen) goToScreen('screen4');
       hideSplash();
     });
   }
+
+  // ===== PUSH BILDIRISHNOMALAR (FCM) =====
+  // VERSION: firebase-push-v1
+  let fbPushListening = false;
+  async function fbRegisterPush() {
+    const PN = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
+    if (!PN) return; // veb/brauzerda yoki plagin yo'q bo'lsa jim o'tamiz
+    try {
+      if (!fbPushListening) {
+        fbPushListening = true;
+        await PN.addListener('registration', async (t) => {
+          const me = fbAuth && fbAuth.currentUser;
+          if (!me || !t || !t.value) return;
+          try {
+            await fbDb.collection('users').doc(me.uid).collection('tokens').doc(t.value).set({ createdAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+          } catch (e) { console.error('Token saqlanmadi', e); }
+        });
+        await PN.addListener('registrationError', (err) => {
+          console.error('Push ro\'yxat xatosi', JSON.stringify(err));
+        });
+        await PN.addListener('pushNotificationActionPerformed', async (a) => {
+          const d = (a && a.notification && a.notification.data) || {};
+          if (!d.otherUid) return;
+          try {
+            const u = await fbGetUser(d.otherUid);
+            fbOpenChat({ id: d.chatId, otherUid: u.uid, name: u.name, color: u.color, avatar: u.avatar });
+          } catch (e) { console.error(e); }
+        });
+      }
+      let perm = await PN.checkPermissions();
+      if (perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') perm = await PN.requestPermissions();
+      if (perm.receive === 'granted') await PN.register();
+    } catch (e) { console.error('Push xatosi', e); }
+  }
+
+  // ===== SEANSLAR, MAXFIYLIK, ONLAYN HOLAT (Firestore: users/{uid}) =====
+  // VERSION: firebase-sessions-v5
+  const fbSid = (function () {
+    try {
+      let v = localStorage.getItem('pldn_sid');
+      if (!v) { v = Math.random().toString(36).slice(2, 10) + Date.now().toString(36); localStorage.setItem('pldn_sid', v); }
+      return v;
+    } catch (_) { return 'tmp' + Date.now().toString(36); }
+  })();
+  let fbSelfUid = null, fbMeUnsub = null, fbSessUnsub = null, fbPeerUnsub = null, fbLastTouch = 0;
+  let fbPrivacy = { lastSeen: 'all', avatar: 'all' };
+
+  function fbSrvTs() { return firebase.firestore.FieldValue.serverTimestamp(); }
+
+  function fbSessionMeta(ts) {
+    const d = ts && ts.toDate ? ts.toDate() : null;
+    if (!d) return fbT('Faol', 'Активен');
+    const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+    if (mins < 5) return fbT('Hozir faol', 'Сейчас активен');
+    if (mins < 60) return fbT(mins + " daqiqa oldin faol bo'lgan", mins + ' мин. назад');
+    const h = Math.floor(mins / 60);
+    if (h < 24) return fbT(h + " soat oldin faol bo'lgan", h + ' ч. назад');
+    const dd = Math.floor(h / 24);
+    return fbT(dd + " kun oldin faol bo'lgan", dd + ' дн. назад');
+  }
+
+  function fbForceLogout() {
+    fbSetHint(false);
+    try { localStorage.removeItem('pldn_sid'); } catch (_) {}
+    if (fbMeUnsub) { fbMeUnsub(); fbMeUnsub = null; }
+    if (fbSessUnsub) { fbSessUnsub(); fbSessUnsub = null; }
+    if (fbAuth) fbAuth.signOut().catch(() => {}).then(() => location.reload());
+    else location.reload();
+  }
+
+  async function fbStartSelf(uid) {
+    if (!fbDb || fbSelfUid === uid) return;
+    fbSelfUid = uid;
+    const ref = fbDb.collection('users').doc(uid);
+    const sref = ref.collection('sessions').doc(fbSid);
+    try {
+      const snap = await sref.get();
+      if (snap.exists && snap.data().revoked) { fbForceLogout(); return; }
+      const bt = fbDb.batch();
+      bt.set(sref, { device: detectCurrentDeviceLabel(), icon: /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '') ? '📱' : '💻', lastActive: fbSrvTs() }, { merge: true });
+      bt.set(ref, { lastActive: fbSrvTs() }, { merge: true });
+      await bt.commit();
+      fbLastTouch = Date.now();
+    } catch (e) { console.error('Seans yozilmadi', e); }
+    fbMeUnsub = ref.onSnapshot(s => {
+      const v = s.data() || {};
+      fbPrivacy = Object.assign({ lastSeen: 'all', avatar: 'all' }, v.privacy || {});
+      fbRenderPrivacyVals();
+    }, err => console.error('Profil tinglovchisi', err));
+    fbSessUnsub = ref.collection('sessions').onSnapshot(qs => {
+      const list = [];
+      let revoked = false;
+      qs.forEach(d => {
+        const x = d.data() || {};
+        if (d.id === fbSid) { if (x.revoked) revoked = true; return; }
+        if (x.revoked) return;
+        const dt = x.lastActive && x.lastActive.toDate ? x.lastActive.toDate() : null;
+        if (dt && Date.now() - dt.getTime() > 30 * 86400000) return; // 30 kundan eski seanslarni yashiramiz
+        list.push({ id: d.id, icon: x.icon || '📱', name: x.device || "Noma'lum qurilma", meta: fbSessionMeta(x.lastActive), t: dt ? dt.getTime() : 0 });
+      });
+      if (revoked) { fbForceLogout(); return; }
+      list.sort((a, b) => b.t - a.t);
+      otherDevices = list;
+      const scr = document.getElementById('connectedDevicesScreen');
+      if (scr && scr.classList.contains('active')) renderOtherDevices();
+    }, err => console.error('Seanslar tinglovchisi', err));
+    setInterval(fbTouch, 180000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) fbTouch(); });
+  }
+
+  function fbTouch() {
+    const me = fbAuth && fbAuth.currentUser;
+    if (!me || document.hidden || Date.now() - fbLastTouch < 60000) return;
+    fbLastTouch = Date.now();
+    const ref = fbDb.collection('users').doc(me.uid);
+    const bt = fbDb.batch();
+    bt.set(ref.collection('sessions').doc(fbSid), { lastActive: fbSrvTs() }, { merge: true });
+    bt.set(ref, { lastActive: fbSrvTs() }, { merge: true });
+    bt.commit().catch(() => {});
+  }
+
+  async function fbRemoveMySession() {
+    const me = fbAuth && fbAuth.currentUser;
+    if (!me) return;
+    try { await fbDb.collection('users').doc(me.uid).collection('sessions').doc(fbSid).delete(); } catch (_) {}
+  }
+
+  async function fbEndSession(id) {
+    const me = fbAuth && fbAuth.currentUser;
+    if (!me) return;
+    try { await fbDb.collection('users').doc(me.uid).collection('sessions').doc(id).update({ revoked: true }); }
+    catch (e) { console.error(e); alert(fbErrMsg(e)); }
+  }
+
+  async function fbEndAllOtherSessions() {
+    const me = fbAuth && fbAuth.currentUser;
+    if (!me || !otherDevices.length) return;
+    const bt = fbDb.batch();
+    const col = fbDb.collection('users').doc(me.uid).collection('sessions');
+    otherDevices.forEach(d => bt.update(col.doc(d.id), { revoked: true }));
+    try { await bt.commit(); }
+    catch (e) { console.error(e); alert(fbErrMsg(e)); }
+  }
+
+  // Suhbatdosh holati: onlayn / oxirgi faollik (uning maxfiylik sozlamasiga qarab)
+  function fbWatchPeer(uid) {
+    if (fbPeerUnsub) { fbPeerUnsub(); fbPeerUnsub = null; }
+    const el = document.getElementById('chatDetailStatus');
+    if (el) el.textContent = '';
+    if (!fbDb || !uid) return;
+    fbPeerUnsub = fbDb.collection('users').doc(uid).onSnapshot(s => {
+      const v = s.data() || {};
+      const d = v.lastActive && v.lastActive.toDate ? v.lastActive.toDate() : null;
+      let txt;
+      if ((v.privacy && v.privacy.lastSeen === 'none') || !d) txt = fbT("yaqinda onlayn bo'lgan", 'был(а) недавно');
+      else if (Date.now() - d.getTime() < 240000) txt = fbT('onlayn', 'в сети');
+      else txt = fbT('oxirgi faollik: ', 'был(а): ') + fbTimeLabel(d);
+      if (el) el.textContent = txt;
+    }, () => {});
+  }
+
+  // Maxfiylik sozlamalari (Oxirgi faollik, Profil rasmi): Hamma / Hech kim
+  function fbRenderPrivacyVals() {
+    const a = document.getElementById('privLastSeenVal');
+    const b = document.getElementById('privAvatarVal');
+    if (a) a.textContent = fbPrivacy.lastSeen === 'none' ? t('k100') : t('k97');
+    if (b) b.textContent = fbPrivacy.avatar === 'none' ? t('k100') : t('k97');
+  }
+
+  let fbPrivKey = null;
+  function fbOpenPrivOpt(key, titleKey) {
+    fbPrivKey = key;
+    const ov = document.getElementById('privOptOverlay');
+    document.getElementById('privOptTitle').textContent = t(titleKey);
+    ov.querySelectorAll('.lang-modal-option').forEach(o => {
+      o.querySelector('.po-label').textContent = o.dataset.v === 'none' ? t('k100') : t('k97');
+      o.classList.toggle('selected', (fbPrivacy[key] || 'all') === o.dataset.v);
+    });
+    ov.classList.add('open');
+  }
+  document.getElementById('privLastSeenRow').addEventListener('click', () => fbOpenPrivOpt('lastSeen', 'k96'));
+  document.getElementById('privAvatarRow').addEventListener('click', () => fbOpenPrivOpt('avatar', 'k98'));
+  document.getElementById('privOptOverlay').addEventListener('click', async (e) => {
+    const ov = document.getElementById('privOptOverlay');
+    const opt = e.target.closest ? e.target.closest('.lang-modal-option') : null;
+    if (opt && fbPrivKey) {
+      const me = fbAuth && fbAuth.currentUser;
+      fbPrivacy[fbPrivKey] = opt.dataset.v;
+      fbRenderPrivacyVals();
+      if (me) { try { await fbDb.collection('users').doc(me.uid).update({ ['privacy.' + fbPrivKey]: opt.dataset.v }); } catch (err) { console.error(err); alert(fbErrMsg(err)); } }
+      ov.classList.remove('open');
+    } else if (e.target === ov) {
+      ov.classList.remove('open');
+    }
+  });
+  fbRenderPrivacyVals();
+
+  // ===== PAROLNI ALMASHTIRISH =====
+  // VERSION: firebase-secure-v6
+  ['chgPassOld', 'chgPassNew', 'chgPassNew2'].forEach(fbAddEye);
+  const fbChgOv = document.getElementById('chgPassOverlay');
+  function fbChgMsg(txt, ok) {
+    const el = document.getElementById('chgPassErr');
+    el.textContent = txt || '';
+    el.style.color = ok ? '#34C759' : '#FF3B30';
+  }
+  function fbOpenChangePassword() {
+    ['chgPassOld', 'chgPassNew', 'chgPassNew2'].forEach(id => { document.getElementById(id).value = ''; });
+    fbChgMsg('');
+    document.getElementById('chgPassTitle').textContent = fbT('Parolni almashtirish', 'Смена пароля');
+    document.getElementById('chgPassOld').placeholder = fbT('Joriy parol', 'Текущий пароль');
+    document.getElementById('chgPassNew').placeholder = fbT('Yangi parol', 'Новый пароль');
+    document.getElementById('chgPassNew2').placeholder = fbT('Yangi parolni takrorlang', 'Повторите новый пароль');
+    document.getElementById('chgPassSaveBtn').textContent = fbT('Saqlash', 'Сохранить');
+    document.getElementById('chgPassCancelBtn').textContent = fbT('Bekor qilish', 'Отмена');
+    fbChgOv.classList.add('open');
+  }
+  document.getElementById('changePasswordLabel').textContent = fbT('Parolni almashtirish', 'Смена пароля');
+  document.getElementById('changePasswordRow').addEventListener('click', fbOpenChangePassword);
+  document.getElementById('chgPassCancelBtn').addEventListener('click', () => fbChgOv.classList.remove('open'));
+  fbChgOv.addEventListener('click', (e) => { if (e.target === fbChgOv) fbChgOv.classList.remove('open'); });
+  document.getElementById('chgPassSaveBtn').addEventListener('click', async () => {
+    const me = fbAuth && fbAuth.currentUser;
+    const oldP = document.getElementById('chgPassOld').value;
+    const newP = document.getElementById('chgPassNew').value;
+    const newP2 = document.getElementById('chgPassNew2').value;
+    if (!me || !me.email) return;
+    if (!oldP) { fbChgMsg(fbT('Joriy parolni kiriting.', 'Введите текущий пароль.')); return; }
+    if (newP.length < 6) { fbChgMsg(fbT("Yangi parol kamida 6 ta belgidan iborat bo'lsin.", 'Новый пароль — минимум 6 символов.')); return; }
+    if (newP !== newP2) { fbChgMsg(fbT('Yangi parollar bir xil emas.', 'Новые пароли не совпадают.')); return; }
+    if (newP === oldP) { fbChgMsg(fbT("Yangi parol joriy paroldan farq qilsin.", 'Новый пароль должен отличаться от текущего.')); return; }
+    const btn = document.getElementById('chgPassSaveBtn');
+    btn.disabled = true;
+    fbChgMsg(fbT('Saqlanmoqda...', 'Сохранение...'), true);
+    try {
+      await me.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(me.email, oldP));
+      await me.updatePassword(newP);
+      try { await fbEndAllOtherSessions(); } catch (_) {}
+      fbChgOv.classList.remove('open');
+      alert(fbT("Parol almashtirildi. Boshqa qurilmalardagi seanslar yakunlandi.", 'Пароль изменён. Сеансы на других устройствах завершены.'));
+    } catch (e) {
+      const c = (e && e.code) || '';
+      if (c === 'auth/wrong-password' || c === 'auth/invalid-credential') fbChgMsg(fbT("Joriy parol noto'g'ri.", 'Текущий пароль неверный.'));
+      else fbChgMsg(fbErrMsg(e));
+    }
+    btn.disabled = false;
+  });
 
   // ===== HAQIQIY CHATLAR (Firestore) =====
   let fbCurrentChat = null;   // {id, otherUid, name, color, avatar}
@@ -7115,7 +7409,7 @@
     if (fbUserCache[uid]) return fbUserCache[uid];
     const snap = await fbDb.collection('users').doc(uid).get();
     const v = snap.exists ? snap.data() : {};
-    const u = { uid: uid, name: fbDisplayName(v), username: v.username || '', avatar: fbSafeAvatar(v.avatar), color: fbColorFor(uid) };
+    const u = { uid: uid, name: fbDisplayName(v), username: v.username || '', avatar: (v.privacy && v.privacy.avatar === 'none') ? null : fbSafeAvatar(v.avatar), color: fbColorFor(uid) };
     fbUserCache[uid] = u;
     return u;
   }
@@ -7190,6 +7484,7 @@
     if (fbMsgUnsub) { fbMsgUnsub(); fbMsgUnsub = null; }
     fbVoiceCache.forEach(b => { if (b._audio) b._audio.pause(); });
     fbVoiceCache.clear();
+    if (fbPeerUnsub) { fbPeerUnsub(); fbPeerUnsub = null; }
     fbCurrentChat = null;
   }
 
@@ -7202,6 +7497,7 @@
     const chatId = info.id || fbChatId(me.uid, info.otherUid);
     const myChat = { id: chatId, otherUid: info.otherUid, name: info.name, color: info.color, avatar: info.avatar || null };
     fbCurrentChat = myChat;
+    fbWatchPeer(info.otherUid);
 
     document.getElementById('chatDetailName').textContent = info.name;
     const av = document.getElementById('chatDetailAvatar');
@@ -7299,23 +7595,31 @@
   }
 
   // Xabar pufakchasiga Firestore'dagi reaksiyalarni chizish
+  function fbEmojiKey(e) { return String(e == null ? '' : e).replace(/[\uFE0E\uFE0F]/g, ''); }
+
   function fbApplyReactions(bubble, reactions, myUid) {
     const old = bubble.querySelector('.msg-reaction-badge');
     if (old) old.remove();
     bubble.dataset.myReaction = '';
     if (!reactions || typeof reactions !== 'object') return;
     bubble.dataset.myReaction = (typeof reactions[myUid] === 'string') ? reactions[myUid] : '';
+    // Bir xil emoji turli ko'rinishda (❤ / ❤️) saqlangan bo'lishi mumkin: kalitni normallashtiramiz
     const counts = {};
+    const shown = {};
     Object.keys(reactions).forEach(u => {
       const e = reactions[u];
-      if (typeof e === 'string' && e) counts[e] = (counts[e] || 0) + 1;
+      if (typeof e === 'string' && e) {
+        const k = fbEmojiKey(e);
+        counts[k] = (counts[k] || 0) + 1;
+        if (!shown[k]) shown[k] = e;
+      }
     });
     const list = Object.keys(counts);
     if (!list.length) return;
     const badge = document.createElement('span');
     badge.className = 'msg-reaction-badge';
     badge.style.animation = 'none';
-    badge.textContent = list.slice(0, 3).map(e => e + (counts[e] > 1 ? ' ' + counts[e] : '')).join(' ');
+    badge.textContent = list.slice(0, 3).map(k => shown[k] + (counts[k] > 1 ? ' ' + counts[k] : '')).join(' ');
     bubble.appendChild(badge);
   }
 
