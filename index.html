@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-secure-v6 (2026-10-07) -->
+<!-- VERSION: firebase-update-v7 (2026-10-07) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -3131,6 +3131,11 @@
           <span class="settings-icon">🔗</span>
           <span class="settings-label" data-i18n="k71">Ulangan qurilmalar</span>
           <span class="settings-arrow">›</span>
+        </div>
+        <div class="settings-item" id="appUpdateRow">
+          <span class="settings-icon">⬇️</span>
+          <span class="settings-label" id="appUpdateLabel">Yangilanishni tekshirish</span>
+          <span class="settings-value" id="appUpdateVal"></span>
         </div>
       </div>
 
@@ -7378,6 +7383,51 @@
     }
     btn.disabled = false;
   });
+
+  // ===== ILOVANI YANGILASH (GitHub Releases) =====
+  // VERSION: firebase-update-v7
+  const PLDN_BUILD = '__PLDN_BUILD__'; // GitHub Actions yig'ishda raqamga almashtiradi
+  const PLDN_REPO = 'broker7576-droid/pldn-app';
+  async function pldnCheckUpdate(manual) {
+    const cur = parseInt(PLDN_BUILD, 10);
+    const val = document.getElementById('appUpdateVal');
+    if (!cur) {
+      if (manual) alert(fbT("Yangilanishni faqat o'rnatilgan ilovada tekshirish mumkin.", 'Проверка обновлений доступна только в установленном приложении.'));
+      return;
+    }
+    if (manual && val) val.textContent = fbT('Tekshirilmoqda...', 'Проверка...');
+    try {
+      const r = await fetch('https://api.github.com/repos/' + PLDN_REPO + '/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      const latest = parseInt(String(j.tag_name || '').replace(/\D/g, ''), 10);
+      const asset = (j.assets || []).find(a => /\.apk$/i.test(a.name));
+      if (val) val.textContent = 'v' + cur;
+      if (latest > cur && asset) {
+        let skipped = '';
+        try { skipped = localStorage.getItem('pldn_skip_update') || ''; } catch (_) {}
+        if (!manual && skipped === String(latest)) return;
+        const ok = confirm(fbT('Yangi versiya mavjud (v' + latest + '). Yuklab olib o\'rnatasizmi?', 'Доступна новая версия (v' + latest + '). Скачать и установить?'));
+        if (ok) { window.location.href = asset.browser_download_url; }
+        else { try { localStorage.setItem('pldn_skip_update', String(latest)); } catch (_) {} }
+      } else if (manual) {
+        alert(fbT("Eng so'nggi versiya o'rnatilgan (v" + cur + ').', 'Установлена последняя версия (v' + cur + ').'));
+      }
+    } catch (e) {
+      console.error('Yangilanish tekshiruvi', e);
+      if (val) val.textContent = 'v' + cur;
+      if (manual) alert(fbT("Tekshirib bo'lmadi. Internetni tekshirib qayta urinib ko'ring.", 'Не удалось проверить. Проверьте интернет и повторите.'));
+    }
+  }
+  (function () {
+    const lbl = document.getElementById('appUpdateLabel');
+    const val = document.getElementById('appUpdateVal');
+    if (lbl) lbl.textContent = fbT('Yangilanishni tekshirish', 'Проверить обновления');
+    const cur = parseInt(PLDN_BUILD, 10);
+    if (val && cur) val.textContent = 'v' + cur;
+    document.getElementById('appUpdateRow').addEventListener('click', () => pldnCheckUpdate(true));
+    setTimeout(() => pldnCheckUpdate(false), 5000);
+  })();
 
   // ===== HAQIQIY CHATLAR (Firestore) =====
   let fbCurrentChat = null;   // {id, otherUid, name, color, avatar}
