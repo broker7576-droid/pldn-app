@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-reply-v8 (2026-10-07) -->
+<!-- VERSION: firebase-input-v9 (2026-10-07) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -1249,6 +1249,7 @@
   }
 
   .message-bubble { touch-action: pan-y; }
+  .msg-text { white-space: pre-wrap; overflow-wrap: anywhere; }
   .reply-bar { display: none; align-items: center; gap: 10px; padding: 8px 14px; background: var(--bg-elevated); border-top: 1px solid var(--border-color); }
   .reply-bar.show { display: flex; }
   .reply-bar-line { width: 3px; align-self: stretch; background: #2AABEE; border-radius: 2px; }
@@ -1507,7 +1508,7 @@
   .chat-input-bar {
     flex-shrink: 0;
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 8px;
     padding: 8px 12px;
     background: var(--bg-elevated);
@@ -1516,14 +1517,21 @@
 
   .message-input {
     flex: 1;
-    height: 40px;
+    box-sizing: border-box;
+    min-height: 40px;
+    max-height: 130px;
     background: var(--bg-elevated);
     border: 1.5px solid var(--border-color-strong);
     border-radius: 20px;
-    padding: 0 16px;
+    padding: 8px 16px;
+    font-family: inherit;
     font-size: 15px;
+    line-height: 21px;
     color: var(--text-primary);
     outline: none;
+    resize: none;
+    overflow-y: auto;
+    display: block;
   }
 
   .message-input:focus { border-color: #2AABEE; }
@@ -2972,7 +2980,7 @@
     <div class="chat-input-bar">
       <button class="attach-btn" id="attachImageBtn">📎</button>
       <input type="file" id="chatImageInput" accept="image/*" style="display:none;">
-      <input type="text" class="message-input" id="messageInput" data-i18n-placeholder="k49" placeholder="Xabar yozing...">
+      <textarea class="message-input" id="messageInput" rows="1" data-i18n-placeholder="k49" placeholder="Xabar yozing..."></textarea>
       <div class="voice-recording-indicator" id="voiceRecordingIndicator">
         <span class="voice-rec-dot"></span>
         <span class="voice-rec-timer" id="voiceRecTimer">0:00</span>
@@ -5878,6 +5886,7 @@
       messageInput.value = (currentMenuBubble.dataset.text !== undefined) ? currentMenuBubble.dataset.text : currentMenuBubble.textContent;
       editingBubble = currentMenuBubble;
       messageInput.placeholder = t('k51');
+      updateSendBtnMode();
       messageInput.focus();
     }
     closeMsgMenu();
@@ -6013,7 +6022,15 @@
   });
 
   // ===== TUGMA REJIMI: MIKROFON <-> YUBORISH =====
+  function fbAutosizeInput() {
+    messageInput.style.height = 'auto';
+    const sh = messageInput.scrollHeight;
+    if (sh < 20) { messageInput.style.height = ''; return; } // yashirin bo'lsa
+    messageInput.style.height = Math.min(sh + 3, 130) + 'px';
+  }
+
   function updateSendBtnMode() {
+    fbAutosizeInput();
     const hasText = messageInput.value.trim().length > 0;
     sendMsgBtn.textContent = hasText ? '➤' : '🎤';
     sendMsgBtn.dataset.mode = hasText ? 'send' : 'mic';
@@ -6028,7 +6045,9 @@
   messageInput.addEventListener('input', updateSendBtnMode);
 
   messageInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
+    // Telefonda Enter yangi qator qo'shadi (yuborish tugmasi bilan yuboriladi); kompyuterda Enter yuboradi
+    if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) {
+      e.preventDefault();
       sendMessage();
     }
   });
