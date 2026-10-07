@@ -8,9 +8,21 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+
+      - name: Compute version
+        run: |
+          tr -d '\r' < version.txt > /tmp/version.env
+          source /tmp/version.env
+          CODE=$((versionCode + GITHUB_RUN_NUMBER))
+          NAME="${versionName%.*}.$(printf '%03d' "$GITHUB_RUN_NUMBER")"
+          echo "VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "Version: $NAME ($CODE)"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -30,6 +42,7 @@ jobs:
         run: |
           mkdir -p www
           cp index.html www/index.html
+          sed -i "s/__PLDN_BUILD__/$VERSION_CODE/" www/index.html
 
       - name: Add Android platform
         run: npx cap add android
@@ -43,9 +56,8 @@ jobs:
 
       - name: Apply version
         run: |
-          source version.txt
-          sed -i "s/versionCode 1/versionCode $versionCode/" android/app/build.gradle
-          sed -i "s/versionName \"1.0\"/versionName \"$versionName\"/" android/app/build.gradle
+          sed -i "s/versionCode 1/versionCode $VERSION_CODE/" android/app/build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"$VERSION_NAME\"/" android/app/build.gradle
 
       - name: Force fixed debug signing
         run: |
@@ -109,3 +121,11 @@ jobs:
         with:
           name: pldn-app-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk pldn-app.apk
+          gh release create "v$VERSION_CODE" pldn-app.apk --repo "${{ github.repository }}" --title "PLDN $VERSION_NAME" --notes "Build $VERSION_CODE" --latest
+          
