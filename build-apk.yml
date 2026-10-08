@@ -1,0 +1,132 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Compute version
+        run: |
+          tr -d '\r' < version.txt > /tmp/version.env
+          source /tmp/version.env
+          CODE=$((versionCode + GITHUB_RUN_NUMBER))
+          NAME="${versionName%.*}.$(printf '%03d' "$GITHUB_RUN_NUMBER")"
+          echo "VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "Version: $NAME ($CODE)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Prepare web folder
+        run: |
+          mkdir -p www
+          cp index.html www/index.html
+          sed -i "s/__PLDN_BUILD__/$VERSION_CODE/" www/index.html
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Fix Gradle version bug
+        run: |
+          sed -i -E 's#gradle-[0-9.]+-all\.zip#gradle-8.9-all.zip#' android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Generate app icon
+        run: npx capacitor-assets generate --android
+
+      - name: Apply version
+        run: |
+          sed -i "s/versionCode 1/versionCode $VERSION_CODE/" android/app/build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"$VERSION_NAME\"/" android/app/build.gradle
+
+      - name: Force fixed debug signing
+        run: |
+          cp debug.keystore android/app/debug.keystore
+          echo 'android.signingConfigs.debug.storeFile = file("debug.keystore")' >> android/app/build.gradle
+          echo 'android.signingConfigs.debug.storePassword = "android"' >> android/app/build.gradle
+          echo 'android.signingConfigs.debug.keyAlias = "androiddebugkey"' >> android/app/build.gradle
+          echo 'android.signingConfigs.debug.keyPassword = "android"' >> android/app/build.gradle
+
+      - name: Add microphone, camera and contacts permission
+        run: |
+          sed -i 's#</manifest>#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n<uses-permission android:name="android.permission.READ_CONTACTS" />\n<uses-permission android:name="android.permission.WRITE_CONTACTS" />\n<uses-permission android:name="android.permission.CAMERA" />\n<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n<uses-feature android:name="android.hardware.camera" android:required="false" />\n<uses-feature android:name="android.hardware.microphone" android:required="false" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+
+      - name: Fix microphone permission in WebView
+        run: |
+          MAINACT=$(find android/app/src/main/java -name MainActivity.java)
+          PKG=$(grep applicationId android/app/build.gradle | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          cat > "$MAINACT" <<EOF
+          package $PKG;
+
+          import android.Manifest;
+          import android.content.pm.PackageManager;
+          import android.webkit.PermissionRequest;
+          import android.webkit.WebChromeClient;
+          import androidx.core.app.ActivityCompat;
+          import androidx.core.content.ContextCompat;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onStart() {
+                  super.onStart();
+                  if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                      ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
+                  }
+                  getBridge().getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
+                  getBridge().getWebView().setWebChromeClient(new WebChromeClient() {
+                      @Override
+                      public void onPermissionRequest(final PermissionRequest request) {
+                          runOnUiThread(() -> request.grant(request.getResources()));
+                      }
+                  });
+              }
+          }
+          EOF
+     
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Print APK signing fingerprint
+        run: |
+          keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pldn-app-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk pldn-app.apk
+          gh release create "v$VERSION_CODE" pldn-app.apk --repo "${{ github.repository }}" --title "PLDN $VERSION_NAME" --notes "Build $VERSION_CODE" --latest
+          
