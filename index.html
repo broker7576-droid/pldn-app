@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-input-v9 (2026-10-07) -->
+<!-- VERSION: firebase-dialogs-v11 (2026-10-08) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -3523,6 +3523,55 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
+  // PLDN: standart alert/confirm o'rniga ilovaning o'z oynalari
+  (function () {
+    const TITLE = 'PLDN ilovasi xatosi:';
+    const st = document.createElement('style');
+    st.textContent =
+      '.pldn-al-ov{position:fixed;inset:0;background:var(--overlay-bg,rgba(0,0,0,.4));z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:24px}' +
+      '.pldn-al{background:var(--bg-elevated,#fff);color:var(--text-primary,#000);border-radius:16px;width:100%;max-width:320px;padding:20px 20px 8px;box-shadow:0 8px 32px rgba(0,0,0,.25)}' +
+      '.pldn-al h3{font-size:17px;font-weight:700;margin:0 0 8px}' +
+      '.pldn-al p{font-size:15px;line-height:1.4;white-space:pre-wrap;word-break:break-word;margin:0 0 12px;color:var(--text-primary,#000)}' +
+      '.pldn-al .pldn-al-btns{display:flex;justify-content:flex-end;gap:4px}' +
+      '.pldn-al button{background:none;border:0;color:#2481cc;font-size:16px;font-weight:600;padding:10px 12px}';
+    document.head.appendChild(st);
+
+    function dialog(msg, withCancel, done) {
+      const ov = document.createElement('div');
+      ov.className = 'pldn-al-ov';
+      const box = document.createElement('div');
+      box.className = 'pldn-al';
+      const h = document.createElement('h3');
+      h.textContent = TITLE;
+      const p = document.createElement('p');
+      p.textContent = String(msg == null ? '' : msg);
+      const row = document.createElement('div');
+      row.className = 'pldn-al-btns';
+      function close(v) { ov.remove(); if (done) done(v); }
+      if (withCancel) {
+        const c = document.createElement('button');
+        c.textContent = (typeof fbT === 'function') ? fbT('Bekor qilish', 'Отмена') : 'Bekor qilish';
+        c.onclick = function () { close(false); };
+        row.appendChild(c);
+      }
+      const b = document.createElement('button');
+      b.textContent = 'OK';
+      b.onclick = function () { close(true); };
+      row.appendChild(b);
+      box.append(h, p, row);
+      ov.appendChild(box);
+      ov.addEventListener('click', function (e) { if (e.target === ov) close(false); });
+      document.body.appendChild(ov);
+    }
+
+    window.alert = function (msg) { dialog(msg, false, null); };
+    // Tasdiqlash oynasi: Promise<boolean> qaytaradi (await yoki .then bilan ishlatiladi)
+    window.pldnConfirm = function (msg) {
+      return new Promise(function (resolve) { dialog(msg, true, resolve); });
+    };
+  })();
+</script>
+<script>
   const PLDN_I18N = {
     uz: {
       k1: "Foydalanuvchi nomini kiriting",
@@ -5722,11 +5771,12 @@
       const b = viewerBubble;
       if (!b) return;
       if (fbCurrentChat && b.dataset.msgId) {
-        if (confirm(fbT("Rasm ikkala tomondan ham o'chiriladi. Davom etasizmi?", "Фото удалится у обоих. Продолжить?"))) {
+        pldnConfirm(fbT("Rasm ikkala tomondan ham o'chiriladi. Davom etasizmi?", "Фото удалится у обоих. Продолжить?")).then(function (okDel) {
+          if (!okDel) return;
           const id = b.dataset.msgId;
           closeImageViewer();
           fbDeleteMessage(id);
-        }
+        });
       } else {
         b.remove();
         closeImageViewer();
@@ -5897,9 +5947,9 @@
       const id = currentMenuBubble.dataset.msgId;
       if (editingBubble === currentMenuBubble) resetMessageInput();
       closeMsgMenu();
-      if (confirm(fbT("Xabar ikkala tomondan ham o'chiriladi. Davom etasizmi?", "Сообщение удалится у обоих. Продолжить?"))) {
-        fbDeleteMessage(id);
-      }
+      pldnConfirm(fbT("Xabar ikkala tomondan ham o'chiriladi. Davom etasizmi?", "Сообщение удалится у обоих. Продолжить?")).then(function (okDel) {
+        if (okDel) fbDeleteMessage(id);
+      });
       return;
     }
     if (currentMenuBubble) {
@@ -7496,7 +7546,7 @@
         let skipped = '';
         try { skipped = localStorage.getItem('pldn_skip_update') || ''; } catch (_) {}
         if (!manual && skipped === String(latest)) return;
-        const ok = confirm(fbT('Yangi versiya mavjud (v' + latest + '). Yuklab olib o\'rnatasizmi?', 'Доступна новая версия (v' + latest + '). Скачать и установить?'));
+        const ok = await pldnConfirm(fbT('Yangi versiya mavjud (v' + latest + '). Yuklab olib o\'rnatasizmi?', 'Доступна новая версия (v' + latest + '). Скачать и установить?'));
         if (ok) { window.location.href = asset.browser_download_url; }
         else { try { localStorage.setItem('pldn_skip_update', String(latest)); } catch (_) {} }
       } else if (manual) {
