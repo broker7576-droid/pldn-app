@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-notif-v12 (2026-10-08) -->
+<!-- VERSION: firebase-calls-v13 (2026-10-08) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -725,6 +725,30 @@
     font-size: 18px;
     color: #2AABEE;
   }
+
+  /* ===== QO'NG'IROQLAR ===== */
+  .call-hdr-btn { background: none; border: 0; font-size: 21px; line-height: 1; padding: 8px 6px; cursor: pointer; flex-shrink: 0; }
+  .pldn-call-ov { position: fixed; inset: 0; z-index: 99996; display: none; background: linear-gradient(180deg, #1b2a3a 0%, #0f1822 100%); color: #fff; overflow: hidden; }
+  .pldn-call-ov.open { display: block; }
+  .pldn-call-remote { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: transparent; display: none; }
+  .pldn-call-ov.is-video.connected .pldn-call-remote { display: block; }
+  .pldn-call-local { position: absolute; top: calc(16px + env(safe-area-inset-top, 0px)); right: 14px; width: 96px; height: 136px; object-fit: cover; border-radius: 14px; background: #000; border: 2px solid rgba(255,255,255,.35); display: none; z-index: 2; transform: scaleX(-1); }
+  .pldn-call-ov.is-video .pldn-call-local { display: block; }
+  .pldn-call-top { position: absolute; top: 18%; left: 0; right: 0; text-align: center; z-index: 1; padding: 0 20px; text-shadow: 0 1px 6px rgba(0,0,0,.5); }
+  .pldn-call-ov.is-video.connected .pldn-call-top { top: calc(18px + env(safe-area-inset-top, 0px)); text-align: left; }
+  .pldn-call-ov.is-video.connected .pldn-call-avatar { display: none; }
+  .pldn-call-avatar { width: 112px; height: 112px; border-radius: 50%; margin: 0 auto 18px; display: flex; align-items: center; justify-content: center; font-size: 44px; font-weight: 700; background-size: cover; background-position: center; }
+  .pldn-call-name { font-size: 26px; font-weight: 700; }
+  .pldn-call-status { font-size: 16px; opacity: .8; margin-top: 6px; }
+  .pldn-call-bar { position: absolute; left: 0; right: 0; bottom: calc(36px + env(safe-area-inset-bottom, 0px)); display: flex; justify-content: center; gap: 22px; z-index: 3; }
+  .pldn-call-bar .cb { width: 64px; height: 64px; border-radius: 50%; border: 0; font-size: 26px; color: #fff; cursor: pointer; display: none; align-items: center; justify-content: center; }
+  .cb-ctl { background: rgba(255,255,255,.18); }
+  .cb-ctl.off { background: #fff; color: #000; }
+  .cb-red { background: #ff3b30; }
+  .cb-green { background: #34c759; }
+  .pldn-call-ov.mode-in .cb-red.cb-decline, .pldn-call-ov.mode-in .cb-green { display: flex; }
+  .pldn-call-ov.mode-out .cb-end, .pldn-call-ov.mode-active .cb-end, .pldn-call-ov.mode-out .cb-ctl.cb-mute, .pldn-call-ov.mode-active .cb-ctl.cb-mute { display: flex; }
+  .pldn-call-ov.is-video.mode-out .cb-cam, .pldn-call-ov.is-video.mode-active .cb-cam { display: flex; }
 
   /* ===== BILDIRISHNOMALAR PANELI ===== */
   .header-bell { position: relative; background: none; border: 0; font-size: 22px; line-height: 1; padding: 6px 8px; cursor: pointer; }
@@ -2974,6 +2998,8 @@
         <div class="chat-detail-name" id="chatDetailName">Ism</div>
         <div class="chat-detail-status" id="chatDetailStatus"></div>
       </div>
+      <button class="call-hdr-btn" id="callAudioBtn" aria-label="Qo'ng'iroq">📞</button>
+      <button class="call-hdr-btn" id="callVideoBtn" aria-label="Video qo'ng'iroq">🎥</button>
     </div>
 
     <div class="messages-area" id="messagesArea"></div>
@@ -3552,6 +3578,23 @@
       <button class="pldn-np-tab" data-tab="security" id="pldnNpTabSecurity"><span class="tab-lbl">Xavfsizlik</span></button>
     </div>
     <div class="pldn-np-body" id="pldnNpBody"></div>
+  </div>
+</div>
+
+<div class="pldn-call-ov" id="pldnCallOv">
+  <video id="pldnCallRemote" class="pldn-call-remote" autoplay playsinline></video>
+  <video id="pldnCallLocal" class="pldn-call-local" autoplay playsinline muted></video>
+  <div class="pldn-call-top">
+    <div class="pldn-call-avatar" id="pldnCallAvatar"></div>
+    <div class="pldn-call-name" id="pldnCallName"></div>
+    <div class="pldn-call-status" id="pldnCallStatus"></div>
+  </div>
+  <div class="pldn-call-bar">
+    <button class="cb cb-ctl cb-mute" id="pldnCallMute">🎤</button>
+    <button class="cb cb-ctl cb-cam" id="pldnCallCam">📹</button>
+    <button class="cb cb-red cb-decline" id="pldnCallDecline">✖</button>
+    <button class="cb cb-green" id="pldnCallAccept">📞</button>
+    <button class="cb cb-red cb-end" id="pldnCallEnd">📵</button>
   </div>
 </div>
 
@@ -7275,7 +7318,7 @@
         // Qaytib kirgan foydalanuvchi: profilni kutmasdan chatlarga o'tamiz (login ekrani ko'rinib qolmasin)
         fbStartChatsListener(user.uid);
         fbRegisterPush();
-        fbStartSelf(user.uid);
+        fbStartSelf(user.uid); if (typeof pldnCallsStart === "function") pldnCallsStart(user.uid);
         const onAuthScr = ['screen1', 'screenPass', 'screenLogin'].some(id => document.getElementById(id).classList.contains('active'));
         if (onAuthScr) goToScreen('screen4');
         hideSplash();
@@ -7305,7 +7348,7 @@
       fbSetHint(true);
       fbStartChatsListener(user.uid);
       fbRegisterPush();
-      fbStartSelf(user.uid);
+      fbStartSelf(user.uid); if (typeof pldnCallsStart === "function") pldnCallsStart(user.uid);
       const onAuthScreen = ['screen1', 'screenPass', 'screenLogin'].some(id => document.getElementById(id).classList.contains('active'));
       if (onAuthScreen) goToScreen('screen4');
       hideSplash();
@@ -8414,5 +8457,312 @@
   })();
 </script>
 
+<script>
+// ===== QO'NG'IROQLAR (WebRTC + Firestore signal) =====
+// VERSION: firebase-calls-v13
+(function () {
+  const ICE = { iceServers: [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+    { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' }
+  ] };
+  const $ = function (id) { return document.getElementById(id); };
+  const T = function (uz, ru) { return fbT(uz, ru); };
+  const TERMINAL = ['declined', 'ended', 'missed', 'busy'];
+  let call = null;
+  let startedUid = null;
+  let incomingUnsub = null;
+  let ringIv = null, actx = null;
+
+  // ----- jiringlash -----
+  function beep() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!actx) actx = new AC();
+      if (actx.state === 'suspended') actx.resume();
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.frequency.value = 440; g.gain.value = 0.08;
+      o.connect(g); g.connect(actx.destination);
+      o.start(); o.stop(actx.currentTime + 0.35);
+    } catch (_) {}
+  }
+  function vib(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (_) {} }
+  function ringStart(withVibe) {
+    ringStop();
+    beep(); if (withVibe) vib([400, 300, 400]);
+    ringIv = setInterval(function () { beep(); if (withVibe) vib([400, 300, 400]); }, 2200);
+  }
+  function ringStop() { if (ringIv) { clearInterval(ringIv); ringIv = null; } vib(0); }
+
+  // ----- oyna -----
+  function setStatus(txt) { $('pldnCallStatus').textContent = txt || ''; }
+  function setMode(mode) {
+    const ov = $('pldnCallOv');
+    ov.classList.remove('mode-in', 'mode-out', 'mode-active');
+    if (mode) ov.classList.add('mode-' + mode);
+  }
+  function showUi(c, mode, name, avatar, color) {
+    const ov = $('pldnCallOv');
+    ov.classList.add('open');
+    ov.classList.toggle('is-video', c.type === 'video');
+    ov.classList.remove('connected');
+    const av = $('pldnCallAvatar');
+    if (avatar) { av.textContent = ''; av.style.background = 'url(' + avatar + ') center/cover'; }
+    else { av.textContent = (typeof initials === 'function') ? initials(name || '') : (name || '?').charAt(0); av.style.background = color || '#2AABEE'; }
+    $('pldnCallName').textContent = name || '';
+    $('pldnCallMute').classList.remove('off'); $('pldnCallMute').textContent = '🎤';
+    $('pldnCallCam').classList.remove('off'); $('pldnCallCam').textContent = '📹';
+    setMode(mode);
+  }
+  function hideUi() {
+    const ov = $('pldnCallOv');
+    ov.classList.remove('open', 'connected', 'is-video');
+    setMode(null);
+    $('pldnCallRemote').srcObject = null;
+    $('pldnCallLocal').srcObject = null;
+  }
+
+  // ----- media -----
+  async function ensurePerms(video) {
+    const P = (window.Capacitor && window.Capacitor.Plugins) || {};
+    try {
+      if (P.VoiceRecorder) {
+        const h = await P.VoiceRecorder.hasAudioRecordingPermission();
+        if (!h || h.value === false) await P.VoiceRecorder.requestAudioRecordingPermission();
+      }
+    } catch (_) {}
+    if (video) {
+      try { if (P.Camera && P.Camera.requestPermissions) await P.Camera.requestPermissions({ permissions: ['camera'] }); } catch (_) {}
+    }
+  }
+  async function getMedia(video) {
+    await ensurePerms(video);
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('getUserMedia mavjud emas');
+    return navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+      video: video ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } : false
+    });
+  }
+  function errText(e) {
+    if (e && (e.code === 'permission-denied')) return T("Ruxsat yo'q (Firestore qoidalariga 'calls' qismini qo'shing).", 'Нет доступа (добавьте правила для calls в Firestore).');
+    return (e && (e.name || e.code) ? (e.name || e.code) + ': ' : '') + ((e && e.message) || String(e));
+  }
+
+  // ----- WebRTC -----
+  function addCand(c, d) {
+    if (!c.pc) return;
+    let cand = null;
+    try { cand = JSON.parse(d.c); } catch (_) { return; }
+    if (c.pc.remoteDescription && c.pc.remoteDescription.type) c.pc.addIceCandidate(new RTCIceCandidate(cand)).catch(function () {});
+    else c.pending.push(cand);
+  }
+  function flushCands(c) {
+    const list = c.pending.splice(0);
+    list.forEach(function (cand) { c.pc.addIceCandidate(new RTCIceCandidate(cand)).catch(function () {}); });
+  }
+  function makePc(c) {
+    const pc = new RTCPeerConnection(ICE);
+    c.pc = pc;
+    c.remote = new MediaStream();
+    const rv = $('pldnCallRemote');
+    rv.srcObject = c.remote;
+    $('pldnCallLocal').srcObject = c.stream;
+    c.stream.getTracks().forEach(function (tr) { pc.addTrack(tr, c.stream); });
+    pc.ontrack = function (e) {
+      const tr = e.track;
+      if (!c.remote.getTracks().includes(tr)) c.remote.addTrack(tr);
+      const p = rv.play && rv.play(); if (p && p.catch) p.catch(function () {});
+    };
+    pc.onicecandidate = function (e) {
+      if (!e.candidate) return;
+      c.ref.collection('candidates').add({ by: c.me, c: JSON.stringify(e.candidate.toJSON()) }).catch(function () {});
+    };
+    pc.onconnectionstatechange = function () {
+      const st = pc.connectionState;
+      if (st === 'connected') onConnected(c);
+      else if (st === 'failed') { finish(c, T("Ulanib bo'lmadi", 'Не удалось соединиться'), true); }
+    };
+    c.unsubs.push(c.ref.collection('candidates').onSnapshot(function (snap) {
+      snap.docChanges().forEach(function (ch) {
+        if (ch.type !== 'added') return;
+        const d = ch.doc.data();
+        if (d.by === c.me) return;
+        addCand(c, d);
+      });
+    }));
+  }
+  function onConnected(c) {
+    if (c.connected || c.ended) return;
+    c.connected = true;
+    ringStop();
+    if (c.timeout) { clearTimeout(c.timeout); c.timeout = null; }
+    $('pldnCallOv').classList.add('connected');
+    setMode('active');
+    const t0 = Date.now();
+    const tick = function () {
+      const sec = Math.floor((Date.now() - t0) / 1000);
+      setStatus(Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'));
+    };
+    tick();
+    c.timerIv = setInterval(tick, 1000);
+  }
+
+  function finish(c, msg, writeEnd) {
+    if (!c || c.ended) return;
+    c.ended = true;
+    if (writeEnd && c.ref) c.ref.update({ status: 'ended' }).catch(function () {});
+    if (c.timeout) clearTimeout(c.timeout);
+    if (c.timerIv) clearInterval(c.timerIv);
+    ringStop();
+    c.unsubs.forEach(function (u) { try { u(); } catch (_) {} });
+    try { if (c.stream) c.stream.getTracks().forEach(function (tr) { tr.stop(); }); } catch (_) {}
+    try { if (c.pc) c.pc.close(); } catch (_) {}
+    if (call === c) call = null;
+    if (msg) {
+      setStatus(msg); setMode(null);
+      setTimeout(function () { if (!call) hideUi(); }, 1400);
+    } else if (!call) hideUi();
+  }
+
+  function onCallDoc(c, d) {
+    if (c.ended) return;
+    if (c.role === 'caller' && d.answer && c.pc && !c.pc.currentRemoteDescription && !c.settingRemote) {
+      c.settingRemote = true;
+      c.pc.setRemoteDescription(new RTCSessionDescription(d.answer)).then(function () { flushCands(c); }).catch(function (e) { console.error(e); });
+    }
+    if (d.status === 'accepted' && !c.accepted) {
+      c.accepted = true;
+      ringStop();
+      if (c.role === 'caller') { setStatus(T('Ulanmoqda...', 'Соединение...')); setMode('active'); }
+    }
+    if (TERMINAL.indexOf(d.status) >= 0) {
+      let m = T("Qo'ng'iroq tugadi", 'Звонок завершён');
+      if (d.status === 'declined') m = T('Rad etildi', 'Отклонён');
+      else if (d.status === 'busy') m = T('Band', 'Занято');
+      else if (d.status === 'missed') m = c.role === 'callee' ? T("O'tkazib yuborilgan qo'ng'iroq", 'Пропущенный звонок') : T('Javob bermadi', 'Нет ответа');
+      finish(c, m, false);
+    }
+  }
+
+  // ----- chiquvchi -----
+  async function startCall(type) {
+    if (call) return;
+    const chat = (typeof fbCurrentChat !== 'undefined') ? fbCurrentChat : null;
+    const me = fbAuth && fbAuth.currentUser;
+    if (!chat || !me) return;
+    const c = call = { me: me.uid, peer: chat.otherUid, type: type, role: 'caller', unsubs: [], pending: [], ended: false };
+    showUi(c, 'out', chat.name, chat.avatar, chat.color);
+    setStatus(T('Tayyorlanmoqda...', 'Подготовка...'));
+    try {
+      c.stream = await getMedia(type === 'video');
+      if (c.ended) { c.stream.getTracks().forEach(function (tr) { tr.stop(); }); return; }
+      c.ref = fbDb.collection('calls').doc();
+      makePc(c);
+      const offer = await c.pc.createOffer();
+      await c.pc.setLocalDescription(offer);
+      await c.ref.set({ from: me.uid, to: chat.otherUid, type: type, status: 'ringing', offer: { type: offer.type, sdp: offer.sdp }, createdAt: fbSrvTs() });
+      if (c.ended) { c.ref.update({ status: 'ended' }).catch(function () {}); return; }
+      setStatus(T('Qo\'ng\'iroq qilinmoqda...', 'Вызов...'));
+      ringStart(false);
+      c.unsubs.push(c.ref.onSnapshot(function (snap) { const d = snap.data(); if (d) onCallDoc(c, d); }));
+      c.timeout = setTimeout(function () {
+        if (!c.connected && !c.ended) { c.ref.update({ status: 'missed' }).catch(function () {}); finish(c, T('Javob bermadi', 'Нет ответа'), false); }
+      }, 45000);
+    } catch (e) {
+      console.error('Qo\'ng\'iroq xatosi', e);
+      finish(c, null, true);
+      alert(T("Qo'ng'iroq boshlanmadi: ", 'Не удалось начать звонок: ') + errText(e));
+    }
+  }
+
+  // ----- kiruvchi -----
+  async function onIncoming(ref, d) {
+    const me = fbAuth && fbAuth.currentUser;
+    if (!me) return;
+    if (call) { ref.update({ status: 'busy' }).catch(function () {}); return; }
+    const c = call = { me: me.uid, peer: d.from, type: d.type === 'video' ? 'video' : 'audio', role: 'callee', ref: ref, offer: d.offer, unsubs: [], pending: [], ended: false };
+    let u = { name: '...', avatar: null, color: '#2AABEE' };
+    try { u = await fbGetUser(d.from); } catch (_) {}
+    if (c.ended) return;
+    showUi(c, 'in', u.name, u.avatar, u.color);
+    setStatus(c.type === 'video' ? T("Video qo'ng'iroq", 'Видеозвонок') : T("Ovozli qo'ng'iroq", 'Аудиозвонок'));
+    ringStart(true);
+    c.unsubs.push(ref.onSnapshot(function (snap) { const dd = snap.data(); if (dd) onCallDoc(c, dd); }));
+    c.timeout = setTimeout(function () {
+      if (!c.accepted && !c.ended) finish(c, T("O'tkazib yuborilgan qo'ng'iroq", 'Пропущенный звонок'), false);
+    }, 50000);
+  }
+  async function accept() {
+    const c = call;
+    if (!c || c.role !== 'callee' || c.accepting || c.ended) return;
+    c.accepting = true;
+    ringStop();
+    setMode('active');
+    setStatus(T('Ulanmoqda...', 'Соединение...'));
+    try {
+      c.stream = await getMedia(c.type === 'video');
+      if (c.ended) { c.stream.getTracks().forEach(function (tr) { tr.stop(); }); return; }
+      makePc(c);
+      await c.pc.setRemoteDescription(new RTCSessionDescription(c.offer));
+      flushCands(c);
+      const ans = await c.pc.createAnswer();
+      await c.pc.setLocalDescription(ans);
+      c.accepted = true;
+      await c.ref.update({ answer: { type: ans.type, sdp: ans.sdp }, status: 'accepted' });
+    } catch (e) {
+      console.error('Qabul qilish xatosi', e);
+      finish(c, null, true);
+      alert(T("Qo'ng'iroqni qabul qilib bo'lmadi: ", 'Не удалось принять звонок: ') + errText(e));
+    }
+  }
+  function decline() {
+    const c = call;
+    if (!c || c.role !== 'callee') return;
+    c.ref.update({ status: 'declined' }).catch(function () {});
+    finish(c, null, false);
+  }
+  function endCall() {
+    const c = call;
+    if (!c) return;
+    if (c.ref) c.ref.update({ status: 'ended' }).catch(function () {});
+    finish(c, null, false);
+  }
+
+  // ----- boshqaruv tugmalari -----
+  $('pldnCallAccept').addEventListener('click', accept);
+  $('pldnCallDecline').addEventListener('click', decline);
+  $('pldnCallEnd').addEventListener('click', endCall);
+  $('pldnCallMute').addEventListener('click', function () {
+    const c = call; if (!c || !c.stream) return;
+    const tr = c.stream.getAudioTracks(); if (!tr.length) return;
+    const on = !tr[0].enabled; tr.forEach(function (x) { x.enabled = on; });
+    this.classList.toggle('off', !on); this.textContent = on ? '🎤' : '🔇';
+  });
+  $('pldnCallCam').addEventListener('click', function () {
+    const c = call; if (!c || !c.stream) return;
+    const tr = c.stream.getVideoTracks(); if (!tr.length) return;
+    const on = !tr[0].enabled; tr.forEach(function (x) { x.enabled = on; });
+    this.classList.toggle('off', !on); this.textContent = on ? '📹' : '🚫';
+  });
+  $('callAudioBtn').addEventListener('click', function () { startCall('audio'); });
+  $('callVideoBtn').addEventListener('click', function () { startCall('video'); });
+
+  // ----- kiruvchi qo'ng'iroqlarni tinglash -----
+  window.pldnCallsStart = function (uid) {
+    if (!fbDb || startedUid === uid) return;
+    startedUid = uid;
+    if (incomingUnsub) { try { incomingUnsub(); } catch (_) {} }
+    incomingUnsub = fbDb.collection('calls').where('to', '==', uid).where('status', '==', 'ringing').onSnapshot(function (snap) {
+      snap.docChanges().forEach(function (ch) {
+        if (ch.type !== 'added') return;
+        const d = ch.doc.data();
+        const ts = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
+        if (!ts || Date.now() - ts > 60000) return; // eski qo'ng'iroq
+        onIncoming(ch.doc.ref, d);
+      });
+    }, function (e) { console.error("Qo'ng'iroq tinglash xatosi", e); });
+  };
+})();
+</script>
 </body>
 </html>
