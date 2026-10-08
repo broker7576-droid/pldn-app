@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-groups-v17 (2026-10-08) -->
+<!-- VERSION: firebase-groups-v19 (2026-10-08) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -8542,6 +8542,7 @@
     { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
     { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' }
   ] };
+  const $ = function (id) { return document.getElementById(id); };
   const T = function (uz, ru) { return fbT(uz, ru); };
   const TERMINAL = ['declined', 'ended', 'missed', 'busy'];
   let call = null;
@@ -8702,7 +8703,7 @@
   function finish(c, msg, writeEnd) {
     if (!c || c.ended) return;
     c.ended = true;
-    if (c.role === 'caller') logCall(c);
+    if (c.role === 'caller') { try { logCall(c); } catch (e) { console.error('logCall', e); } }
     if (writeEnd && c.ref) c.ref.update({ status: 'ended' }).catch(function () {});
     if (c.timeout) clearTimeout(c.timeout);
     if (c.timerIv) clearInterval(c.timerIv);
@@ -8740,12 +8741,19 @@
 
   // ----- chiquvchi -----
   async function startCall(type) {
+    // Qotib qolgan eski holatni tozalaymiz (oyna yopiq bo'lsa, qo'ng'iroq yo'q hisoblanadi)
+    if (call && (call.ended || !$('pldnCallOv').classList.contains('open'))) {
+      try { finish(call, null, false); } catch (_) {}
+      call = null;
+    }
     if (call) return;
     const chat = (typeof fbCurrentChat !== 'undefined') ? fbCurrentChat : null;
     const me = fbAuth && fbAuth.currentUser;
-    if (!chat || !me) return;
+    if (!me) { alert(T('Avval hisobga kiring', 'Сначала войдите в аккаунт')); return; }
+    if (!chat || !chat.otherUid) { alert(T("Qo'ng'iroq faqat shaxsiy chatda mumkin", 'Звонок возможен только в личном чате')); return; }
     const c = call = { me: me.uid, peer: chat.otherUid, chatId: chat.id, type: type, role: 'caller', unsubs: [], pending: [], ended: false };
-    showUi(c, 'out', chat.name, chat.avatar, chat.color);
+    try { showUi(c, 'out', chat.name, chat.avatar, chat.color); }
+    catch (e) { call = null; console.error(e); alert(T("Qo'ng'iroq oynasi ochilmadi: ", 'Не удалось открыть экран звонка: ') + errText(e)); return; }
     setStatus(T('Tayyorlanmoqda...', 'Подготовка...'));
     try {
       c.stream = await getMedia(type === 'video');
@@ -8839,11 +8847,17 @@
     const on = !tr[0].enabled; tr.forEach(function (x) { x.enabled = on; });
     this.classList.toggle('off', !on); this.textContent = on ? '📹' : '🚫';
   });
-  $('callAudioBtn').addEventListener('click', function () { startCall('audio'); });
-  $('callVideoBtn').addEventListener('click', function () { startCall('video'); });
+  function safeStart(type) {
+    try {
+      const p = startCall(type);
+      if (p && p.catch) p.catch(function (e) { console.error(e); call = null; alert(T("Qo'ng'iroq xatosi: ", 'Ошибка звонка: ') + errText(e)); });
+    } catch (e) { console.error(e); call = null; alert(T("Qo'ng'iroq xatosi: ", 'Ошибка звонка: ') + errText(e)); }
+  }
+  $('callAudioBtn').addEventListener('click', function () { safeStart('audio'); });
+  $('callVideoBtn').addEventListener('click', function () { safeStart('video'); });
 
   // ----- kiruvchi qo'ng'iroqlarni tinglash -----
-  window.pldnStartCall = startCall;
+  window.pldnStartCall = safeStart;
   window.pldnCallsStart = function (uid) {
     if (!fbDb || startedUid === uid) return;
     startedUid = uid;
@@ -8862,7 +8876,7 @@
 </script>
 <script>
 // ===== GURUH VA KANAL (Firestore) =====
-// VERSION: firebase-groups-v17
+// VERSION: firebase-groups-v19
 (function () {
   const $ = function (id) { return document.getElementById(id); };
   const T = function (uz, ru) { return fbT(uz, ru); };
