@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-calls-v13 (2026-10-08) -->
+<!-- VERSION: firebase-calls-v16 (2026-10-08) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -725,6 +725,14 @@
     font-size: 18px;
     color: #2AABEE;
   }
+
+  /* ===== QO'NG'IROQ KARTOCHKASI (chatda) ===== */
+  .call-card { display: flex; align-items: center; gap: 10px; min-width: 190px; padding-right: 36px; cursor: pointer; }
+  .call-card .call-ic { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; background: rgba(42,171,238,.15); flex-shrink: 0; }
+  .call-card.missed .call-ic { background: rgba(255,59,48,.14); }
+  .call-card .call-ttl { font-weight: 600; font-size: 15px; }
+  .call-card.missed .call-ttl { color: #ff3b30; }
+  .call-card .call-sub { font-size: 13px; opacity: .65; }
 
   /* ===== QO'NG'IROQLAR ===== */
   .call-hdr-btn { background: none; border: 0; font-size: 21px; line-height: 1; padding: 8px 6px; cursor: pointer; flex-shrink: 0; }
@@ -5881,6 +5889,50 @@
     viewerBubble = null;
   }
 
+  function addCallBubble(m, type, date) {
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble ' + type;
+    bubble.dataset.kind = 'call';
+    const out = m.outcome || 'ended';
+    const missedLike = (out === 'missed' || out === 'cancelled' || out === 'declined');
+    const incoming = (type === 'incoming');
+    const isVideo = m.callType === 'video';
+    let title, sub = isVideo ? fbT('Video', 'Видео') : fbT('Ovozli', 'Аудио');
+    if (incoming) {
+      if (out === 'ended') title = fbT("Kiruvchi qo'ng'iroq", 'Входящий звонок');
+      else if (out === 'declined') title = fbT("Rad etilgan qo'ng'iroq", 'Отклонённый звонок');
+      else title = fbT("O'tkazib yuborilgan qo'ng'iroq", 'Пропущенный звонок');
+    } else {
+      title = fbT("Chiquvchi qo'ng'iroq", 'Исходящий звонок');
+      if (out === 'missed') sub = fbT('Javob bermadi', 'Нет ответа');
+      else if (out === 'declined') sub = fbT('Rad etildi', 'Отклонён');
+      else if (out === 'cancelled') sub = fbT('Bekor qilindi', 'Отменён');
+    }
+    if (out === 'ended' && m.duration) {
+      const sec = Math.round(Number(m.duration) || 0);
+      sub += ', ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+    }
+    const card = document.createElement('div');
+    card.className = 'call-card' + ((incoming && missedLike) ? ' missed' : '');
+    const ic = document.createElement('div');
+    ic.className = 'call-ic';
+    ic.textContent = isVideo ? '📹' : '📞';
+    const tx = document.createElement('div');
+    const t1 = document.createElement('div'); t1.className = 'call-ttl'; t1.textContent = title;
+    const t2 = document.createElement('div'); t2.className = 'call-sub'; t2.textContent = sub;
+    tx.append(t1, t2);
+    card.append(ic, tx);
+    card.addEventListener('click', function () { if (typeof window.pldnStartCall === 'function') window.pldnStartCall(isVideo ? 'video' : 'audio'); });
+    bubble.appendChild(card);
+    const tm = document.createElement('span');
+    tm.className = 'msg-time';
+    tm.textContent = bubbleClock(date || new Date());
+    bubble.appendChild(tm);
+    messagesArea.appendChild(bubble);
+    messagesArea.scrollTop = messagesArea.scrollHeight;
+    return bubble;
+  }
+
   function addImageBubble(dataUrl, type, date) {
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble image-bubble ' + type;
@@ -7916,7 +7968,8 @@
           const isText = m.type === 'text' && typeof m.text === 'string';
           const isImage = m.type === 'image' && typeof m.image === 'string' && m.image.indexOf('data:image/') === 0;
           const isVoice = m.type === 'voice' && typeof m.audio === 'string' && m.audio.indexOf('data:audio/') === 0;
-          if (isText || isImage || isVoice) {
+          const isCall = m.type === 'call' && typeof m.outcome === 'string';
+          if (isText || isImage || isVoice || isCall) {
             const md = (m.createdAt && m.createdAt.toDate) ? m.createdAt.toDate() : new Date();
             const dayKey = md.toDateString();
             if (dayKey !== lastDayKey) {
@@ -7938,6 +7991,8 @@
                 b._src = m.audio;
                 fbVoiceCache.set(doc.id, b);
               }
+            } else if (isCall) {
+              b = addCallBubble(m, dir, md);
             } else {
               b = isText ? addBubble(m.text, dir, md, !!m.editedAt) : addImageBubble(m.image, dir, md);
             }
@@ -8016,7 +8071,7 @@
       await chatRef.set({ lastText: '' }, { merge: true });
     } else {
       const m = snap.docs[0].data();
-      await chatRef.set({ lastText: (m.type === 'image' ? fbT('📷 Rasm', '📷 Фото') : m.type === 'voice' ? fbT('🎤 Ovozli xabar', '🎤 Голосовое') : String(m.text || '')).slice(0, 100), lastFrom: m.from }, { merge: true });
+      await chatRef.set({ lastText: (m.type === 'image' ? fbT('📷 Rasm', '📷 Фото') : m.type === 'voice' ? fbT('🎤 Ovozli xabar', '🎤 Голосовое') : m.type === 'call' ? fbT("📞 Qo'ng'iroq", '📞 Звонок') : String(m.text || '')).slice(0, 100), lastFrom: m.from }, { merge: true });
     }
   }
 
@@ -8459,13 +8514,12 @@
 
 <script>
 // ===== QO'NG'IROQLAR (WebRTC + Firestore signal) =====
-// VERSION: firebase-calls-v13
+// VERSION: firebase-calls-v15
 (function () {
   const ICE = { iceServers: [
     { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
     { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' }
   ] };
-  const $ = function (id) { return document.getElementById(id); };
   const T = function (uz, ru) { return fbT(uz, ru); };
   const TERMINAL = ['declined', 'ended', 'missed', 'busy'];
   let call = null;
@@ -8594,6 +8648,7 @@
   function onConnected(c) {
     if (c.connected || c.ended) return;
     c.connected = true;
+    c.t0 = Date.now();
     ringStop();
     if (c.timeout) { clearTimeout(c.timeout); c.timeout = null; }
     $('pldnCallOv').classList.add('connected');
@@ -8607,9 +8662,25 @@
     c.timerIv = setInterval(tick, 1000);
   }
 
+  function logCall(c) {
+    const out = c.outcome || (c.connected ? 'ended' : null);
+    if (!out || !c.chatId || !fbDb) return;
+    const dur = (out === 'ended' && c.t0) ? Math.max(1, Math.round((Date.now() - c.t0) / 1000)) : 0;
+    const chatRef = fbDb.collection('chats').doc(c.chatId);
+    const ts = firebase.firestore.FieldValue.serverTimestamp();
+    const label = out === 'ended' ? T("Qo'ng'iroq", 'Звонок') : T("O'tkazib yuborilgan qo'ng'iroq", 'Пропущенный звонок');
+    const upd = { members: [c.me, c.peer], lastText: (c.type === 'video' ? '📹 ' : '📞 ') + label, lastFrom: c.me, updatedAt: ts };
+    if (out !== 'ended') upd.unread = { [c.peer]: firebase.firestore.FieldValue.increment(1) };
+    const batch = fbDb.batch();
+    batch.set(chatRef.collection('messages').doc(), { from: c.me, type: 'call', callType: c.type, outcome: out, duration: dur, createdAt: ts });
+    batch.set(chatRef, upd, { merge: true });
+    batch.commit().catch(function (e) { console.error("Qo'ng'iroq yozuvi", e); });
+  }
+
   function finish(c, msg, writeEnd) {
     if (!c || c.ended) return;
     c.ended = true;
+    if (c.role === 'caller') logCall(c);
     if (writeEnd && c.ref) c.ref.update({ status: 'ended' }).catch(function () {});
     if (c.timeout) clearTimeout(c.timeout);
     if (c.timerIv) clearInterval(c.timerIv);
@@ -8636,6 +8707,7 @@
       if (c.role === 'caller') { setStatus(T('Ulanmoqda...', 'Соединение...')); setMode('active'); }
     }
     if (TERMINAL.indexOf(d.status) >= 0) {
+      if (c.role === 'caller') c.outcome = (d.status === 'declined' || d.status === 'busy') ? 'declined' : d.status === 'missed' ? 'missed' : (c.connected ? 'ended' : 'cancelled');
       let m = T("Qo'ng'iroq tugadi", 'Звонок завершён');
       if (d.status === 'declined') m = T('Rad etildi', 'Отклонён');
       else if (d.status === 'busy') m = T('Band', 'Занято');
@@ -8650,7 +8722,7 @@
     const chat = (typeof fbCurrentChat !== 'undefined') ? fbCurrentChat : null;
     const me = fbAuth && fbAuth.currentUser;
     if (!chat || !me) return;
-    const c = call = { me: me.uid, peer: chat.otherUid, type: type, role: 'caller', unsubs: [], pending: [], ended: false };
+    const c = call = { me: me.uid, peer: chat.otherUid, chatId: chat.id, type: type, role: 'caller', unsubs: [], pending: [], ended: false };
     showUi(c, 'out', chat.name, chat.avatar, chat.color);
     setStatus(T('Tayyorlanmoqda...', 'Подготовка...'));
     try {
@@ -8666,7 +8738,7 @@
       ringStart(false);
       c.unsubs.push(c.ref.onSnapshot(function (snap) { const d = snap.data(); if (d) onCallDoc(c, d); }));
       c.timeout = setTimeout(function () {
-        if (!c.connected && !c.ended) { c.ref.update({ status: 'missed' }).catch(function () {}); finish(c, T('Javob bermadi', 'Нет ответа'), false); }
+        if (!c.connected && !c.ended) { c.outcome = 'missed'; c.ref.update({ status: 'missed' }).catch(function () {}); finish(c, T('Javob bermadi', 'Нет ответа'), false); }
       }, 45000);
     } catch (e) {
       console.error('Qo\'ng\'iroq xatosi', e);
@@ -8724,6 +8796,7 @@
   function endCall() {
     const c = call;
     if (!c) return;
+    if (c.role === 'caller') c.outcome = c.connected ? 'ended' : 'cancelled';
     if (c.ref) c.ref.update({ status: 'ended' }).catch(function () {});
     finish(c, null, false);
   }
@@ -8748,6 +8821,7 @@
   $('callVideoBtn').addEventListener('click', function () { startCall('video'); });
 
   // ----- kiruvchi qo'ng'iroqlarni tinglash -----
+  window.pldnStartCall = startCall;
   window.pldnCallsStart = function (uid) {
     if (!fbDb || startedUid === uid) return;
     startedUid = uid;
