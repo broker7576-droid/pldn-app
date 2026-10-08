@@ -67,9 +67,9 @@ jobs:
           echo 'android.signingConfigs.debug.keyAlias = "androiddebugkey"' >> android/app/build.gradle
           echo 'android.signingConfigs.debug.keyPassword = "android"' >> android/app/build.gradle
 
-      - name: Add microphone and contacts permission
+      - name: Add microphone, camera and contacts permission
         run: |
-          sed -i 's#</manifest>#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n<uses-permission android:name="android.permission.READ_CONTACTS" />\n<uses-permission android:name="android.permission.WRITE_CONTACTS" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+          sed -i 's#</manifest>#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n<uses-permission android:name="android.permission.READ_CONTACTS" />\n<uses-permission android:name="android.permission.WRITE_CONTACTS" />\n<uses-permission android:name="android.permission.CAMERA" />\n<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n<uses-feature android:name="android.hardware.camera" android:required="false" />\n<uses-feature android:name="android.hardware.microphone" android:required="false" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
 
       - name: Fix microphone permission in WebView
         run: |
@@ -93,6 +93,7 @@ jobs:
                   if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                       ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
                   }
+                  getBridge().getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
                   getBridge().getWebView().setWebChromeClient(new WebChromeClient() {
                       @Override
                       public void onPermissionRequest(final PermissionRequest request) {
@@ -128,4 +129,5 @@ jobs:
         run: |
           cp android/app/build/outputs/apk/debug/app-debug.apk pldn-app.apk
           gh release create "v$VERSION_CODE" pldn-app.apk --repo "${{ github.repository }}" --title "PLDN $VERSION_NAME" --notes "Build $VERSION_CODE" --latest
+
           
