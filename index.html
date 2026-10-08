@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-dialogs-v11 (2026-10-08) -->
+<!-- VERSION: firebase-notif-v12 (2026-10-08) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -725,6 +725,31 @@
     font-size: 18px;
     color: #2AABEE;
   }
+
+  /* ===== BILDIRISHNOMALAR PANELI ===== */
+  .header-bell { position: relative; background: none; border: 0; font-size: 22px; line-height: 1; padding: 6px 8px; cursor: pointer; }
+  .header-bell .bell-dot { display: none; position: absolute; top: 3px; right: 4px; width: 11px; height: 11px; border-radius: 50%; background: #ff3b30; border: 2px solid var(--bg-page, #fff); }
+  .header-bell.has-new .bell-dot { display: block; }
+  .pldn-np-ov { position: fixed; inset: 0; background: var(--overlay-bg, rgba(0,0,0,.4)); z-index: 99995; display: none; align-items: flex-end; justify-content: center; }
+  .pldn-np-ov.open { display: flex; }
+  .pldn-np { background: var(--bg-elevated, #fff); color: var(--text-primary, #000); width: 100%; max-width: 560px; height: 82%; border-radius: 28px 28px 0 0; padding: 20px 24px calc(20px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; animation: pldnNpUp .22s ease-out; }
+  @keyframes pldnNpUp { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .pldn-np-top { display: flex; align-items: center; justify-content: space-between; color: var(--text-secondary, #8e8e93); font-size: 17px; font-weight: 500; }
+  .pldn-np-close { background: none; border: 0; font-size: 26px; line-height: 1; color: var(--text-primary, #000); padding: 4px 8px; cursor: pointer; }
+  .pldn-np-tabs { display: flex; gap: 10px; margin: 16px 0 18px; overflow-x: auto; flex-shrink: 0; }
+  .pldn-np-tab { flex-shrink: 0; border: 0; border-radius: 22px; padding: 12px 20px; font-size: 16px; font-weight: 600; background: var(--bg-card, #f2f2f7); color: var(--text-secondary, #8e8e93); cursor: pointer; position: relative; }
+  .pldn-np-tab.active { background: #2AABEE; color: #fff; }
+  .pldn-np-tab .tab-dot { display: none; position: absolute; top: 8px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: #ff3b30; }
+  .pldn-np-tab.has-new .tab-dot { display: block; }
+  .pldn-np-body { flex: 1; overflow-y: auto; }
+  .pldn-np-empty { color: var(--text-secondary, #8e8e93); text-align: center; margin-top: 40px; font-size: 16px; }
+  .pldn-np-card { background: var(--bg-card, #f2f2f7); border-radius: 16px; padding: 16px; }
+  .pldn-np-card h4 { font-size: 17px; margin: 0 0 6px; }
+  .pldn-np-card p { font-size: 15px; line-height: 1.4; color: var(--text-secondary, #8e8e93); margin: 0 0 14px; }
+  .pldn-np-btns { display: flex; gap: 10px; }
+  .pldn-np-btns button { flex: 1; border: 0; border-radius: 12px; padding: 12px; font-size: 16px; font-weight: 600; cursor: pointer; }
+  .pldn-np-btns .np-cancel { background: var(--bg-elevated, #fff); color: var(--text-primary, #000); }
+  .pldn-np-btns .np-yes { background: #2AABEE; color: #fff; }
 
   /* ===== CHAT ROʻYXATINI TANLASH REJIMI (bir nechta chatni oʻchirish) ===== */
   .chat-header-normal,
@@ -2723,8 +2748,7 @@
       <div class="chat-header-normal" id="chatHeaderNormal">
         <h2>PLDN</h2>
         <div class="header-icons">
-          <span>🔍</span>
-          <span>⋮</span>
+          <button class="header-bell" id="pldnBellBtn" aria-label="Bildirishnomalar">🔔<span class="bell-dot" id="pldnBellDot"></span></button>
         </div>
       </div>
       <div class="chat-header-select" id="chatHeaderSelect">
@@ -3517,6 +3541,18 @@
     </div>
   </div>
 
+</div>
+
+<div class="pldn-np-ov" id="pldnNpOv">
+  <div class="pldn-np" role="dialog">
+    <div class="pldn-np-top"><span id="pldnNpTitle">Bildirishnomalar</span><button class="pldn-np-close" id="pldnNpClose" aria-label="Yopish">✕</button></div>
+    <div class="pldn-np-tabs">
+      <button class="pldn-np-tab active" data-tab="update" id="pldnNpTabUpdate"><span class="tab-lbl">Yangilanish</span><span class="tab-dot"></span></button>
+      <button class="pldn-np-tab" data-tab="offers" id="pldnNpTabOffers"><span class="tab-lbl">Takliflar</span></button>
+      <button class="pldn-np-tab" data-tab="security" id="pldnNpTabSecurity"><span class="tab-lbl">Xavfsizlik</span></button>
+    </div>
+    <div class="pldn-np-body" id="pldnNpBody"></div>
+  </div>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -7527,6 +7563,7 @@
   // VERSION: firebase-update-v7
   const PLDN_BUILD = '__PLDN_BUILD__'; // GitHub Actions yig'ishda raqamga almashtiradi
   const PLDN_REPO = 'broker7576-droid/pldn-app';
+  let pldnUpdateInfo = null; // {latest, url} yangilanish bor bo'lsa
   async function pldnCheckUpdate(manual) {
     const cur = parseInt(PLDN_BUILD, 10);
     const val = document.getElementById('appUpdateVal');
@@ -7543,12 +7580,11 @@
       const asset = (j.assets || []).find(a => /\.apk$/i.test(a.name));
       if (val) val.textContent = 'v' + cur;
       if (latest > cur && asset) {
-        let skipped = '';
-        try { skipped = localStorage.getItem('pldn_skip_update') || ''; } catch (_) {}
-        if (!manual && skipped === String(latest)) return;
+        pldnUpdateInfo = { latest: latest, url: asset.browser_download_url };
+        pldnRefreshBell();
+        if (!manual) return;
         const ok = await pldnConfirm(fbT('Yangi versiya mavjud (v' + latest + '). Yuklab olib o\'rnatasizmi?', 'Доступна новая версия (v' + latest + '). Скачать и установить?'));
         if (ok) { window.location.href = asset.browser_download_url; }
-        else { try { localStorage.setItem('pldn_skip_update', String(latest)); } catch (_) {} }
       } else if (manual) {
         alert(fbT("Eng so'nggi versiya o'rnatilgan (v" + cur + ').', 'Установлена последняя версия (v' + cur + ').'));
       }
@@ -7566,6 +7602,68 @@
     if (val && cur) val.textContent = 'v' + cur;
     document.getElementById('appUpdateRow').addEventListener('click', () => pldnCheckUpdate(true));
     setTimeout(() => pldnCheckUpdate(false), 5000);
+  })();
+
+  // ===== BILDIRISHNOMALAR PANELI =====
+  // VERSION: firebase-notif-v12
+  function pldnSeenVersion() { try { return localStorage.getItem('pldn_update_seen') || ''; } catch (_) { return ''; } }
+  function pldnRefreshBell() {
+    const unseen = !!(pldnUpdateInfo && pldnSeenVersion() !== String(pldnUpdateInfo.latest));
+    const bell = document.getElementById('pldnBellBtn');
+    const tab = document.getElementById('pldnNpTabUpdate');
+    if (bell) bell.classList.toggle('has-new', unseen);
+    if (tab) tab.classList.toggle('has-new', unseen);
+  }
+  function pldnNpRender(tab) {
+    const body = document.getElementById('pldnNpBody');
+    document.querySelectorAll('.pldn-np-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    body.innerHTML = '';
+    if (tab === 'update' && pldnUpdateInfo) {
+      const card = document.createElement('div');
+      card.className = 'pldn-np-card';
+      const h = document.createElement('h4');
+      h.textContent = fbT('Yangilanish', 'Обновление');
+      const p = document.createElement('p');
+      p.textContent = fbT('PLDN ilovasida yangilanish bor. Yuklab olasizmi?', 'В приложении PLDN есть обновление. Скачать?');
+      const row = document.createElement('div');
+      row.className = 'pldn-np-btns';
+      const no = document.createElement('button');
+      no.className = 'np-cancel';
+      no.textContent = fbT('Bekor qilish', 'Отмена');
+      no.onclick = pldnNpClose;
+      const yes = document.createElement('button');
+      yes.className = 'np-yes';
+      yes.textContent = fbT('Ha', 'Да');
+      yes.onclick = function () { const u = pldnUpdateInfo && pldnUpdateInfo.url; pldnNpClose(); if (u) window.location.href = u; };
+      row.append(no, yes);
+      card.append(h, p, row);
+      body.appendChild(card);
+    } else {
+      const e = document.createElement('div');
+      e.className = 'pldn-np-empty';
+      if (tab === 'update') e.textContent = fbT("Yangilanish yo'q. Eng so'nggi versiya o'rnatilgan.", 'Обновлений нет. Установлена последняя версия.');
+      else e.textContent = fbT("Hozircha xabar yo'q.", 'Пока нет сообщений.');
+      body.appendChild(e);
+    }
+  }
+  function pldnNpClose() { document.getElementById('pldnNpOv').classList.remove('open'); }
+  (function () {
+    const ov = document.getElementById('pldnNpOv');
+    document.getElementById('pldnNpTitle').textContent = fbT('Bildirishnomalar', 'Уведомления');
+    document.querySelector('#pldnNpTabUpdate .tab-lbl').textContent = fbT('Yangilanish', 'Обновление');
+    document.querySelector('#pldnNpTabOffers .tab-lbl').textContent = fbT('Takliflar', 'Предложения');
+    document.querySelector('#pldnNpTabSecurity .tab-lbl').textContent = fbT('Xavfsizlik', 'Безопасность');
+    document.getElementById('pldnBellBtn').addEventListener('click', function () {
+      ov.classList.add('open');
+      pldnNpRender('update');
+      // ochilganda qizil belgi yo'qoladi
+      if (pldnUpdateInfo) { try { localStorage.setItem('pldn_update_seen', String(pldnUpdateInfo.latest)); } catch (_) {} }
+      pldnRefreshBell();
+      if (!pldnUpdateInfo) pldnCheckUpdate(false).then(function () { if (ov.classList.contains('open')) { pldnNpRender('update'); if (pldnUpdateInfo) { try { localStorage.setItem('pldn_update_seen', String(pldnUpdateInfo.latest)); } catch (_) {} } pldnRefreshBell(); } });
+    });
+    document.getElementById('pldnNpClose').addEventListener('click', pldnNpClose);
+    ov.addEventListener('click', function (e) { if (e.target === ov) pldnNpClose(); });
+    document.querySelectorAll('.pldn-np-tab').forEach(function (t) { t.addEventListener('click', function () { pldnNpRender(t.dataset.tab); }); });
   })();
 
   // ===== JAVOB BERISH (Reply) =====
