@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-calls-v16 (2026-10-08) -->
+<!-- VERSION: firebase-groups-v17 (2026-10-08) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -2897,7 +2897,7 @@
       </div>
     </div>
     <div class="settings-body" style="padding:16px;">
-      <p class="subtitle" id="findUserSub" style="margin-bottom:12px;">Do'stingizning foydalanuvchi nomini (PLDN/- dan keyingi qismi) kiriting</p>
+      <p class="subtitle" id="findUserSub" style="margin-bottom:12px;">Foydalanuvchi, guruh yoki kanal username'ini (PLDN/- dan keyingi qismi) kiriting</p>
       <input type="text" class="name-input" id="findUserInput" placeholder="Foydalanuvchi nomi" maxlength="12" autocomplete="off" autocapitalize="none">
       <button class="done-btn" id="findUserSearchBtn">Qidirish</button>
       <p class="subtitle" id="findUserMsg" style="margin-top:14px; min-height:18px;"></p>
@@ -3225,10 +3225,15 @@
           <span class="settings-label" data-i18n="k71">Ulangan qurilmalar</span>
           <span class="settings-arrow">›</span>
         </div>
-        <div class="settings-item" id="appUpdateRow">
-          <span class="settings-icon">⬇️</span>
-          <span class="settings-label" id="appUpdateLabel">Yangilanishni tekshirish</span>
-          <span class="settings-value" id="appUpdateVal"></span>
+        <div class="settings-item" id="createGroupRow">
+          <span class="settings-icon">👥</span>
+          <span class="settings-label" id="createGroupLabel">Guruh yaratish</span>
+          <span class="settings-arrow">›</span>
+        </div>
+        <div class="settings-item" id="createChannelRow">
+          <span class="settings-icon">📢</span>
+          <span class="settings-label" id="createChannelLabel">Kanal yaratish</span>
+          <span class="settings-arrow">›</span>
         </div>
       </div>
 
@@ -7690,12 +7695,6 @@
     }
   }
   (function () {
-    const lbl = document.getElementById('appUpdateLabel');
-    const val = document.getElementById('appUpdateVal');
-    if (lbl) lbl.textContent = fbT('Yangilanishni tekshirish', 'Проверить обновления');
-    const cur = parseInt(PLDN_BUILD, 10);
-    if (val && cur) val.textContent = 'v' + cur;
-    document.getElementById('appUpdateRow').addEventListener('click', () => pldnCheckUpdate(true));
     setTimeout(() => pldnCheckUpdate(false), 5000);
   })();
 
@@ -7881,11 +7880,16 @@
     const rows = [];
     for (const d of docs) {
       const v = d.data({ serverTimestamps: 'estimate' });
-      if (!v.lastText) continue;
-      const other = (v.members || []).find(m => m !== me);
-      if (!other) continue;
-      let u;
-      try { u = await fbGetUser(other); } catch (e) { console.error(e); continue; }
+      const isGrp = v.type === 'group' || v.type === 'channel';
+      if (!isGrp && !v.lastText) continue;
+      let other = null, u;
+      if (isGrp) {
+        u = { name: v.name || '...', color: fbColorFor(d.id), avatar: fbSafeAvatar(v.avatar) };
+      } else {
+        other = (v.members || []).find(m => m !== me);
+        if (!other) continue;
+        try { u = await fbGetUser(other); } catch (e) { console.error(e); continue; }
+      }
       const ts = (v.updatedAt && v.updatedAt.toDate) ? v.updatedAt.toDate() : null;
       let unread = (v.unread && Number(v.unread[me])) || 0;
       if (unread > 0 && fbCurrentChat && fbCurrentChat.id === d.id) {
@@ -7894,6 +7898,7 @@
       }
       rows.push({
         id: d.id, otherUid: other, name: u.name, color: u.color, avatar: u.avatar,
+        type: isGrp ? v.type : 'dm', members: v.members || [], owner: v.owner || '', admins: v.admins || [], username: v.username || '',
         msg: (v.lastFrom === me ? fbT('Siz: ', 'Вы: ') : '') + v.lastText,
         time: fbTimeLabel(ts), ms: ts ? ts.getTime() : 0, unread: unread, real: true
       });
@@ -7920,6 +7925,7 @@
     fbVoiceCache.forEach(b => { if (b._audio) b._audio.pause(); });
     fbVoiceCache.clear();
     if (fbPeerUnsub) { fbPeerUnsub(); fbPeerUnsub = null; }
+    if (typeof pldnChatUiReset === 'function') pldnChatUiReset();
     fbClearReply();
     fbCurrentChat = null;
   }
@@ -7931,9 +7937,11 @@
     if (!me) return;
     fbLeaveChat();
     const chatId = info.id || fbChatId(me.uid, info.otherUid);
-    const myChat = { id: chatId, otherUid: info.otherUid, name: info.name, color: info.color, avatar: info.avatar || null };
+    const isGrp = info.type === 'group' || info.type === 'channel';
+    const myChat = { id: chatId, otherUid: info.otherUid || null, name: info.name, color: info.color, avatar: info.avatar || null,
+      type: isGrp ? info.type : 'dm', members: info.members || [], owner: info.owner || '', admins: info.admins || [], username: info.username || '' };
     fbCurrentChat = myChat;
-    fbWatchPeer(info.otherUid);
+    if (!isGrp) fbWatchPeer(info.otherUid);
 
     document.getElementById('chatDetailName').textContent = info.name;
     const av = document.getElementById('chatDetailAvatar');
@@ -7944,6 +7952,7 @@
     resetMessageInput();
     closeMsgMenu();
     closeReactionPicker();
+    if (isGrp && typeof pldnWatchGroup === 'function') pldnWatchGroup(myChat);
 
     if (ensure) {
       try {
@@ -7997,6 +8006,7 @@
               b = isText ? addBubble(m.text, dir, md, !!m.editedAt) : addImageBubble(m.image, dir, md);
             }
             b.dataset.msgId = doc.id;
+            if (myChat.type === 'group' && dir === 'incoming' && typeof pldnAddSender === 'function') pldnAddSender(b, m.from);
             if (m.reply && typeof m.reply === 'object') fbAddQuote(b, m.reply);
             fbApplyReactions(b, m.reactions, me.uid);
           }
@@ -8011,6 +8021,17 @@
       }, err => console.error('Xabarlar xatosi', err));
   }
 
+  // Chat hujjatiga yoziladigan oxirgi xabar ma'lumoti (shaxsiy chat va guruh/kanal uchun)
+  function fbChatUpdate(chat, me, lastText, ts) {
+    const inc = firebase.firestore.FieldValue.increment(1);
+    if (chat.type === 'group' || chat.type === 'channel') {
+      const unread = {};
+      (chat.members || []).forEach(uid => { if (uid !== me) unread[uid] = inc; });
+      return { lastText: lastText, lastFrom: me, updatedAt: ts, unread: unread };
+    }
+    return { members: [me, chat.otherUid], lastText: lastText, lastFrom: me, updatedAt: ts, unread: { [chat.otherUid]: inc } };
+  }
+
   async function fbSendText(text) {
     const me = fbAuth && fbAuth.currentUser;
     const chat = fbCurrentChat;
@@ -8019,7 +8040,7 @@
     const ts = firebase.firestore.FieldValue.serverTimestamp();
     const batch = fbDb.batch();
     batch.set(chatRef.collection('messages').doc(), Object.assign({ from: me.uid, text: text.slice(0, 2000), type: 'text', createdAt: ts }, fbTakeReply()));
-    batch.set(chatRef, { members: [me.uid, chat.otherUid], lastText: text.slice(0, 100), lastFrom: me.uid, updatedAt: ts, unread: { [chat.otherUid]: firebase.firestore.FieldValue.increment(1) } }, { merge: true });
+    batch.set(chatRef, fbChatUpdate(chat, me.uid, text.slice(0, 100), ts), { merge: true });
     try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e)); }
   }
 
@@ -8117,7 +8138,7 @@
     const ts = firebase.firestore.FieldValue.serverTimestamp();
     const batch = fbDb.batch();
     batch.set(chatRef.collection('messages').doc(), Object.assign({ from: me.uid, type: 'voice', audio: dataUrl, duration: Math.round(duration) || 0, createdAt: ts }, fbTakeReply()));
-    batch.set(chatRef, { members: [me.uid, chat.otherUid], lastText: fbT('🎤 Ovozli xabar', '🎤 Голосовое'), lastFrom: me.uid, updatedAt: ts, unread: { [chat.otherUid]: firebase.firestore.FieldValue.increment(1) } }, { merge: true });
+    batch.set(chatRef, fbChatUpdate(chat, me.uid, fbT('🎤 Ovozli xabar', '🎤 Голосовое'), ts), { merge: true });
     try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
   }
 
@@ -8180,7 +8201,7 @@
     const ts = firebase.firestore.FieldValue.serverTimestamp();
     const batch = fbDb.batch();
     batch.set(chatRef.collection('messages').doc(), Object.assign({ from: me.uid, type: 'image', image: dataUrl, createdAt: ts }, fbTakeReply()));
-    batch.set(chatRef, { members: [me.uid, chat.otherUid], lastText: fbT('📷 Rasm', '📷 Фото'), lastFrom: me.uid, updatedAt: ts, unread: { [chat.otherUid]: firebase.firestore.FieldValue.increment(1) } }, { merge: true });
+    batch.set(chatRef, fbChatUpdate(chat, me.uid, fbT('📷 Rasm', '📷 Фото'), ts), { merge: true });
     try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
   }
 
@@ -8195,7 +8216,7 @@
       const set = (id, uz, ru) => { const el = document.getElementById(id); if (el) el.textContent = fbT(uz, ru); };
       set('findUserBtnLabel', "Username bo'yicha topish", "Найти по имени пользователя");
       set('findUserTitle', "Foydalanuvchini topish", "Поиск пользователя");
-      set('findUserSub', "Do'stingizning foydalanuvchi nomini (PLDN/- dan keyingi qismi) kiriting", "Введите имя пользователя друга (часть после PLDN/-)");
+      set('findUserSub', "Foydalanuvchi, guruh yoki kanal username'ini (PLDN/- dan keyingi qismi) kiriting", "Введите имя пользователя, группы или канала (часть после PLDN/-)");
       set('findUserSearchBtn', "Qidirish", "Найти");
       input.placeholder = fbT("Foydalanuvchi nomi", "Имя пользователя");
     }
@@ -8220,8 +8241,9 @@
       msgEl.textContent = fbT("Qidirilmoqda...", "Поиск...");
       btn.disabled = true;
       try {
+        const pubFound = (typeof pldnPublicSearch === 'function') ? await pldnPublicSearch(u, resEl) : false;
         const snap = await fbDb.collection('users').where('username', '==', u).limit(1).get();
-        if (snap.empty) { msgEl.textContent = fbT("Bunday foydalanuvchi topilmadi", "Пользователь не найден"); return; }
+        if (snap.empty) { msgEl.textContent = pubFound ? '' : fbT("Bunday foydalanuvchi topilmadi", "Пользователь не найден"); return; }
         const doc = snap.docs[0];
         if (doc.id === me.uid) { msgEl.textContent = fbT("Bu sizning hisobingiz", "Это ваш аккаунт"); return; }
         const v = doc.data();
@@ -8835,6 +8857,465 @@
         onIncoming(ch.doc.ref, d);
       });
     }, function (e) { console.error("Qo'ng'iroq tinglash xatosi", e); });
+  };
+})();
+</script>
+<script>
+// ===== GURUH VA KANAL (Firestore) =====
+// VERSION: firebase-groups-v17
+(function () {
+  const $ = function (id) { return document.getElementById(id); };
+  const T = function (uz, ru) { return fbT(uz, ru); };
+  const FV = function () { return firebase.firestore.FieldValue; };
+  const isG = function (t) { return t === 'group' || t === 'channel'; };
+  const BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>';
+  let metaUnsub = null;
+  let infoToken = 0;
+
+  const st = document.createElement('style');
+  st.textContent =
+    '.pgx-sender{font-size:13px;font-weight:700;margin-bottom:2px}' +
+    '.pgx-ro{flex-shrink:0;text-align:center;padding:14px;color:var(--text-secondary,#8e8e93);background:var(--bg-elevated,#fff);border-top:1px solid var(--border-color,#f0f0f0);font-size:15px}' +
+    '#chatDetailScreen .chat-detail-info,#chatDetailScreen .chat-detail-avatar{cursor:pointer}' +
+    '.pgx-ov{position:fixed;inset:0;background:var(--overlay-bg,rgba(0,0,0,.4));z-index:99994;display:none;align-items:flex-end;justify-content:center}' +
+    '.pgx-ov.open{display:flex}' +
+    '.pgx-sheet{background:var(--bg-elevated,#fff);color:var(--text-primary,#000);width:100%;max-width:560px;border-radius:22px 22px 0 0;padding:10px 12px calc(14px + env(safe-area-inset-bottom,0px))}' +
+    '.pgx-sheet-title{text-align:center;color:var(--text-secondary,#8e8e93);font-size:14px;padding:8px 0 6px}' +
+    '.pgx-item{display:flex;align-items:center;gap:14px;padding:15px 12px;font-size:17px;border-radius:12px;cursor:pointer}' +
+    '.pgx-item:active{background:var(--bg-card,#f2f2f7)}' +
+    '.pgx-item.danger{color:#ff3b30}' +
+    '.pgx-hero{text-align:center;padding:8px 0 14px}' +
+    '.pgx-bigav{width:96px;height:96px;border-radius:50%;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:38px;font-weight:700;color:#fff;background-size:cover!important;background-position:center!important}' +
+    '.pgx-title{font-size:24px;font-weight:700}' +
+    '.pgx-sub{font-size:15px;color:var(--text-secondary,#8e8e93);margin-top:4px}' +
+    '.pgx-actions{display:flex;gap:10px;margin:6px 0 18px}' +
+    '.pgx-actions button{flex:1;background:var(--bg-card,#f2f2f7);color:#2481cc;border:0;border-radius:14px;padding:12px 4px;font-size:13px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer}' +
+    '.pgx-actions button span{font-size:22px}' +
+    '.pgx-sec{font-size:13px;font-weight:700;color:var(--text-secondary,#8e8e93);text-transform:uppercase;margin:6px 6px 8px}' +
+    '.pgx-card{background:var(--bg-card,#f2f2f7);border-radius:16px;overflow:hidden}' +
+    '.pgx-mem{display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer}' +
+    '.pgx-mem-av{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;background-size:cover!important;background-position:center!important;flex-shrink:0}' +
+    '.pgx-mem-main{flex:1;min-width:0}' +
+    '.pgx-mem-name{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.pgx-mem-sub{font-size:13px;color:var(--text-secondary,#8e8e93)}' +
+    '.pgx-badge{font-size:13px;color:var(--text-secondary,#8e8e93)}' +
+    '.pgx-x{background:none;border:0;color:#ff3b30;font-size:18px;padding:6px 8px;cursor:pointer}' +
+    '.pgx-modal{background:var(--bg-elevated,#fff);color:var(--text-primary,#000);width:100%;max-width:560px;border-radius:22px 22px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px))}' +
+    '.pgx-modal h3{font-size:19px;margin:0 0 6px}' +
+    '.pgx-row{display:flex;gap:10px;margin-top:12px}' +
+    '.pgx-row button{flex:1;border:0;border-radius:12px;padding:13px;font-size:16px;font-weight:600;cursor:pointer}' +
+    '.pgx-b1{background:var(--bg-card,#f2f2f7);color:var(--text-primary,#000)}' +
+    '.pgx-b2{background:#2AABEE;color:#fff}' +
+    '.pgx-set-row{display:flex;align-items:center;justify-content:space-between;padding:15px 16px;font-size:16px}' +
+    '.pgx-set-row + .pgx-set-row{border-top:1px solid var(--border-color,#f0f0f0)}' +
+    '.pgx-set-val{color:var(--text-secondary,#8e8e93);font-size:15px}';
+  document.head.appendChild(st);
+
+  const frame = $('chatDetailScreen').parentNode;
+  function mkScreen(id, html) {
+    const d = document.createElement('div');
+    d.className = 'screen';
+    d.id = id;
+    d.innerHTML = html;
+    frame.appendChild(d);
+    return d;
+  }
+  function mkOverlay(id, html) {
+    const d = document.createElement('div');
+    d.className = 'pgx-ov';
+    d.id = id;
+    d.innerHTML = html;
+    d.addEventListener('click', function (e) { if (e.target === d) d.classList.remove('open'); });
+    document.body.appendChild(d);
+    return d;
+  }
+  function setAv(el, avatar, name, color) {
+    if (avatar) { el.textContent = ''; el.style.background = 'url(' + avatar + ') center/cover'; }
+    else { el.textContent = initials(name || '?'); el.style.background = color; }
+  }
+  function me() { return fbAuth && fbAuth.currentUser; }
+  function canAdd(c) { const u = me(); return !!(u && c && (c.type === 'group' || c.owner === u.uid)); }
+  function canPost(c) { const u = me(); return !!(u && c && (c.type !== 'channel' || c.owner === u.uid)); }
+  function isOwnerOf(c) { const u = me(); return !!(u && c && c.owner === u.uid); }
+  function cnt(c) { const n = (c.members || []).length; return c.type === 'channel' ? n + ' ' + T('obunachi', 'подписчиков') : n + ' ' + T("a'zo", 'участников'); }
+
+  // ================= YARATISH =================
+  const cr = mkScreen('pgxCreateScreen',
+    '<button class="back-btn" id="pgxCrBack">' + BACK + '</button>' +
+    '<label class="avatar-wrap" for="pgxCrFile"><span class="camera-icon" id="pgxCrCam">📷</span><img id="pgxCrPrev" style="display:none;width:100%;height:100%;object-fit:cover;border-radius:50%;"></label>' +
+    '<input type="file" id="pgxCrFile" accept="image/*" style="display:none;">' +
+    '<h1 id="pgxCrTitle"></h1><p class="subtitle" id="pgxCrSub"></p>' +
+    '<input type="text" class="name-input" id="pgxCrName" maxlength="40" autocomplete="off">' +
+    '<input type="text" class="name-input" id="pgxCrUser" maxlength="20" autocomplete="off" autocapitalize="none" style="margin-top:10px;display:none;">' +
+    '<p class="subtitle" id="pgxCrMsg" style="min-height:20px;margin-top:8px;"></p>' +
+    '<button class="done-btn" id="pgxCrBtn" disabled></button>');
+  let crKind = 'group', crAvatar = null;
+  function crValid() {
+    const ok = $('pgxCrName').value.trim().length > 0 && (crKind === 'group' || $('pgxCrUser').value.length >= 4);
+    $('pgxCrBtn').disabled = !ok;
+  }
+  function openCreate(kind) {
+    crKind = kind; crAvatar = null;
+    $('pgxCrPrev').style.display = 'none'; $('pgxCrCam').style.display = '';
+    $('pgxCrName').value = ''; $('pgxCrUser').value = ''; $('pgxCrMsg').textContent = '';
+    const ch = kind === 'channel';
+    $('pgxCrTitle').textContent = ch ? T('Kanalni nomlang', 'Назовите канал') : T('Guruhni nomlang', 'Назовите группу');
+    $('pgxCrSub').textContent = ch ? T('Kanal nomi, rasmi (ixtiyoriy) va yagona username', 'Название, фото (необязательно) и уникальный username канала') : T('Guruh uchun nom va rasm tanlang (rasm ixtiyoriy)', 'Название и фото группы (фото необязательно)');
+    $('pgxCrName').placeholder = ch ? T('Kanal nomi', 'Название канала') : T('Guruh nomi', 'Название группы');
+    $('pgxCrUser').placeholder = T('Yagona username (a-z, 0-9)', 'Уникальный username (a-z, 0-9)');
+    $('pgxCrUser').style.display = ch ? '' : 'none';
+    $('pgxCrBtn').textContent = T('Yaratish', 'Создать');
+    $('pgxCrBtn').disabled = true;
+    goToScreen('pgxCreateScreen');
+  }
+  $('pgxCrBack').addEventListener('click', function () { goToScreen('settingsScreen'); });
+  $('pgxCrName').addEventListener('input', crValid);
+  $('pgxCrUser').addEventListener('input', function () { this.value = this.value.toLowerCase().replace(/[^a-z0-9]/g, ''); crValid(); });
+  $('pgxCrFile').addEventListener('change', function () {
+    const f = this.files && this.files[0]; this.value = '';
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = function () {
+      fbCompressAvatar(r.result).then(function (a) {
+        if (!a) return;
+        crAvatar = a; $('pgxCrPrev').src = a; $('pgxCrPrev').style.display = ''; $('pgxCrCam').style.display = 'none';
+      });
+    };
+    r.readAsDataURL(f);
+  });
+  $('pgxCrBtn').addEventListener('click', async function () {
+    const u = me(); if (!u) return;
+    const name = $('pgxCrName').value.trim().slice(0, 40);
+    const msg = $('pgxCrMsg'), btn = this;
+    let uname = '';
+    btn.disabled = true; msg.textContent = T('Tekshirilmoqda...', 'Проверка...');
+    try {
+      if (crKind === 'channel') {
+        uname = $('pgxCrUser').value;
+        if (!/^[a-z0-9]{4,20}$/.test(uname)) { msg.textContent = T('Username 4–20 ta harf yoki raqam bo\'lsin', 'Username: 4–20 букв или цифр'); return; }
+        const r = await Promise.all([
+          fbDb.collection('usernames').doc(uname).get(),
+          fbDb.collection('users').where('username', '==', uname).limit(1).get()
+        ]);
+        if (r[0].exists || !r[1].empty) { msg.textContent = T('Bu username band, boshqasini tanlang', 'Этот username занят'); return; }
+      }
+      const ref = fbDb.collection('chats').doc();
+      const ts = fbSrvTs();
+      const data = { type: crKind, name: name, avatar: crAvatar || null, owner: u.uid, admins: [], members: [u.uid],
+        lastText: crKind === 'group' ? T('Guruh yaratildi', 'Группа создана') : T('Kanal yaratildi', 'Канал создан'), lastFrom: u.uid, updatedAt: ts, createdAt: ts };
+      if (uname) data.username = uname;
+      const batch = fbDb.batch();
+      batch.set(ref, data);
+      if (uname) batch.set(fbDb.collection('usernames').doc(uname), { kind: crKind, chatId: ref.id, owner: u.uid, name: name, avatar: crAvatar || null });
+      await batch.commit();
+      msg.textContent = '';
+      fbOpenChat({ id: ref.id, type: crKind, name: name, color: fbColorFor(ref.id), avatar: crAvatar || null, members: [u.uid], owner: u.uid, admins: [], username: uname }, false);
+    } catch (e) {
+      console.error(e);
+      msg.textContent = fbErrMsg(e);
+    } finally { crValid(); }
+  });
+  $('createGroupRow').addEventListener('click', function () { openCreate('group'); });
+  $('createChannelRow').addEventListener('click', function () { openCreate('channel'); });
+  const lg = $('createGroupLabel'), lc = $('createChannelLabel');
+  if (lg) lg.textContent = T('Guruh yaratish', 'Создать группу');
+  if (lc) lc.textContent = T('Kanal yaratish', 'Создать канал');
+
+  // ================= CHAT HOLATI (sarlavha, yozish paneli) =================
+  const ro = document.createElement('div');
+  ro.className = 'pgx-ro'; ro.style.display = 'none';
+  const bar = document.querySelector('#chatDetailScreen .chat-input-bar');
+  bar.parentNode.insertBefore(ro, bar.nextSibling);
+
+  function applyChatUi(c) {
+    const isg = isG(c.type);
+    $('callAudioBtn').style.display = isg ? 'none' : '';
+    $('callVideoBtn').style.display = isg ? 'none' : '';
+    const post = !isg || canPost(c);
+    bar.style.display = post ? '' : 'none';
+    ro.style.display = post ? 'none' : 'block';
+    ro.textContent = T('Bu kanalda faqat egasi yozadi', 'В этом канале пишет только владелец');
+    if (isg) {
+      $('chatDetailName').textContent = c.name;
+      setAv($('chatDetailAvatar'), c.avatar, c.name, c.color);
+      $('chatDetailStatus').textContent = cnt(c);
+    }
+  }
+  window.pldnChatUiReset = function () {
+    if (metaUnsub) { try { metaUnsub(); } catch (_) {} metaUnsub = null; }
+    $('callAudioBtn').style.display = '';
+    $('callVideoBtn').style.display = '';
+    bar.style.display = '';
+    ro.style.display = 'none';
+  };
+  window.pldnWatchGroup = function (chat) {
+    applyChatUi(chat);
+    if (metaUnsub) { try { metaUnsub(); } catch (_) {} }
+    metaUnsub = fbDb.collection('chats').doc(chat.id).onSnapshot(function (snap) {
+      if (fbCurrentChat !== chat) return;
+      const u = me(); if (!u) return;
+      if (!snap.exists) {
+        alert(T("Bu " + (chat.type === 'channel' ? 'kanal' : 'guruh') + " o'chirilgan", 'Это ' + (chat.type === 'channel' ? 'канал' : 'группа') + ' удалена'));
+        fbLeaveChat(); goToScreen('screen4'); return;
+      }
+      const v = snap.data();
+      if ((v.members || []).indexOf(u.uid) < 0) { fbLeaveChat(); goToScreen('screen4'); return; }
+      chat.members = v.members || []; chat.owner = v.owner || ''; chat.admins = v.admins || [];
+      chat.name = v.name || chat.name; chat.avatar = fbSafeAvatar(v.avatar); chat.username = v.username || '';
+      applyChatUi(chat);
+      if ($('pgxInfoScreen').classList.contains('active')) renderInfo();
+    }, function (e) { console.error('Guruh kuzatuvi', e); });
+  };
+  window.pldnAddSender = function (b, uid) {
+    fbGetUser(uid).then(function (u) {
+      const s = document.createElement('div');
+      s.className = 'pgx-sender'; s.textContent = u.name; s.style.color = u.color;
+      b.insertBefore(s, b.firstChild);
+    }).catch(function () {});
+  };
+
+  // ================= SARLAVHA MENYUSI =================
+  const menu = mkOverlay('pgxMenuOv', '<div class="pgx-sheet"><div class="pgx-sheet-title" id="pgxMenuTitle"></div><div id="pgxMenuItems"></div></div>');
+  function openMenu() {
+    const c = fbCurrentChat; if (!c || !isG(c.type)) return;
+    $('pgxMenuTitle').textContent = c.name;
+    const box = $('pgxMenuItems'); box.innerHTML = '';
+    const add = function (ic, txt, fn) {
+      const d = document.createElement('div'); d.className = 'pgx-item';
+      d.innerHTML = '<span>' + ic + '</span><span></span>'; d.lastChild.textContent = txt;
+      d.addEventListener('click', function () { menu.classList.remove('open'); fn(); });
+      box.appendChild(d);
+    };
+    if (canAdd(c)) add('➕', T("A'zo qo'shish", "Добавить участника"), openAdd);
+    add('🔍', T("A'zolarni qidirish", 'Поиск участников'), function () { openInfo(true); });
+    add('⚙️', T('Sozlamalar', 'Настройки'), openSettings);
+    menu.classList.add('open');
+  }
+  $('chatDetailAvatar').addEventListener('click', openMenu);
+  document.querySelector('#chatDetailScreen .chat-detail-info').addEventListener('click', openMenu);
+
+  // ================= A'ZO QO'SHISH (username bilan) =================
+  const addOv = mkOverlay('pgxAddOv',
+    '<div class="pgx-modal"><h3 id="pgxAddTitle"></h3><p class="subtitle" id="pgxAddSub" style="margin:0 0 10px;"></p>' +
+    '<input type="text" class="name-input" id="pgxAddInput" maxlength="12" autocomplete="off" autocapitalize="none">' +
+    '<p class="subtitle" id="pgxAddMsg" style="min-height:20px;margin-top:8px;"></p>' +
+    '<div class="pgx-row"><button class="pgx-b1" id="pgxAddCancel"></button><button class="pgx-b2" id="pgxAddOk"></button></div></div>');
+  function openAdd() {
+    const c = fbCurrentChat; if (!c || !canAdd(c)) return;
+    $('pgxAddTitle').textContent = T("A'zo qo'shish", 'Добавить участника');
+    $('pgxAddSub').textContent = T("Foydalanuvchining username'ini kiriting (PLDN/- dan keyingi qismi)", 'Введите username пользователя (часть после PLDN/-)');
+    $('pgxAddInput').placeholder = T('Foydalanuvchi nomi', 'Имя пользователя');
+    $('pgxAddInput').value = ''; $('pgxAddMsg').textContent = '';
+    $('pgxAddCancel').textContent = T('Yopish', 'Закрыть');
+    $('pgxAddOk').textContent = T("Qo'shish", 'Добавить');
+    addOv.classList.add('open');
+  }
+  $('pgxAddCancel').addEventListener('click', function () { addOv.classList.remove('open'); });
+  $('pgxAddInput').addEventListener('input', function () { this.value = this.value.toLowerCase().replace(/[^a-z0-9]/g, ''); });
+  $('pgxAddOk').addEventListener('click', async function () {
+    const c = fbCurrentChat; const msg = $('pgxAddMsg'); const btn = this;
+    const u = $('pgxAddInput').value;
+    if (!c || !canAdd(c)) return;
+    if (u.length < 4) { msg.textContent = T('Kamida 4 ta belgi kiriting', 'Введите минимум 4 символа'); return; }
+    btn.disabled = true; msg.textContent = T('Qidirilmoqda...', 'Поиск...');
+    try {
+      const snap = await fbDb.collection('users').where('username', '==', u).limit(1).get();
+      if (snap.empty) { msg.textContent = T('Bunday foydalanuvchi topilmadi', 'Пользователь не найден'); return; }
+      const uid = snap.docs[0].id;
+      if ((c.members || []).indexOf(uid) >= 0) { msg.textContent = T("U allaqachon a'zo", 'Уже участник'); return; }
+      await fbDb.collection('chats').doc(c.id).update({ members: FV().arrayUnion(uid) });
+      const nm = fbDisplayName(snap.docs[0].data());
+      msg.textContent = '✅ ' + T("Qo'shildi: ", 'Добавлен: ') + nm;
+      $('pgxAddInput').value = '';
+    } catch (e) { console.error(e); msg.textContent = fbErrMsg(e); }
+    finally { btn.disabled = false; }
+  });
+
+  // ================= GURUH MA'LUMOTI (a'zolar ro'yxati) =================
+  const info = mkScreen('pgxInfoScreen',
+    '<div class="chat-detail-header"><button class="chat-back-btn" id="pgxInfoBack">' + BACK + '</button></div>' +
+    '<div class="settings-body">' +
+    '<div class="pgx-hero"><div class="pgx-bigav" id="pgxInfoAv"></div><div class="pgx-title" id="pgxInfoName"></div><div class="pgx-sub" id="pgxInfoSub"></div></div>' +
+    '<div class="pgx-actions"><button id="pgxActAdd"><span>➕</span><b id="pgxActAddT"></b></button><button id="pgxActSearch"><span>🔍</span><b id="pgxActSearchT"></b></button><button id="pgxActSet"><span>⚙️</span><b id="pgxActSetT"></b></button></div>' +
+    '<div class="pgx-sec" id="pgxMemTitle"></div>' +
+    '<input type="text" class="name-input" id="pgxMemSearch" style="display:none;margin-bottom:10px;" autocomplete="off">' +
+    '<div class="pgx-card" id="pgxMemList"></div></div>');
+  $('pgxInfoBack').addEventListener('click', function () { goToScreen('chatDetailScreen'); });
+  $('pgxActAdd').addEventListener('click', openAdd);
+  $('pgxActSearch').addEventListener('click', function () { const s = $('pgxMemSearch'); s.style.display = ''; s.focus(); });
+  $('pgxActSet').addEventListener('click', openSettings);
+  $('pgxMemSearch').addEventListener('input', function () {
+    const q = this.value.trim().toLowerCase();
+    $('pgxMemList').querySelectorAll('.pgx-mem').forEach(function (r) { r.style.display = (!q || r.dataset.q.indexOf(q) >= 0) ? '' : 'none'; });
+  });
+  function openInfo(focusSearch) {
+    renderInfo();
+    goToScreen('pgxInfoScreen');
+    if (focusSearch) { const s = $('pgxMemSearch'); s.style.display = ''; setTimeout(function () { s.focus(); }, 200); }
+  }
+  async function renderInfo() {
+    const c = fbCurrentChat; if (!c || !isG(c.type)) return;
+    const token = ++infoToken;
+    setAv($('pgxInfoAv'), c.avatar, c.name, c.color);
+    $('pgxInfoName').textContent = c.name;
+    $('pgxInfoSub').textContent = cnt(c) + (c.username ? ' · PLDN/-' + c.username : '');
+    $('pgxActAddT').textContent = T("A'zo qo'shish", 'Добавить');
+    $('pgxActSearchT').textContent = T('Qidirish', 'Поиск');
+    $('pgxActSetT').textContent = T('Sozlamalar', 'Настройки');
+    $('pgxActAdd').style.display = canAdd(c) ? '' : 'none';
+    $('pgxMemTitle').textContent = c.type === 'channel' ? T('Obunachilar', 'Подписчики') : T("A'zolar", 'Участники');
+    $('pgxMemSearch').placeholder = T("Ism yoki username bo'yicha qidirish", 'Поиск по имени или username');
+    const list = $('pgxMemList');
+    const mine = me();
+    const ids = (c.members || []).slice(0, 300);
+    const users = await Promise.all(ids.map(function (uid) { return fbGetUser(uid).catch(function () { return { uid: uid, name: '?', username: '', avatar: null, color: fbColorFor(uid) }; }); }));
+    if (token !== infoToken) return;
+    list.innerHTML = '';
+    users.sort(function (a, b) { return (a.uid === c.owner ? -1 : 0) - (b.uid === c.owner ? -1 : 0); });
+    users.forEach(function (u) {
+      const row = document.createElement('div');
+      row.className = 'pgx-mem';
+      row.dataset.q = (u.name + ' ' + u.username).toLowerCase();
+      const av = document.createElement('div'); av.className = 'pgx-mem-av'; setAv(av, u.avatar, u.name, u.color);
+      const mid = document.createElement('div'); mid.className = 'pgx-mem-main';
+      const n = document.createElement('div'); n.className = 'pgx-mem-name'; n.textContent = u.name + (mine && u.uid === mine.uid ? ' (' + T('siz', 'вы') + ')' : '');
+      const s = document.createElement('div'); s.className = 'pgx-mem-sub'; s.textContent = u.username ? 'PLDN/-' + u.username : '';
+      mid.append(n, s);
+      row.append(av, mid);
+      if (u.uid === c.owner) { const b = document.createElement('span'); b.className = 'pgx-badge'; b.textContent = T('egasi', 'владелец'); row.appendChild(b); }
+      else if (isOwnerOf(c)) {
+        const x = document.createElement('button'); x.className = 'pgx-x'; x.textContent = '✕';
+        x.addEventListener('click', async function (e) {
+          e.stopPropagation();
+          const ok = await pldnConfirm(T("«" + u.name + "» ni chiqarasizmi?", 'Удалить «' + u.name + '»?'));
+          if (!ok) return;
+          fbDb.collection('chats').doc(c.id).update({ members: FV().arrayRemove(u.uid) }).catch(function (er) { alert(fbErrMsg(er)); });
+        });
+        row.appendChild(x);
+      }
+      row.addEventListener('click', function () {
+        if (mine && u.uid === mine.uid) return;
+        fbOpenChat({ otherUid: u.uid, name: u.name, color: u.color, avatar: u.avatar }, true);
+      });
+      list.appendChild(row);
+    });
+  }
+
+  // ================= SOZLAMALAR =================
+  const setS = mkScreen('pgxSetScreen',
+    '<div class="chat-detail-header"><button class="chat-back-btn" id="pgxSetBack">' + BACK + '</button><div class="chat-detail-info"><div class="chat-detail-name" id="pgxSetTitle"></div></div></div>' +
+    '<div class="settings-body"><div class="pgx-hero"><label for="pgxSetFile" style="cursor:pointer;"><div class="pgx-bigav" id="pgxSetAv"></div></label><input type="file" id="pgxSetFile" accept="image/*" style="display:none;"></div>' +
+    '<div class="pgx-card" style="padding:14px;"><input type="text" class="name-input" id="pgxSetName" maxlength="40" autocomplete="off"><button class="done-btn" id="pgxSetSave" style="margin-top:10px;"></button><p class="subtitle" id="pgxSetMsg" style="min-height:18px;margin-top:6px;"></p></div>' +
+    '<div class="pgx-card" id="pgxSetInfo" style="margin-top:14px;"></div>' +
+    '<div class="pgx-card" style="margin-top:14px;"><div class="pgx-item danger" id="pgxSetDanger"></div></div></div>');
+  function openSettings() {
+    const c = fbCurrentChat; if (!c || !isG(c.type)) return;
+    const owner = isOwnerOf(c);
+    $('pgxSetTitle').textContent = T('Sozlamalar', 'Настройки');
+    setAv($('pgxSetAv'), c.avatar, c.name, c.color);
+    $('pgxSetName').value = c.name;
+    $('pgxSetName').disabled = !owner;
+    $('pgxSetSave').textContent = T('Saqlash', 'Сохранить');
+    $('pgxSetSave').style.display = owner ? '' : 'none';
+    $('pgxSetMsg').textContent = '';
+    const box = $('pgxSetInfo'); box.innerHTML = '';
+    const row = function (k, v) { const d = document.createElement('div'); d.className = 'pgx-set-row'; const a = document.createElement('span'); a.textContent = k; const b = document.createElement('span'); b.className = 'pgx-set-val'; b.textContent = v; d.append(a, b); box.appendChild(d); return d; };
+    row(c.type === 'channel' ? T('Turi', 'Тип') : T('Turi', 'Тип'), c.type === 'channel' ? T('Kanal', 'Канал') : T('Guruh', 'Группа'));
+    row(c.type === 'channel' ? T('Obunachilar', 'Подписчики') : T("A'zolar", 'Участники'), String((c.members || []).length));
+    if (c.username) {
+      const r = row('Username', 'PLDN/-' + c.username);
+      r.style.cursor = 'pointer';
+      r.addEventListener('click', function () { try { navigator.clipboard.writeText(c.username); alert(T('Username nusxalandi: ', 'Username скопирован: ') + c.username); } catch (_) {} });
+    }
+    $('pgxSetDanger').textContent = owner
+      ? ('🗑️ ' + (c.type === 'channel' ? T("Kanalni o'chirish", 'Удалить канал') : T("Guruhni o'chirish", 'Удалить группу')))
+      : ('🚪 ' + (c.type === 'channel' ? T('Kanaldan chiqish', 'Покинуть канал') : T('Guruhdan chiqish', 'Покинуть группу')));
+    goToScreen('pgxSetScreen');
+  }
+  $('pgxSetBack').addEventListener('click', function () { goToScreen('chatDetailScreen'); });
+  $('pgxSetSave').addEventListener('click', async function () {
+    const c = fbCurrentChat; if (!c || !isOwnerOf(c)) return;
+    const name = $('pgxSetName').value.trim().slice(0, 40);
+    if (!name) return;
+    try {
+      const batch = fbDb.batch();
+      batch.update(fbDb.collection('chats').doc(c.id), { name: name });
+      if (c.username) batch.update(fbDb.collection('usernames').doc(c.username), { name: name, kind: c.type, chatId: c.id, owner: c.owner, avatar: c.avatar || null });
+      await batch.commit();
+      $('pgxSetMsg').textContent = '✅ ' + T('Saqlandi', 'Сохранено');
+    } catch (e) { $('pgxSetMsg').textContent = fbErrMsg(e); }
+  });
+  $('pgxSetFile').addEventListener('change', function () {
+    const c = fbCurrentChat; const f = this.files && this.files[0]; this.value = '';
+    if (!c || !f || !isOwnerOf(c)) return;
+    const r = new FileReader();
+    r.onload = function () {
+      fbCompressAvatar(r.result).then(async function (a) {
+        if (!a) return;
+        try {
+          const batch = fbDb.batch();
+          batch.update(fbDb.collection('chats').doc(c.id), { avatar: a });
+          if (c.username) batch.update(fbDb.collection('usernames').doc(c.username), { avatar: a, name: c.name, kind: c.type, chatId: c.id, owner: c.owner });
+          await batch.commit();
+          setAv($('pgxSetAv'), a, c.name, c.color);
+        } catch (e) { alert(fbErrMsg(e)); }
+      });
+    };
+    r.readAsDataURL(f);
+  });
+  $('pgxSetDanger').addEventListener('click', async function () {
+    const c = fbCurrentChat; const u = me(); if (!c || !u) return;
+    const ch = c.type === 'channel';
+    if (isOwnerOf(c)) {
+      const ok = await pldnConfirm(ch ? T("Kanal hamma uchun o'chiriladi. Davom etasizmi?", 'Канал будет удалён для всех. Продолжить?') : T("Guruh hamma uchun o'chiriladi. Davom etasizmi?", 'Группа будет удалена для всех. Продолжить?'));
+      if (!ok) return;
+      try {
+        const batch = fbDb.batch();
+        if (c.username) batch.delete(fbDb.collection('usernames').doc(c.username));
+        batch.delete(fbDb.collection('chats').doc(c.id));
+        fbLeaveChat();
+        goToScreen('screen4');
+        await batch.commit();
+      } catch (e) { alert(fbErrMsg(e)); }
+    } else {
+      const ok = await pldnConfirm(ch ? T('Kanaldan chiqasizmi?', 'Покинуть канал?') : T('Guruhdan chiqasizmi?', 'Покинуть группу?'));
+      if (!ok) return;
+      const id = c.id;
+      try {
+        await fbDb.collection('chats').doc(id).update({ members: FV().arrayRemove(u.uid) });
+        if (fbCurrentChat === c) { fbLeaveChat(); goToScreen('screen4'); }
+      } catch (e) { alert(fbErrMsg(e)); }
+    }
+  });
+
+  // ================= OMMAVIY QIDIRUV (username -> guruh/kanal) =================
+  window.pldnPublicSearch = async function (u, resEl) {
+    const s = await fbDb.collection('usernames').doc(u).get();
+    if (!s.exists) return false;
+    const v = s.data();
+    if (!isG(v.kind) || !v.chatId) return false;
+    const color = fbColorFor(v.chatId);
+    const avatar = fbSafeAvatar(v.avatar);
+    const item = document.createElement('div');
+    item.className = 'chat-item';
+    const av = document.createElement('div'); av.className = 'chat-avatar'; setAv(av, avatar, v.name || '?', color);
+    const inf = document.createElement('div'); inf.className = 'chat-info'; inf.style.cssText = 'display:flex;flex-direction:column;justify-content:center;';
+    const nm = document.createElement('span'); nm.className = 'chat-name'; nm.textContent = v.name || '';
+    const sb = document.createElement('span'); sb.className = 'chat-msg'; sb.textContent = (v.kind === 'channel' ? T('Kanal', 'Канал') : T('Guruh', 'Группа')) + ' · PLDN/-' + u;
+    inf.append(nm, sb); item.append(av, inf);
+    item.addEventListener('click', async function () {
+      const me0 = me(); if (!me0) return;
+      const ok = await pldnConfirm(T('«' + v.name + '» ' + (v.kind === 'channel' ? 'kanaliga' : 'guruhiga') + " qo'shilasizmi?", 'Присоединиться к «' + v.name + '»?'));
+      if (!ok) return;
+      try {
+        const ref = fbDb.collection('chats').doc(v.chatId);
+        await ref.update({ members: FV().arrayUnion(me0.uid) });
+        const d = (await ref.get()).data() || {};
+        fbOpenChat({ id: v.chatId, type: v.kind, name: d.name || v.name, color: color, avatar: fbSafeAvatar(d.avatar) || avatar, members: d.members || [], owner: d.owner || '', admins: d.admins || [], username: d.username || u }, false);
+      } catch (e) { console.error(e); alert(fbErrMsg(e)); }
+    });
+    resEl.appendChild(item);
+    return true;
   };
 })();
 </script>
