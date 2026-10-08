@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-groups-v19 (2026-10-08) -->
+<!-- VERSION: firebase-groups-v20 (2026-10-08) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -8875,8 +8875,48 @@
 })();
 </script>
 <script>
+// ===== RASM TANLASH: native galereya (WebView'da <input type=file> ochilmaydi) =====
+// VERSION: firebase-groups-v20
+(function () {
+  function Cam() { return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Camera; }
+  let busy = false;
+  const origClick = HTMLInputElement.prototype.click;
+  async function pick(input) {
+    if (busy) return;
+    busy = true;
+    try {
+      const r = await Cam().getPhoto({ source: 'PHOTOS', resultType: 'dataUrl', quality: 90, width: 1600, correctOrientation: true });
+      if (!r || !r.dataUrl) return;
+      const blob = await (await fetch(r.dataUrl)).blob();
+      const file = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (e) {
+      const msg = String((e && (e.message || e.errorMessage)) || e);
+      if (!/cancel/i.test(msg)) alert('Galereya ochilmadi: ' + msg);
+    } finally { busy = false; }
+  }
+  function isImgInput(inp) { return inp && inp.tagName === 'INPUT' && inp.type === 'file' && /image/.test(inp.accept || '') && inp.id !== 'chatImageInput'; }
+  document.addEventListener('click', function (e) {
+    if (!Cam()) return;
+    const lab = e.target && e.target.closest ? e.target.closest('label[for]') : null;
+    if (!lab) return;
+    const inp = document.getElementById(lab.getAttribute('for'));
+    if (!isImgInput(inp)) return;
+    e.preventDefault(); e.stopPropagation();
+    pick(inp);
+  }, true);
+  HTMLInputElement.prototype.click = function () {
+    if (isImgInput(this) && Cam()) { pick(this); return; }
+    return origClick.apply(this, arguments);
+  };
+})();
+</script>
+<script>
 // ===== GURUH VA KANAL (Firestore) =====
-// VERSION: firebase-groups-v19
+// VERSION: firebase-groups-v20
 (function () {
   const $ = function (id) { return document.getElementById(id); };
   const T = function (uz, ru) { return fbT(uz, ru); };
@@ -8965,7 +9005,7 @@
     '<button class="done-btn" id="pgxCrBtn" disabled></button>');
   let crKind = 'group', crAvatar = null;
   function crValid() {
-    const ok = $('pgxCrName').value.trim().length > 0 && (crKind === 'group' || $('pgxCrUser').value.length >= 4);
+    const ok = $('pgxCrName').value.trim().length > 0 && $('pgxCrUser').value.length >= 4;
     $('pgxCrBtn').disabled = !ok;
   }
   function openCreate(kind) {
@@ -8974,10 +9014,10 @@
     $('pgxCrName').value = ''; $('pgxCrUser').value = ''; $('pgxCrMsg').textContent = '';
     const ch = kind === 'channel';
     $('pgxCrTitle').textContent = ch ? T('Kanalni nomlang', 'Назовите канал') : T('Guruhni nomlang', 'Назовите группу');
-    $('pgxCrSub').textContent = ch ? T('Kanal nomi, rasmi (ixtiyoriy) va yagona username', 'Название, фото (необязательно) и уникальный username канала') : T('Guruh uchun nom va rasm tanlang (rasm ixtiyoriy)', 'Название и фото группы (фото необязательно)');
+    $('pgxCrSub').textContent = ch ? T('Kanal nomi, rasmi (ixtiyoriy) va yagona username', 'Название, фото (необязательно) и уникальный username канала') : T('Guruh nomi, rasmi (ixtiyoriy) va yagona username', 'Название, фото (необязательно) и уникальный username группы');
     $('pgxCrName').placeholder = ch ? T('Kanal nomi', 'Название канала') : T('Guruh nomi', 'Название группы');
     $('pgxCrUser').placeholder = T('Yagona username (a-z, 0-9)', 'Уникальный username (a-z, 0-9)');
-    $('pgxCrUser').style.display = ch ? '' : 'none';
+    $('pgxCrUser').style.display = '';
     $('pgxCrBtn').textContent = T('Yaratish', 'Создать');
     $('pgxCrBtn').disabled = true;
     goToScreen('pgxCreateScreen');
@@ -9004,7 +9044,7 @@
     let uname = '';
     btn.disabled = true; msg.textContent = T('Tekshirilmoqda...', 'Проверка...');
     try {
-      if (crKind === 'channel') {
+      {
         uname = $('pgxCrUser').value;
         if (!/^[a-z0-9]{4,20}$/.test(uname)) { msg.textContent = T('Username 4–20 ta harf yoki raqam bo\'lsin', 'Username: 4–20 букв или цифр'); return; }
         const r = await Promise.all([
