@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-groups-v20 (2026-10-08) -->
+<!-- VERSION: firebase-contact-v21 (2026-10-08) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -7843,7 +7843,8 @@
     if (fbUserCache[uid]) return fbUserCache[uid];
     const snap = await fbDb.collection('users').doc(uid).get();
     const v = snap.exists ? snap.data() : {};
-    const u = { uid: uid, name: fbDisplayName(v), username: v.username || '', avatar: (v.privacy && v.privacy.avatar === 'none') ? null : fbSafeAvatar(v.avatar), color: fbColorFor(uid) };
+    const u = { uid: uid, name: fbDisplayName(v), realName: fbDisplayName(v), first: v.firstName || '', last: v.lastName || '', username: v.username || '', avatar: (v.privacy && v.privacy.avatar === 'none') ? null : fbSafeAvatar(v.avatar), color: fbColorFor(uid) };
+    if (typeof pldnApplyAlias === 'function') pldnApplyAlias(u);
     fbUserCache[uid] = u;
     return u;
   }
@@ -9131,7 +9132,9 @@
   // ================= SARLAVHA MENYUSI =================
   const menu = mkOverlay('pgxMenuOv', '<div class="pgx-sheet"><div class="pgx-sheet-title" id="pgxMenuTitle"></div><div id="pgxMenuItems"></div></div>');
   function openMenu() {
-    const c = fbCurrentChat; if (!c || !isG(c.type)) return;
+    const c = fbCurrentChat;
+    if (c && c.type === 'dm' && c.otherUid) { if (typeof pldnOpenContact === 'function') pldnOpenContact(); return; }
+    if (!c || !isG(c.type)) return;
     $('pgxMenuTitle').textContent = c.name;
     const box = $('pgxMenuItems'); box.innerHTML = '';
     const add = function (ic, txt, fn) {
@@ -9371,6 +9374,191 @@
     resEl.appendChild(item);
     return true;
   };
+})();
+</script>
+<script>
+// ===== KONTAKT PROFILI (sarlavhani bosganda) + FAQAT O'ZIM UCHUN ISM =====
+// VERSION: firebase-contact-v21
+(function () {
+  const $ = function (id) { return document.getElementById(id); };
+  const T = function (uz, ru) { return fbT(uz, ru); };
+  const BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>';
+  let aliases = {};
+  let aliasUid = null;
+  let aliasUnsub = null;
+  let ctUid = null;
+  let editing = false;
+  let expanded = false;
+
+  const st = document.createElement('style');
+  st.textContent =
+    '.pgx-ct-big{height:0;overflow:hidden;flex-shrink:0;transition:height .28s ease;background-size:cover;background-position:center;display:flex;align-items:center;justify-content:center;color:#fff;font-size:120px;font-weight:700;cursor:pointer}' +
+    '#pgxContactScreen.expanded .pgx-ct-big{height:50vh}' +
+    '#pgxContactScreen .profile-header{gap:10px;position:relative;z-index:5}' +
+    '#pgxContactScreen.expanded .profile-header{position:absolute;top:0;left:0;right:0;background:transparent;border-bottom:0}' +
+    '#pgxContactScreen.expanded .profile-header h2{display:none}' +
+    '#pgxContactScreen.expanded .chat-back-btn{background:rgba(0,0,0,.35);color:#fff}' +
+    '#pgxContactScreen.expanded .profile-avatar-big{display:none}' +
+    '#pgxContactScreen.expanded .profile-body{padding-top:16px}' +
+    '.pgx-ct-input{width:100%;border:0;border-bottom:1.5px solid #2AABEE;background:transparent;color:var(--text-primary,#000);font-size:15px;padding:4px 0;outline:none}' +
+    '.pgx-ct-note{width:100%;text-align:center;font-size:13px;color:var(--text-secondary,#8e8e93);margin:-4px 0 12px}' +
+    '.pgx-ct-btns{display:flex;gap:10px;width:100%}' +
+    '.pgx-ct-btns .edit-profile-btn{flex:1}' +
+    '.pgx-ct-cancel{background:var(--bg-card,#f2f2f7)!important;color:var(--text-primary,#000)!important}';
+  document.head.appendChild(st);
+
+  const frame = $('chatDetailScreen').parentNode;
+  const scr = document.createElement('div');
+  scr.className = 'screen';
+  scr.id = 'pgxContactScreen';
+  scr.innerHTML =
+    '<div class="profile-header"><button class="chat-back-btn" id="pgxCtBack">' + BACK + '</button><h2 id="pgxCtTitle"></h2></div>' +
+    '<div class="pgx-ct-big" id="pgxCtBig"></div>' +
+    '<div class="profile-body" id="pgxCtBody">' +
+      '<div class="profile-avatar-big" id="pgxCtAv"></div>' +
+      '<div class="profile-name" id="pgxCtName"></div>' +
+      '<div class="profile-username" id="pgxCtUser"></div>' +
+      '<div class="profile-info-box">' +
+        '<div class="profile-info-row"><span class="profile-info-label" id="pgxCtL1"></span><span class="profile-info-value" id="pgxCtV1"></span><input class="pgx-ct-input" id="pgxCtI1" maxlength="30" style="display:none;" autocomplete="off"></div>' +
+        '<div class="profile-info-row"><span class="profile-info-label" id="pgxCtL2"></span><span class="profile-info-value" id="pgxCtV2"></span><input class="pgx-ct-input" id="pgxCtI2" maxlength="30" style="display:none;" autocomplete="off"></div>' +
+        '<div class="profile-info-row"><span class="profile-info-label" id="pgxCtL3"></span><span class="profile-info-value" id="pgxCtV3"></span></div>' +
+        '<div class="profile-info-actions"><div class="profile-action-box"></div><div class="profile-action-box"></div><div class="profile-action-box"></div></div>' +
+      '</div>' +
+      '<div class="pgx-ct-note" id="pgxCtNote" style="display:none;"></div>' +
+      '<button class="edit-profile-btn" id="pgxCtEdit"></button>' +
+      '<div class="pgx-ct-btns" id="pgxCtBtns" style="display:none;"><button class="edit-profile-btn pgx-ct-cancel" id="pgxCtCancel"></button><button class="edit-profile-btn" id="pgxCtSave"></button></div>' +
+    '</div>';
+  frame.appendChild(scr);
+
+  // ---------- ism (faqat o'zim uchun) ----------
+  function me() { return fbAuth && fbAuth.currentUser; }
+  function loadLocal(uid) { try { aliases = JSON.parse(localStorage.getItem('pldn_alias_' + uid) || '{}') || {}; } catch (_) { aliases = {}; } }
+  function saveLocal() { if (aliasUid) { try { localStorage.setItem('pldn_alias_' + aliasUid, JSON.stringify(aliases)); } catch (_) {} } }
+  window.pldnApplyAlias = function (u) {
+    const a = aliases[u.uid];
+    if (!a) return;
+    const n = ((a.f || '') + ' ' + (a.l || '')).trim();
+    if (n) u.name = n;
+  };
+  function refreshAll() {
+    Object.keys(fbUserCache).forEach(function (uid) {
+      const u = fbUserCache[uid];
+      u.name = u.realName || u.name;
+      window.pldnApplyAlias(u);
+    });
+    const c = fbCurrentChat;
+    if (c && c.type === 'dm' && c.otherUid && fbUserCache[c.otherUid]) {
+      c.name = fbUserCache[c.otherUid].name;
+      $('chatDetailName').textContent = c.name;
+    }
+    const m = me();
+    if (m && typeof fbStartChatsListener === 'function') fbStartChatsListener(m.uid);
+  }
+  function aliasStart(uid) {
+    if (aliasUid === uid) return;
+    aliasUid = uid;
+    loadLocal(uid);
+    if (Object.keys(aliases).length) refreshAll();
+    if (aliasUnsub) { try { aliasUnsub(); } catch (_) {} }
+    aliasUnsub = fbDb.collection('users').doc(uid).collection('aliases').onSnapshot(function (snap) {
+      const next = {};
+      snap.forEach(function (d) { const v = d.data() || {}; next[d.id] = { f: v.f || '', l: v.l || '' }; });
+      // internet yo'q paytida saqlangan mahalliy o'zgarishlarni yo'qotmaymiz
+      if (JSON.stringify(next) === JSON.stringify(aliases)) return;
+      aliases = next; saveLocal(); refreshAll();
+    }, function () {});
+  }
+  const prevStart = window.pldnCallsStart;
+  window.pldnCallsStart = function (uid) { if (prevStart) prevStart(uid); aliasStart(uid); };
+
+  // ---------- ekran ----------
+  function setExpanded(on) {
+    expanded = on;
+    scr.classList.toggle('expanded', on);
+  }
+  function paintBig(u) {
+    const big = $('pgxCtBig');
+    if (u.avatar) { big.textContent = ''; big.style.background = 'url(' + u.avatar + ') center/cover'; }
+    else { big.textContent = initials(u.name); big.style.background = u.color; }
+  }
+  function render(u) {
+    const a = aliases[u.uid];
+    const first = a ? (a.f || '') : (u.first || '');
+    const last = a ? (a.l || '') : (u.last || '');
+    $('pgxCtTitle').textContent = T('Profil', 'Профиль');
+    const av = $('pgxCtAv');
+    if (u.avatar) { av.innerHTML = ''; const im = document.createElement('img'); im.src = u.avatar; im.alt = 'avatar'; av.appendChild(im); av.style.background = ''; }
+    else { av.textContent = initials(u.name); av.style.background = u.color; }
+    paintBig(u);
+    $('pgxCtName').textContent = u.name;
+    $('pgxCtUser').textContent = 'PLDN/-' + (u.username || '');
+    $('pgxCtL1').textContent = T('Ism', 'Имя');
+    $('pgxCtL2').textContent = T('Familiya', 'Фамилия');
+    $('pgxCtL3').textContent = T('Foydalanuvchi nomi', 'Имя пользователя');
+    $('pgxCtV1').textContent = first || '—';
+    $('pgxCtV2').textContent = last || '—';
+    $('pgxCtV3').textContent = 'PLDN/-' + (u.username || '');
+    $('pgxCtI1').value = first; $('pgxCtI2').value = last;
+    $('pgxCtEdit').textContent = T("O'zgartirish", 'Изменить');
+    $('pgxCtCancel').textContent = T('Bekor qilish', 'Отмена');
+    $('pgxCtSave').textContent = T('Saqlash', 'Сохранить');
+    $('pgxCtNote').textContent = T("Bu ism faqat siz uchun ko'rinadi. Foydalanuvchida hech narsa o'zgarmaydi.", 'Это имя видно только вам. У пользователя ничего не изменится.');
+    setEdit(false);
+  }
+  function setEdit(on) {
+    editing = on;
+    ['1', '2'].forEach(function (n) {
+      $('pgxCtV' + n).style.display = on ? 'none' : '';
+      $('pgxCtI' + n).style.display = on ? '' : 'none';
+    });
+    $('pgxCtEdit').style.display = on ? 'none' : '';
+    $('pgxCtBtns').style.display = on ? 'flex' : 'none';
+    $('pgxCtNote').style.display = on ? '' : 'none';
+    if (on) $('pgxCtI1').focus();
+  }
+  async function openContact() {
+    const c = fbCurrentChat;
+    if (!c || c.type !== 'dm' || !c.otherUid) return;
+    ctUid = c.otherUid;
+    setExpanded(false);
+    const u = await fbGetUser(ctUid);
+    if (!fbCurrentChat || fbCurrentChat.otherUid !== ctUid) return;
+    render(u);
+    goToScreen('pgxContactScreen');
+    $('pgxCtBody').scrollTop = 0;
+  }
+  window.pldnOpenContact = openContact;
+
+  $('pgxCtBack').addEventListener('click', function () { setExpanded(false); goToScreen('chatDetailScreen'); });
+  $('pgxCtEdit').addEventListener('click', function () { setEdit(true); });
+  $('pgxCtCancel').addEventListener('click', function () { const u = fbUserCache[ctUid]; if (u) render(u); });
+  $('pgxCtSave').addEventListener('click', async function () {
+    const u = fbUserCache[ctUid]; const m = me();
+    if (!u || !m) return;
+    const f = $('pgxCtI1').value.trim(), l = $('pgxCtI2').value.trim();
+    const same = (f === (u.first || '') && l === (u.last || ''));
+    if (!f && !l || same) delete aliases[ctUid]; else aliases[ctUid] = { f: f, l: l };
+    saveLocal();
+    refreshAll();
+    render(u);
+    try {
+      const ref = fbDb.collection('users').doc(m.uid).collection('aliases').doc(ctUid);
+      if (aliases[ctUid]) await ref.set({ f: aliases[ctUid].f, l: aliases[ctUid].l });
+      else await ref.delete();
+    } catch (e) { console.error('Ism serverga saqlanmadi (faqat shu qurilmada)', e); }
+  });
+
+  // ---------- tepadan pastga tortganda katta rasm ----------
+  const body = $('pgxCtBody');
+  let sy = 0;
+  body.addEventListener('touchstart', function (e) { sy = e.touches[0].clientY; }, { passive: true });
+  body.addEventListener('touchmove', function (e) {
+    if (editing) return;
+    const dy = e.touches[0].clientY - sy;
+    if (!expanded && body.scrollTop <= 0 && dy > 70) setExpanded(true);
+    else if (expanded && dy < -50) setExpanded(false);
+  }, { passive: true });
+  $('pgxCtBig').addEventListener('click', function () { setExpanded(false); });
 })();
 </script>
 </body>
