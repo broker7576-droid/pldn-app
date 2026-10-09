@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-react-v29 (2026-10-09) -->
+<!-- VERSION: firebase-pdf-v30 (2026-10-09) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -10489,6 +10489,231 @@
     };
     rd.readAsDataURL(f);
   });
+})();
+</script>
+<script>
+// ===== PDF EKSPORT ===== VERSION: pdf-v1
+(function () {
+  const T = function (a, b) { return fbT(a, b); };
+  const W = 720, H = 1280, M = 24, TOP = 34, BOT = H - 60, LH = 34, PAD = 14, MAXW = 500, F = '26px sans-serif', BATCH = 40;
+  const st = document.createElement('style');
+  st.textContent = '#pdfPill{position:fixed;top:8px;left:50%;transform:translateX(-50%);background:#2AABEE;color:#fff;font-size:13px;padding:6px 14px;border-radius:16px;z-index:99980;display:none}' +
+    '#pdfBd{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:99990}#pdfPn{position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:18px 18px 0 0;padding:14px 14px calc(18px + env(safe-area-inset-bottom,0px));color:#222}' +
+    '#pdfPn button{display:block;width:100%;margin-top:8px;background:#f1f2f6;border:0;border-radius:12px;padding:13px;font-size:16px;color:#222}#pdfPn button.pri{background:#2AABEE;color:#fff}#pdfPn button.dng{color:#d33}';
+  document.head.appendChild(st);
+  const pill = document.createElement('div'); pill.id = 'pdfPill'; document.body.appendChild(pill);
+  const bd = document.createElement('div'); bd.id = 'pdfBd'; const pn = document.createElement('div'); pn.id = 'pdfPn'; bd.appendChild(pn); document.body.appendChild(bd);
+  bd.addEventListener('click', function (e) { if (e.target === bd) bd.style.display = 'none'; });
+
+  // ---------- IndexedDB (yuklash holati va sahifalar shu yerda saqlanadi) ----------
+  const idb = new Promise(function (res, rej) { const r = indexedDB.open('pldnpdf', 1); r.onupgradeneeded = function () { r.result.createObjectStore('kv'); }; r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; });
+  function kv(mode, fn) { return idb.then(function (db) { return new Promise(function (res, rej) { const t = db.transaction('kv', mode), q = fn(t.objectStore('kv')); t.oncomplete = function () { res(q && q.result); }; t.onerror = function () { rej(t.error); }; }); }); }
+  const dbGet = function (k) { return kv('readonly', function (s) { return s.get(k); }); };
+  const dbPut = function (k, v) { return kv('readwrite', function (s) { return s.put(v, k); }); };
+  const dbClear = function () { return kv('readwrite', function (s) { return s.clear(); }); };
+
+  let job = null, running = false, cancelReq = false, L = null, cx = null, err = '';
+  const mmss = function (s) { s = Math.max(0, Math.round(s || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+  const names = {};
+  async function nameOf(uid) { if (!names[uid]) { try { names[uid] = (await fbGetUser(uid)).name || '?'; } catch (_) { names[uid] = '?'; } } return names[uid]; }
+  function paintPill() {
+    if (!job || job.finished) { pill.style.display = 'none'; return; }
+    pill.textContent = '📄 PDF: ' + job.msgs + ' ' + T('xabar', 'сообщ.') + ' · ' + job.pages + ' ' + T('sahifa', 'стр.') + (running ? '' : ' · ' + T('to‘xtagan, bosing', 'остановлено, нажмите'));
+    pill.style.display = 'block';
+  }
+  pill.addEventListener('click', openPanel);
+
+  // ---------- chizish ----------
+  function rr(x, y, w, h, r) { cx.beginPath(); cx.moveTo(x + r, y); cx.arcTo(x + w, y, x + w, y + h, r); cx.arcTo(x + w, y + h, x, y + h, r); cx.arcTo(x, y + h, x, y, r); cx.arcTo(x, y, x + w, y, r); cx.closePath(); }
+  async function flush() {
+    if (!L) return;
+    cx.font = '20px sans-serif'; cx.fillStyle = '#8a97a3'; cx.textAlign = 'center'; cx.fillText(job.name + ' · ' + (job.pages + 1), W / 2, H - 22); cx.textAlign = 'left';
+    const blob = await new Promise(function (r) { L.cv.toBlob(r, 'image/jpeg', 0.82); });
+    await dbPut('pg' + job.pages, blob);
+    job.pages++; job.cursor = L.ms; await dbPut('job', job); paintPill();
+    L = null;
+  }
+  async function newPage() {
+    if (L) await flush();
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; cx = cv.getContext('2d');
+    cx.fillStyle = '#e6edf3'; cx.fillRect(0, 0, W, H);
+    L = { cv: cv, y: TOP, ms: job.cursor || 0, day: L && L.day };
+  }
+  function wrap(text, maxW) {
+    cx.font = F; const out = [];
+    String(text || '').split('\n').forEach(function (para) {
+      let line = '';
+      para.split(' ').forEach(function (w) {
+        while (cx.measureText(w).width > maxW) { let k = w.length; while (k > 1 && cx.measureText(w.slice(0, k)).width > maxW) k--; if (line) { out.push(line); line = ''; } out.push(w.slice(0, k)); w = w.slice(k); }
+        const t = line ? line + ' ' + w : w;
+        if (cx.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t;
+      });
+      out.push(line);
+    });
+    return out;
+  }
+  async function bubble(lines, mine, head, foot) {
+    let i = 0;
+    for (;;) {
+      const hh = head ? 30 : 0, k = Math.floor((BOT - L.y - 2 * PAD - hh - 30) / LH);
+      if (k < 1) { await newPage(); continue; }
+      const part = lines.slice(i, i + k), last = i + k >= lines.length;
+      cx.font = F; let tw = 0; part.forEach(function (l) { tw = Math.max(tw, cx.measureText(l).width); });
+      cx.font = '20px sans-serif'; const fw = cx.measureText(foot).width + 8; let hw = 0;
+      if (head) { cx.font = 'bold 22px sans-serif'; hw = cx.measureText(head).width; }
+      const w = Math.min(MAXW, Math.max(tw, hw, last ? fw : 0)) + 2 * PAD, h = part.length * LH + 2 * PAD + hh + (last ? 26 : 0), x = mine ? W - M - w : M;
+      cx.fillStyle = mine ? '#d4ecff' : '#ffffff'; rr(x, L.y, w, h, 18); cx.fill();
+      let ty = L.y + PAD;
+      if (head) { cx.font = 'bold 22px sans-serif'; cx.fillStyle = '#2a7fc0'; cx.fillText(head, x + PAD, ty + 22); ty += hh; }
+      cx.font = F; cx.fillStyle = '#111'; part.forEach(function (l) { cx.fillText(l, x + PAD, ty + 25); ty += LH; });
+      if (last) { cx.font = '20px sans-serif'; cx.fillStyle = '#8a97a3'; cx.textAlign = 'right'; cx.fillText(foot, x + w - PAD, L.y + h - 10); cx.textAlign = 'left'; }
+      L.y += h + 10; i += k; if (last) break;
+    }
+  }
+  function loadImg(src) { return new Promise(function (res) { const im = new Image(); im.onload = function () { res(im); }; im.onerror = function () { res(null); }; im.src = src; }); }
+  async function imgBubble(src, mine, sticker, head, foot) {
+    const im = await loadImg(src);
+    if (!im) return bubble([T('[rasm ochilmadi]', '[изображение недоступно]')], mine, head, foot);
+    let w = sticker ? 220 : Math.min(460, im.width), h = im.height * w / im.width;
+    if (h > 640) { h = 640; w = im.width * h / im.height; }
+    const hh = head ? 30 : 0, pad = sticker ? 0 : 8, total = h + 2 * pad + hh + (sticker ? 0 : 30);
+    if (L.y + total > BOT) await newPage();
+    const bw = w + 2 * pad, x = mine ? W - M - bw : M;
+    if (!sticker) { cx.fillStyle = mine ? '#d4ecff' : '#ffffff'; rr(x, L.y, bw, total, 16); cx.fill(); }
+    let ty = L.y + pad;
+    if (head) { cx.font = 'bold 22px sans-serif'; cx.fillStyle = '#2a7fc0'; cx.fillText(head, x + pad + 6, ty + 22); ty += hh; }
+    cx.drawImage(im, x + pad, ty, w, h);
+    if (!sticker) { cx.font = '20px sans-serif'; cx.fillStyle = '#8a97a3'; cx.textAlign = 'right'; cx.fillText(foot, x + bw - 12, L.y + total - 9); cx.textAlign = 'left'; }
+    L.y += total + 10;
+  }
+  async function drawMsg(m, ms) {
+    const mine = m.from === job.me, d = new Date(ms), p2 = function (n) { return String(n).padStart(2, '0'); };
+    const day = d.getDate() + '.' + p2(d.getMonth() + 1) + '.' + d.getFullYear(), foot = p2(d.getHours()) + ':' + p2(d.getMinutes());
+    if (L.day !== day) {
+      if (L.y + 60 > BOT) await newPage();
+      cx.font = '22px sans-serif'; const tw = cx.measureText(day).width + 30;
+      cx.fillStyle = 'rgba(80,100,120,.55)'; rr((W - tw) / 2, L.y, tw, 36, 18); cx.fill();
+      cx.fillStyle = '#fff'; cx.textAlign = 'center'; cx.fillText(day, W / 2, L.y + 26); cx.textAlign = 'left'; L.y += 50; L.day = day;
+    }
+    const head = (job.type === 'group' || job.type === 'channel') && !mine ? await nameOf(m.from) : '';
+    if (m.type === 'image' && m.image) await imgBubble(m.image, mine, !!m.sticker, head, foot);
+    else if (m.type === 'voice') await bubble(['🎤 ' + T('Ovozli xabar', 'Голосовое') + ' ' + mmss(m.duration)], mine, head, foot);
+    else if (m.type === 'call') {
+      const o = { missed: T("o'tkazib yuborilgan", 'пропущен'), cancelled: T('bekor qilingan', 'отменён'), declined: T('rad etilgan', 'отклонён'), ended: T('tugadi', 'завершён') }[m.outcome] || m.outcome;
+      await bubble(['📞 ' + (m.callType === 'video' ? T("Video qo'ng'iroq", 'Видеозвонок') : T("Qo'ng'iroq", 'Звонок')) + ' · ' + o + (m.duration ? ' · ' + mmss(m.duration) : '')], mine, head, foot);
+    } else {
+      cx.font = F;
+      let lines = wrap(m.text, MAXW);
+      if (m.reply && m.reply.text) lines = wrap('↪ ' + String(m.reply.text).slice(0, 80), MAXW).slice(0, 1).concat(lines);
+      await bubble(lines, mine, head, foot);
+    }
+    L.ms = ms;
+  }
+
+  // ---------- asosiy jarayon ----------
+  async function run() {
+    if (running || !job) return;
+    running = true; cancelReq = false; err = ''; paintPill();
+    try {
+      if (!fbDb || !fbAuth || !fbAuth.currentUser) throw new Error(T('Tizimga kirilmagan', 'Вы не вошли'));
+      job.me = fbAuth.currentUser.uid;
+      await newPage();
+      if (!job.pages && !job.cursor) {
+        cx.font = 'bold 40px sans-serif'; cx.fillStyle = '#17212b'; cx.fillText(job.name, M, L.y + 40); L.y += 70;
+      }
+      const ref = fbDb.collection('chats').doc(job.chatId).collection('messages');
+      let cur = job.cursor ? firebase.firestore.Timestamp.fromMillis(job.cursor) : (job.since ? firebase.firestore.Timestamp.fromMillis(job.since) : null);
+      let incl = !job.cursor && !!job.since;
+      for (;;) {
+        if (cancelReq) return;
+        let q = ref.orderBy('createdAt', 'asc');
+        if (cur) q = incl ? q.startAt(cur) : q.startAfter(cur);
+        const snap = await q.limit(BATCH).get();
+        if (snap.empty) break;
+        let n = 0;
+        for (const d of snap.docs) {
+          if (cancelReq) return;
+          const m = d.data(), ts = m.createdAt;
+          if (!ts || !ts.toMillis) continue;
+          await drawMsg(m, ts.toMillis()); job.msgs++; n++; cur = ts; incl = false;
+          if (job.msgs % 10 === 0) paintPill();
+        }
+        paintPill();
+        if (snap.size < BATCH) break;
+        if (!n) break;
+      }
+      if (L && (L.y > TOP + 1 || !job.pages)) await flush();
+      job.built = true; await dbPut('job', job);
+      pill.textContent = '📄 ' + T('PDF yig‘ilmoqda…', 'Сборка PDF…');
+      const where = await finish();
+      job.finished = true; job.where = where; await dbClear(); paintPill();
+      bd.style.display = 'none'; alert(T('PDF saqlandi: ', 'PDF сохранён: ') + where);
+      job = null;
+    } catch (e) { console.error('PDF', e); err = String((e && (e.message || e.code)) || e); alert('PDF: ' + err); }
+    finally { running = false; paintPill(); }
+  }
+  async function buildPdf() {
+    const parts = [], offs = []; let off = 0;
+    const add = function (x) { parts.push(x); off += typeof x === 'string' ? x.length : x.size; };
+    const N = job.pages, PW = W * 0.75, PH = H * 0.75;
+    add('%PDF-1.4\n');
+    offs[1] = off; add('1 0 obj\n<</Type/Catalog/Pages 2 0 R>>\nendobj\n');
+    let kids = ''; for (let i = 0; i < N; i++) kids += (3 + 3 * i) + ' 0 R ';
+    offs[2] = off; add('2 0 obj\n<</Type/Pages/Count ' + N + '/Kids[' + kids + ']>>\nendobj\n');
+    for (let i = 0; i < N; i++) {
+      const p = 3 + 3 * i, c = 'q ' + PW + ' 0 0 ' + PH + ' 0 0 cm /Im0 Do Q', b = await dbGet('pg' + i);
+      if (!b) throw new Error(T('Sahifa yo‘qolgan: ', 'Нет страницы: ') + i);
+      offs[p] = off; add(p + ' 0 obj\n<</Type/Page/Parent 2 0 R/MediaBox[0 0 ' + PW + ' ' + PH + ']/Resources<</XObject<</Im0 ' + (p + 2) + ' 0 R>>>>/Contents ' + (p + 1) + ' 0 R>>\nendobj\n');
+      offs[p + 1] = off; add((p + 1) + ' 0 obj\n<</Length ' + c.length + '>>\nstream\n' + c + '\nendstream\nendobj\n');
+      offs[p + 2] = off; add((p + 2) + ' 0 obj\n<</Type/XObject/Subtype/Image/Width ' + W + '/Height ' + H + '/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode/Length ' + b.size + '>>\nstream\n'); add(b); add('\nendstream\nendobj\n');
+    }
+    const total = 2 + 3 * N, xo = off; let x = 'xref\n0 ' + (total + 1) + '\n0000000000 65535 f \n';
+    for (let i = 1; i <= total; i++) x += String(offs[i]).padStart(10, '0') + ' 00000 n \n';
+    add(x + 'trailer\n<</Size ' + (total + 1) + '/Root 1 0 R>>\nstartxref\n' + xo + '\n%%EOF');
+    return new Blob(parts, { type: 'application/pdf' });
+  }
+  async function finish() {
+    const blob = await buildPdf(), d = new Date();
+    const name = String(job.name).replace(/[^A-Za-z0-9]+/g, '_').slice(0, 30) + '_' + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0') + '_' + Date.now() % 100000 + '.pdf';
+    if (window.PldnSave && PldnSave.begin(name)) {
+      const S = 524288;
+      for (let o = 0; o < blob.size; o += S) {
+        const b64 = await new Promise(function (r) { const fr = new FileReader(); fr.onload = function () { r(String(fr.result).split(',')[1] || ''); }; fr.readAsDataURL(blob.slice(o, o + S)); });
+        if (!PldnSave.chunk(b64)) throw new Error(T('Faylga yozib bo‘lmadi', 'Не удалось записать файл'));
+      }
+      return PldnSave.end();
+    }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    return name;
+  }
+
+  // ---------- oyna ----------
+  function btn(txt, cls, fn) { const b = document.createElement('button'); b.textContent = txt; if (cls) b.className = cls; b.addEventListener('click', fn); pn.appendChild(b); }
+  function start(days) {
+    const c = fbCurrentChat; if (!c) return;
+    job = { chatId: c.id, name: c.name || 'chat', type: c.type || 'dm', since: days ? Date.now() - days * 86400000 : 0, cursor: 0, pages: 0, msgs: 0, finished: false };
+    dbClear().then(function () { return dbPut('job', job); }).then(function () { bd.style.display = 'none'; run(); });
+  }
+  function openPanel() {
+    pn.innerHTML = '';
+    const h = document.createElement('div'); h.style.cssText = 'font-weight:700;font-size:17px;padding:2px 2px 4px'; pn.appendChild(h);
+    if (job && !job.finished) {
+      h.textContent = '📄 ' + job.name;
+      const s = document.createElement('div'); s.style.cssText = 'color:#667;font-size:14px;line-height:1.5'; s.textContent = job.msgs + ' ' + T('xabar', 'сообщ.') + ' · ' + job.pages + ' ' + T('sahifa', 'стр.') + (running ? ' · ' + T('davom etmoqda…', 'идёт…') : ' · ' + T("to'xtagan", 'остановлено')) + (err ? '\n' + err : '');
+      pn.appendChild(s);
+      if (!running) btn(T('Davom ettirish', 'Продолжить'), 'pri', function () { bd.style.display = 'none'; run(); });
+      btn(T('Bekor qilish', 'Отменить'), 'dng', function () { cancelReq = true; dbClear().then(function () { job = null; paintPill(); bd.style.display = 'none'; }); });
+    } else {
+      h.textContent = T('Chatni PDF qilib saqlash', 'Сохранить чат в PDF');
+      btn(T('Butun chat', 'Весь чат'), 'pri', function () { start(0); });
+      btn(T('Oxirgi 30 kun', 'Последние 30 дней'), '', function () { start(30); });
+      btn(T('Oxirgi 7 kun', 'Последние 7 дней'), '', function () { start(7); });
+    }
+    bd.style.display = 'block';
+  }
+  const vb = document.getElementById('callVideoBtn');
+  if (vb) { const b = document.createElement('button'); b.className = 'call-hdr-btn'; b.textContent = '📄'; b.addEventListener('click', openPanel); vb.parentNode.appendChild(b); }
+  dbGet('job').then(function (j) { if (j && !j.finished) { job = j; paintPill(); } }).catch(function () {});
 })();
 </script>
 </body>
