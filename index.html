@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-stories-v25 (2026-10-09) -->
+<!-- VERSION: firebase-fix-v26 (2026-10-09) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -8036,7 +8036,7 @@
       (chat.members || []).forEach(uid => { if (uid !== me) unread[uid] = inc; });
       return { lastText: lastText, lastFrom: me, updatedAt: ts, unread: unread };
     }
-    return { members: [me, chat.otherUid], lastText: lastText, lastFrom: me, updatedAt: ts, unread: { [chat.otherUid]: inc } };
+    return { members: [me, chat.otherUid].sort(), lastText: lastText, lastFrom: me, updatedAt: ts, unread: { [chat.otherUid]: inc } };
   }
 
   async function fbSendText(text) {
@@ -8699,7 +8699,7 @@
     const chatRef = fbDb.collection('chats').doc(c.chatId);
     const ts = firebase.firestore.FieldValue.serverTimestamp();
     const label = out === 'ended' ? T("Qo'ng'iroq", 'Звонок') : T("O'tkazib yuborilgan qo'ng'iroq", 'Пропущенный звонок');
-    const upd = { members: [c.me, c.peer], lastText: (c.type === 'video' ? '📹 ' : '📞 ') + label, lastFrom: c.me, updatedAt: ts };
+    const upd = { members: [c.me, c.peer].sort(), lastText: (c.type === 'video' ? '📹 ' : '📞 ') + label, lastFrom: c.me, updatedAt: ts };
     if (out !== 'ended') upd.unread = { [c.peer]: firebase.firestore.FieldValue.increment(1) };
     const batch = fbDb.batch();
     batch.set(chatRef.collection('messages').doc(), { from: c.me, type: 'call', callType: c.type, outcome: out, duration: dur, createdAt: ts });
