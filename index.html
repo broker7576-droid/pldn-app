@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-media-v28 (2026-10-09) -->
+<!-- VERSION: firebase-react-v29 (2026-10-09) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -9610,6 +9610,12 @@
     '.pgx-sv-load{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:34px;z-index:1}' +
     '.pgx-sv-seen{position:absolute;left:0;right:0;bottom:0;z-index:4;display:none;justify-content:center;padding:14px 0 calc(18px + env(safe-area-inset-bottom,0px));background:linear-gradient(transparent,rgba(0,0,0,.65))}' +
     '.pgx-sv-seen button{background:rgba(255,255,255,.18);border:0;color:#fff;border-radius:20px;padding:10px 20px;font-size:16px}' +
+    '.pgx-sv-seen .pgx-rxc{position:absolute;right:14px;bottom:calc(18px + env(safe-area-inset-bottom,0px));display:none;padding:8px 12px;font-size:17px}' +
+    '.pgx-rx{position:absolute;left:0;right:0;bottom:0;z-index:5;display:none;justify-content:center;gap:6px;padding:16px 6px calc(16px + env(safe-area-inset-bottom,0px));background:linear-gradient(transparent,rgba(0,0,0,.65));pointer-events:none}' +
+    '.pgx-rx button{pointer-events:auto;background:rgba(255,255,255,.16);border:0;border-radius:22px;font-size:24px;padding:6px 9px;color:#fff}' +
+    '.pgx-rx button.on{background:rgba(42,171,238,.9);transform:scale(1.15)}' +
+    '.pgx-vw-rx{margin-left:auto;font-size:26px}' +
+    '.pgx-rxall{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;padding:6px 10px 20px;max-height:50vh;overflow:auto}.pgx-rxall button{background:none;border:0;font-size:28px;padding:6px 0}' +
     '.pgx-up{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(30,30,30,.92);color:#fff;padding:10px 16px;border-radius:20px;font-size:14px;z-index:99998;display:none;max-width:90%;text-align:center}' +
     '.pgx-rec{position:fixed;inset:0;background:#000;z-index:99997;display:none;flex-direction:column;color:#fff}' +
     '.pgx-rec.open{display:flex}' +
@@ -9660,7 +9666,8 @@
     '<div class="pgx-sv-head"><div class="pgx-sv-av" id="pgxSvAv"></div><div><div class="pgx-sv-name" id="pgxSvName"></div><div class="pgx-sv-time" id="pgxSvTime"></div></div><div class="pgx-sv-sp"></div><button id="pgxSvDel" style="display:none;">🗑️</button><button id="pgxSvClose">✕</button></div>' +
     '<div class="pgx-sv-media" id="pgxSvMedia"></div><div class="pgx-sv-load" id="pgxSvLoad">⏳</div>' +
     '<div class="pgx-sv-l" id="pgxSvL"></div><div class="pgx-sv-r" id="pgxSvR"></div>' +
-    '<div class="pgx-sv-seen" id="pgxSvSeen"><button id="pgxSvSeenBtn">👁 0</button></div>';
+    '<div class="pgx-sv-seen" id="pgxSvSeen"><button id="pgxSvSeenBtn">👁 0</button><button class="pgx-rxc" id="pgxSvRxc"></button></div>' +
+    '<div class="pgx-rx" id="pgxRx"></div>';
   document.body.appendChild(sv);
   const rec = document.createElement('div'); rec.className = 'pgx-rec'; rec.id = 'pgxRec';
   rec.innerHTML = '<video id="pgxRecV" autoplay playsinline muted></video>' +
@@ -9818,7 +9825,7 @@
   }
   async function delStory(ref) {
     try {
-      const subs = await Promise.all([ref.collection('chunks').get(), ref.collection('views').get()]);
+      const subs = await Promise.all([ref.collection('chunks').get(), ref.collection('views').get(), ref.collection('reacts').get()]);
       const b = fbDb.batch();
       subs.forEach(function (s) { s.forEach(function (c) { b.delete(c.ref); }); });
       b.delete(ref);
@@ -10127,6 +10134,63 @@
       const snap = await s.ref.collection('views').get();
       if (V && V.items[V.idx] === s) $('pgxSvSeenBtn').textContent = '👁 ' + snap.size;
     } catch (_) {}
+    try {
+      const rs = await s.ref.collection('reacts').get(), cnt = {};
+      rs.forEach(function (d) { const e = (d.data() || {}).e; if (e) cnt[e] = (cnt[e] || 0) + 1; });
+      const top = Object.keys(cnt).sort(function (a, b) { return cnt[b] - cnt[a]; });
+      const b = $('pgxSvRxc');
+      if (V && V.items[V.idx] === s) { b.textContent = top.slice(0, 3).join('') + ' ' + rs.size; b.style.display = rs.size ? 'block' : 'none'; }
+    } catch (_) {}
+  }
+  // ---------- hikoyaga emotsiya ----------
+  const RX_QUICK = ['👍', '❤️', '😂', '😮', '😭', '🥰'];
+  const RX_ALL = ['👍','👎','❤️','❤️‍🔥','🥰','😘','💋','😂','😆','😁','😄','🙂','😊','😎','🤩','🥳','😜','😝','🤪','🤗','🤭','🤫','🫢','🫣','🫡','🫠','🫥','🙃','🤨','😑','🙄','😮','😲','🥱','😤','😔','🥲','🥹','😭','😫','😡','🤬','☠️','👏'];
+  function paintRx(s) {
+    if (!V || V.items[V.idx] !== s) return;
+    const bar = $('pgxRx'), my = (V.my || {})[s.id] || '';
+    bar.innerHTML = '';
+    RX_QUICK.forEach(function (e) {
+      const b = document.createElement('button'); b.textContent = e; if (my === e) b.className = 'on';
+      b.addEventListener('click', function () { setRx(s, e); });
+      bar.appendChild(b);
+    });
+    const more = document.createElement('button'), ex = my && RX_QUICK.indexOf(my) < 0;
+    more.textContent = ex ? my : '＋'; if (ex) more.className = 'on';
+    more.addEventListener('click', function () { openRxAll(s); });
+    bar.appendChild(more);
+  }
+  async function setRx(s, e) {
+    if (!V) return;
+    V.my = V.my || {};
+    const ref = s.ref.collection('reacts').doc(myUid), same = V.my[s.id] === e;
+    V.my[s.id] = same ? '' : e; paintRx(s);
+    try { if (same) await ref.delete(); else await ref.set({ e: e, at: fbSrvTs() }); }
+    catch (err) { V.my[s.id] = same ? e : ''; paintRx(s); alert(fbErrMsg(err)); }
+  }
+  const rxo = document.createElement('div'); rxo.className = 'pgx-ov'; rxo.id = 'pgxRxOv'; rxo.style.zIndex = '99999';
+  rxo.innerHTML = '<div class="pgx-sheet"><div class="pgx-sheet-title">' + T('Emotsiya tanlang', 'Выберите реакцию') + '</div><div class="pgx-rxall" id="pgxRxAll"></div></div>';
+  rxo.addEventListener('click', function (e) { if (e.target === rxo) { rxo.classList.remove('open'); if (V) show(); } });
+  document.body.appendChild(rxo);
+  function openRxAll(s) {
+    pauseNow();
+    const g = $('pgxRxAll'); g.innerHTML = '';
+    RX_ALL.forEach(function (e) {
+      const b = document.createElement('button'); b.textContent = e;
+      b.addEventListener('click', function () { rxo.classList.remove('open'); setRx(s, e); if (V) show(); });
+      g.appendChild(b);
+    });
+    rxo.classList.add('open');
+  }
+  async function rxSetup(s, mineS) {
+    $('pgxRx').style.display = mineS ? 'none' : 'flex';
+    $('pgxSvRxc').style.display = 'none';
+    if (mineS) return;
+    V.my = V.my || {};
+    paintRx(s);
+    if (V.my[s.id] === undefined) {
+      try { const d = await s.ref.collection('reacts').doc(myUid).get(); V.my[s.id] = d.exists ? ((d.data() || {}).e || '') : ''; } catch (_) { V.my[s.id] = ''; }
+      paintRx(s);
+    }
   }
   async function show() {
     if (!V) return;
@@ -10144,6 +10208,7 @@
     markSeen(s.id);
     const mineS = s.author === myUid;
     $('pgxSvSeen').style.display = mineS ? 'flex' : 'none';
+    rxSetup(s, mineS);
     if (mineS) { $('pgxSvSeenBtn').textContent = '👁 …'; updateSeenCount(s); }
     else { fbDb.collection('stories').doc(s.id).collection('views').doc(myUid).set({ at: fbSrvTs() }).catch(function () {}); }
     const media = $('pgxSvMedia'); media.innerHTML = '';
@@ -10190,6 +10255,7 @@
   vw.innerHTML = '<div class="pgx-sheet"><div class="pgx-sheet-title" id="pgxVwTitle"></div><div class="pgx-vw-list" id="pgxVwList"></div></div>';
   vw.addEventListener('click', function (e) { if (e.target === vw) { vw.classList.remove('open'); if (V) show(); } });
   document.body.appendChild(vw);
+  $('pgxSvRxc').addEventListener('click', function () { $('pgxSvSeenBtn').click(); });
   $('pgxSvSeenBtn').addEventListener('click', async function () {
     if (!V) return;
     const s = V.items[V.idx];
@@ -10199,6 +10265,8 @@
     vw.classList.add('open');
     try {
       const snap = await s.ref.collection('views').get();
+      const rx = {};
+      try { const rs = await s.ref.collection('reacts').get(); rs.forEach(function (d) { rx[d.id] = (d.data() || {}).e || ''; }); } catch (_) {}
       const rows = [];
       snap.forEach(function (d) { const v = d.data(); rows.push({ uid: d.id, ms: v.at && v.at.toMillis ? v.at.toMillis() : Date.now() }); });
       rows.sort(function (a, b) { return b.ms - a.ms; });
@@ -10212,7 +10280,9 @@
         const mid = document.createElement('div');
         const n = document.createElement('div'); n.className = 'pgx-vw-name'; n.textContent = u.name;
         const t = document.createElement('div'); t.className = 'pgx-vw-time'; t.textContent = when(r.ms);
-        mid.append(n, t); row.append(av, mid); list.appendChild(row);
+        mid.append(n, t); row.append(av, mid);
+        if (rx[r.uid]) { const x = document.createElement('div'); x.className = 'pgx-vw-rx'; x.textContent = rx[r.uid]; row.appendChild(x); }
+        list.appendChild(row);
       });
     } catch (e) { list.textContent = fbErrMsg(e); }
   });
