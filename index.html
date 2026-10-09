@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-contact-v22 (2026-10-08) -->
+<!-- VERSION: firebase-stories-v25 (2026-10-09) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -3587,7 +3587,7 @@
     <div class="pldn-np-top"><span id="pldnNpTitle">Bildirishnomalar</span><button class="pldn-np-close" id="pldnNpClose" aria-label="Yopish">✕</button></div>
     <div class="pldn-np-tabs">
       <button class="pldn-np-tab active" data-tab="update" id="pldnNpTabUpdate"><span class="tab-lbl">Yangilanish</span><span class="tab-dot"></span></button>
-      <button class="pldn-np-tab" data-tab="offers" id="pldnNpTabOffers"><span class="tab-lbl">Takliflar</span></button>
+      <button class="pldn-np-tab" data-tab="offers" id="pldnNpTabOffers"><span class="tab-lbl">Takliflar</span><span class="tab-dot"></span></button>
       <button class="pldn-np-tab" data-tab="security" id="pldnNpTabSecurity"><span class="tab-lbl">Xavfsizlik</span></button>
     </div>
     <div class="pldn-np-body" id="pldnNpBody"></div>
@@ -4840,6 +4840,7 @@
   }
 
   function renderStoriesRow() {
+    if (typeof pldnStoriesRender === 'function') { pldnStoriesRender(); return; }
     storiesRow.innerHTML = '';
 
     const mine = document.createElement('div');
@@ -7703,16 +7704,21 @@
   function pldnSeenVersion() { try { return localStorage.getItem('pldn_update_seen') || ''; } catch (_) { return ''; } }
   function pldnRefreshBell() {
     const unseen = !!(pldnUpdateInfo && pldnSeenVersion() !== String(pldnUpdateInfo.latest));
+    const offers = (typeof pldnOffersPending === 'function') ? pldnOffersPending() > 0 : false;
     const bell = document.getElementById('pldnBellBtn');
     const tab = document.getElementById('pldnNpTabUpdate');
-    if (bell) bell.classList.toggle('has-new', unseen);
+    const tabO = document.getElementById('pldnNpTabOffers');
+    if (bell) bell.classList.toggle('has-new', unseen || offers);
     if (tab) tab.classList.toggle('has-new', unseen);
+    if (tabO) tabO.classList.toggle('has-new', offers);
   }
   function pldnNpRender(tab) {
     const body = document.getElementById('pldnNpBody');
     document.querySelectorAll('.pldn-np-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
     body.innerHTML = '';
-    if (tab === 'update' && pldnUpdateInfo) {
+    if (tab === 'offers' && typeof pldnOffersRender === 'function') {
+      pldnOffersRender(body);
+    } else if (tab === 'update' && pldnUpdateInfo) {
       const card = document.createElement('div');
       card.className = 'pldn-np-card';
       const h = document.createElement('h4');
@@ -9402,6 +9408,8 @@
     '#pgxContactScreen.expanded .profile-avatar-big{display:none}' +
     '#pgxContactScreen.expanded .profile-body{padding-top:16px}' +
     '.pgx-ct-input{width:100%;border:0;border-bottom:1.5px solid #2AABEE;background:transparent;color:var(--text-primary,#000);font-size:15px;padding:4px 0;outline:none}' +
+    '.pgx-ct-more{margin-left:auto;background:none;border:0;font-size:26px;font-weight:700;color:var(--text-primary,#000);padding:6px 10px;cursor:pointer}' +
+    '#pgxContactScreen.expanded .pgx-ct-more{color:#fff;background:rgba(0,0,0,.35);border-radius:50%;width:42px;height:42px;padding:0}' +
     '.pgx-ct-note{width:100%;text-align:center;font-size:13px;color:var(--text-secondary,#8e8e93);margin:-4px 0 12px}' +
     '.pgx-ct-btns{display:flex;gap:10px;width:100%}' +
     '.pgx-ct-btns .edit-profile-btn{flex:1}' +
@@ -9413,7 +9421,7 @@
   scr.className = 'screen';
   scr.id = 'pgxContactScreen';
   scr.innerHTML =
-    '<div class="profile-header"><button class="chat-back-btn" id="pgxCtBack">' + BACK + '</button><h2 id="pgxCtTitle"></h2></div>' +
+    '<div class="profile-header"><button class="chat-back-btn" id="pgxCtBack">' + BACK + '</button><h2 id="pgxCtTitle"></h2><button class="pgx-ct-more" id="pgxCtMore">⋮</button></div>' +
     '<div class="pgx-ct-big" id="pgxCtBig"></div>' +
     '<div class="profile-body" id="pgxCtBody">' +
       '<div class="profile-avatar-big" id="pgxCtAv"></div>' +
@@ -9531,6 +9539,9 @@
   window.pldnOpenContact = openContact;
 
   $('pgxCtBack').addEventListener('click', function () { setExpanded(false); goToScreen('chatDetailScreen'); });
+  $('pgxCtMore').addEventListener('click', function () {
+    if (ctUid && typeof pldnStoryMenu === 'function') pldnStoryMenu(ctUid);
+  });
   $('pgxCtEdit').addEventListener('click', function () { setEdit(true); });
   $('pgxCtCancel').addEventListener('click', function () { const u = fbUserCache[ctUid]; if (u) render(u); });
   $('pgxCtSave').addEventListener('click', async function () {
@@ -9560,6 +9571,571 @@
     else if (expanded && dy < -50) setExpanded(false);
   }, { passive: true });
   $('pgxCtBig').addEventListener('click', function () { setExpanded(false); });
+})();
+</script>
+<script>
+// ===== HIKOYALAR (Firestore, 24 soat, ulashish + ko'rganlar) =====
+// VERSION: firebase-stories-v25
+(function () {
+  const $ = function (id) { return document.getElementById(id); };
+  const T = function (uz, ru) { return fbT(uz, ru); };
+  const DAY = 24 * 3600 * 1000;
+  const CHUNK = 450 * 1024;
+  const MAX_VIDEO_SEC = 180;
+  const PHOTO_MS = 6000;
+  const SEEN_KEY = 'pldn_seen_stories';
+  const MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
+  let myUid = null, linksUnsub = null, renderTok = 0;
+  const linked = new Set();          // men bilan ulashilgan foydalanuvchilar
+  const authUnsubs = {};             // author -> unsub
+  const byAuthor = {};               // author -> [story]
+
+  const st = document.createElement('style');
+  st.textContent =
+    '.pgx-sv{position:fixed;inset:0;background:#000;color:#fff;z-index:99997;display:none;flex-direction:column}' +
+    '.pgx-sv.open{display:flex}' +
+    '.pgx-sv-bars{display:flex;gap:4px;padding:calc(10px + env(safe-area-inset-top,0px)) 10px 6px;z-index:3}' +
+    '.pgx-sv-track{flex:1;height:3px;background:rgba(255,255,255,.3);border-radius:2px;overflow:hidden}' +
+    '.pgx-sv-fill{height:100%;width:0;background:#fff}' +
+    '.pgx-sv-head{display:flex;align-items:center;gap:10px;padding:6px 12px;z-index:3}' +
+    '.pgx-sv-av{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;background-size:cover!important;background-position:center!important;flex-shrink:0}' +
+    '.pgx-sv-name{font-weight:700;font-size:16px}.pgx-sv-time{font-size:12px;opacity:.7}' +
+    '.pgx-sv-head button{background:none;border:0;color:#fff;font-size:22px;padding:6px 8px}' +
+    '.pgx-sv-sp{flex:1}' +
+    '.pgx-sv-media{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}' +
+    '.pgx-sv-media img,.pgx-sv-media video{max-width:100%;max-height:100%;width:100%;height:100%;object-fit:contain}' +
+    '.pgx-sv-l,.pgx-sv-r{position:absolute;top:110px;bottom:90px;width:40%;z-index:2}' +
+    '.pgx-sv-l{left:0}.pgx-sv-r{right:0}' +
+    '.pgx-sv-load{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:34px;z-index:1}' +
+    '.pgx-sv-seen{position:absolute;left:0;right:0;bottom:0;z-index:4;display:none;justify-content:center;padding:14px 0 calc(18px + env(safe-area-inset-bottom,0px));background:linear-gradient(transparent,rgba(0,0,0,.65))}' +
+    '.pgx-sv-seen button{background:rgba(255,255,255,.18);border:0;color:#fff;border-radius:20px;padding:10px 20px;font-size:16px}' +
+    '.pgx-up{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(30,30,30,.92);color:#fff;padding:10px 16px;border-radius:20px;font-size:14px;z-index:99998;display:none;max-width:90%;text-align:center}' +
+    '.pgx-rec{position:fixed;inset:0;background:#000;z-index:99997;display:none;flex-direction:column;color:#fff}' +
+    '.pgx-rec.open{display:flex}' +
+    '.pgx-rec video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}' +
+    '.pgx-rec.review video{object-fit:contain}' +
+    '.pgx-rec-top{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:calc(14px + env(safe-area-inset-top,0px)) 14px}' +
+    '.pgx-rec-top button{background:rgba(0,0,0,.4);border:0;color:#fff;width:40px;height:40px;border-radius:50%;font-size:20px}' +
+    '.pgx-rec-time{background:rgba(0,0,0,.4);padding:6px 12px;border-radius:14px;font-size:15px}' +
+    '.pgx-rec-bar{position:absolute;left:0;right:0;bottom:calc(36px + env(safe-area-inset-bottom,0px));display:flex;justify-content:center;z-index:2}' +
+    '.pgx-rec-btn{width:74px;height:74px;border-radius:50%;border:4px solid #fff;background:#ff3b30;color:#fff;font-size:0}' +
+    '.pgx-rec-btn.on{border-radius:18px;width:60px;height:60px}' +
+    '.pgx-rec-after{position:absolute;left:0;right:0;bottom:calc(30px + env(safe-area-inset-bottom,0px));display:none;gap:12px;padding:0 18px;z-index:2}' +
+    '.pgx-rec-after button{flex:1;border:0;border-radius:14px;padding:15px;font-size:17px;font-weight:600}' +
+    '.pgx-rec.review .pgx-rec-after{display:flex}.pgx-rec.review .pgx-rec-bar{display:none}' +
+    '.pgx-vw-row{display:flex;align-items:center;gap:12px;padding:10px 12px}' +
+    '.pgx-vw-av{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;background-size:cover!important;background-position:center!important;flex-shrink:0}' +
+    '.pgx-vw-name{font-size:16px;font-weight:600}.pgx-vw-time{font-size:13px;color:var(--text-secondary,#8e8e93)}' +
+    '.pgx-vw-list{max-height:55vh;overflow-y:auto}';
+  document.head.appendChild(st);
+
+  function seenMap() { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}') || {}; } catch (_) { return {}; } }
+  function markSeen(id) { const s = seenMap(); s[id] = 1; try { localStorage.setItem(SEEN_KEY, JSON.stringify(s)); } catch (_) {} }
+  function me() { return fbAuth && fbAuth.currentUser; }
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function when(ms) { const d = new Date(ms); return d.getDate() + '-' + MONTHS[d.getMonth()] + ', ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function ago(ms) {
+    const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    if (m < 1) return T('hozir', 'сейчас');
+    if (m < 60) return m + ' ' + T('daqiqa oldin', 'мин назад');
+    if (m < 1440) return Math.floor(m / 60) + ' ' + T('soat oldin', 'ч назад');
+    return when(ms);
+  }
+  function setAv(el, u) {
+    if (u.avatar) { el.textContent = ''; el.style.background = 'url(' + u.avatar + ') center/cover'; }
+    else { el.textContent = initials(u.name); el.style.background = u.color; }
+  }
+  function toast(msg, ms) {
+    const t = $('pgxUp'); if (!msg) { t.style.display = 'none'; return; }
+    t.textContent = msg; t.style.display = 'block';
+    clearTimeout(t._h); if (ms) t._h = setTimeout(function () { t.style.display = 'none'; }, ms);
+  }
+  function linkId(a, b) { return a < b ? a + '_' + b : b + '_' + a; }
+
+  // ---------- elementlar ----------
+  const up = document.createElement('div'); up.className = 'pgx-up'; up.id = 'pgxUp'; document.body.appendChild(up);
+  const sv = document.createElement('div'); sv.className = 'pgx-sv'; sv.id = 'pgxSv';
+  sv.innerHTML = '<div class="pgx-sv-bars" id="pgxSvBars"></div>' +
+    '<div class="pgx-sv-head"><div class="pgx-sv-av" id="pgxSvAv"></div><div><div class="pgx-sv-name" id="pgxSvName"></div><div class="pgx-sv-time" id="pgxSvTime"></div></div><div class="pgx-sv-sp"></div><button id="pgxSvDel" style="display:none;">🗑️</button><button id="pgxSvClose">✕</button></div>' +
+    '<div class="pgx-sv-media" id="pgxSvMedia"></div><div class="pgx-sv-load" id="pgxSvLoad">⏳</div>' +
+    '<div class="pgx-sv-l" id="pgxSvL"></div><div class="pgx-sv-r" id="pgxSvR"></div>' +
+    '<div class="pgx-sv-seen" id="pgxSvSeen"><button id="pgxSvSeenBtn">👁 0</button></div>';
+  document.body.appendChild(sv);
+  const rec = document.createElement('div'); rec.className = 'pgx-rec'; rec.id = 'pgxRec';
+  rec.innerHTML = '<video id="pgxRecV" autoplay playsinline muted></video>' +
+    '<div class="pgx-rec-top"><button id="pgxRecClose">✕</button><span class="pgx-rec-time" id="pgxRecT">0:00 / 3:00</span><span style="width:40px"></span></div>' +
+    '<div class="pgx-rec-bar"><button class="pgx-rec-btn" id="pgxRecBtn">●</button></div>' +
+    '<div class="pgx-rec-after"><button id="pgxRecRetry" style="background:#333;color:#fff;"></button><button id="pgxRecPost" style="background:#2AABEE;color:#fff;"></button></div>';
+  document.body.appendChild(rec);
+  const sheet = document.createElement('div'); sheet.className = 'pgx-ov'; sheet.id = 'pgxStSheet';
+  sheet.innerHTML = '<div class="pgx-sheet"><div class="pgx-sheet-title" id="pgxStTitle"></div><div id="pgxStItems"></div></div>';
+  sheet.addEventListener('click', function (e) { if (e.target === sheet) sheet.classList.remove('open'); });
+  document.body.appendChild(sheet);
+  function openSheet(title, items) {
+    $('pgxStTitle').textContent = title;
+    const box = $('pgxStItems'); box.innerHTML = '';
+    items.forEach(function (it) {
+      const d = document.createElement('div'); d.className = 'pgx-item';
+      d.innerHTML = '<span>' + it[0] + '</span><span></span>'; d.lastChild.textContent = it[1];
+      d.addEventListener('click', function () { sheet.classList.remove('open'); if (it[2]) it[2](); });
+      box.appendChild(d);
+    });
+    sheet.classList.add('open');
+  }
+
+  // ---------- ulashish takliflari ----------
+  const links = {};       // uid -> {status, by, ms}
+  function linkRef(uid) { return fbDb.collection('storyLinks').doc(linkId(myUid, uid)); }
+  async function sendOffer(uid) {
+    try {
+      const data = { members: [myUid, uid], by: myUid, status: 'pending', at: fbSrvTs(), updatedAt: fbSrvTs() };
+      if (!links[uid]) await linkRef(uid).set(data);
+      else await linkRef(uid).update({ by: myUid, status: 'pending', updatedAt: fbSrvTs() });
+      toast('✅ ' + T('Taklif yuborildi', 'Предложение отправлено'), 2500);
+    } catch (e) { alert(fbErrMsg(e)); }
+  }
+  async function setStatus(uid, status) {
+    try { await linkRef(uid).update({ status: status, updatedAt: fbSrvTs() }); } catch (e) { alert(fbErrMsg(e)); }
+  }
+  window.pldnStoryMenu = async function (uid) {
+    let name = '';
+    try { name = (await fbGetUser(uid)).name; } catch (_) {}
+    const l = links[uid];
+    let items;
+    if (l && l.status === 'accepted') {
+      items = [['✅', T('Hikoyalar ulashilgan', 'Истории общие'), null], ['🚫', T("Ulashishni to'xtatish", 'Остановить обмен'), async function () {
+        const ok = await pldnConfirm(T('«' + name + '» bilan hikoyalar ulashishi to\'xtatilsinmi?', 'Остановить обмен историями с «' + name + '»?'));
+        if (ok) setStatus(uid, 'cancelled');
+      }]];
+    } else if (l && l.status === 'pending' && l.by === myUid) {
+      items = [['⏳', T('Taklif yuborilgan: kutilmoqda...', 'Предложение отправлено: ожидание...'), null], ['✖️', T('Bekor qilish', 'Отменить'), function () { setStatus(uid, 'cancelled'); }]];
+    } else if (l && l.status === 'pending') {
+      items = [['✅', T('Taklifni qabul qilish', 'Принять предложение'), function () { setStatus(uid, 'accepted'); }], ['🚫', T('Rad etish', 'Отклонить'), function () { setStatus(uid, 'declined'); }]];
+    } else {
+      items = [['➕', T('+Hikoya (ulashish taklifi)', '+История (предложить обмен)'), function () { sendOffer(uid); }]];
+    }
+    openSheet(name, items);
+  };
+
+  // ---------- "Takliflar" bo'limi (🔔) ----------
+  let offTok = 0;
+  window.pldnOffersPending = function () {
+    return Object.keys(links).filter(function (k) { return links[k].status === 'pending' && links[k].by !== myUid; }).length;
+  };
+  function offersRefresh() {
+    if (typeof pldnRefreshBell === 'function') pldnRefreshBell();
+    const ov = $('pldnNpOv');
+    if (ov && ov.classList.contains('open')) {
+      const act = document.querySelector('.pldn-np-tab.active');
+      if (act && act.dataset.tab === 'offers') window.pldnOffersRender($('pldnNpBody'));
+    }
+  }
+  window.pldnOffersRender = async function (body) {
+    const tok = ++offTok;
+    body.innerHTML = '';
+    const uids = Object.keys(links).sort(function (a, b) { return links[b].ms - links[a].ms; });
+    if (!uids.length) {
+      const e = document.createElement('div'); e.className = 'pldn-np-empty'; e.textContent = T("Hozircha taklif yo'q.", 'Предложений пока нет.');
+      body.appendChild(e); return;
+    }
+    const users = await Promise.all(uids.map(function (u) { return fbGetUser(u).catch(function () { return { uid: u, name: '?', first: '', last: '', username: '' }; }); }));
+    if (tok !== offTok) return;
+    body.innerHTML = '';
+    uids.forEach(function (uid, i) {
+      const u = users[i], l = links[uid], mineOffer = l.by === myUid;
+      const card = document.createElement('div'); card.className = 'pldn-np-card'; card.style.marginBottom = '12px';
+      const lines = [
+        T('Ism: ', 'Имя: ') + (u.first || u.name || '-'),
+        T('Familiya: ', 'Фамилия: ') + (u.last || '-'),
+        'PLDN/-' + (u.username || ''),
+        T('Taklif: PLDN hikoyalarni o\'zaro ulashish.', 'Предложение: взаимный обмен историями PLDN.')
+      ];
+      lines.forEach(function (t, k) {
+        const d = document.createElement('div'); d.textContent = t;
+        d.style.cssText = k === 3 ? 'margin:8px 0 12px;font-weight:600;' : (k === 2 ? 'color:#2AABEE;' : '');
+        card.appendChild(d);
+      });
+      const stDiv = document.createElement('div'); stDiv.style.cssText = 'font-weight:700;';
+      function btns(a, b) {
+        const row = document.createElement('div'); row.className = 'pldn-np-btns';
+        [a, b].forEach(function (x) { if (!x) return; const bt = document.createElement('button'); bt.className = x[2]; bt.textContent = x[0]; bt.addEventListener('click', x[1]); row.appendChild(bt); });
+        card.appendChild(row);
+      }
+      if (!mineOffer) {
+        if (l.status === 'pending') btns([T('Bekor qilish', 'Отклонить'), function () { setStatus(uid, 'declined'); }, 'np-cancel'], [T('Qabul qilish', 'Принять'), function () { setStatus(uid, 'accepted'); }, 'np-yes']);
+        else { stDiv.textContent = l.status === 'accepted' ? T('Qabul qildingiz ✓', 'Вы приняли ✓') : l.status === 'declined' ? T('Qabul qilmadingiz', 'Вы не приняли') : T('Bekor qilindi', 'Отменено'); card.appendChild(stDiv); }
+      } else {
+        if (l.status === 'pending') {
+          stDiv.textContent = T('kutilmoqda...', 'ожидание...'); stDiv.style.marginBottom = '10px'; card.appendChild(stDiv);
+          btns([T('Bekor qilish', 'Отменить'), function () { setStatus(uid, 'cancelled'); }, 'np-cancel'], null);
+        } else { stDiv.textContent = l.status === 'accepted' ? T('Qabul qilindi ✓', 'Принято ✓') : T('Bekor qilindi', 'Отменено'); card.appendChild(stDiv); }
+      }
+      body.appendChild(card);
+    });
+  };
+
+  // ---------- ma'lumot ----------
+  function listenAuthor(a) {
+    if (authUnsubs[a]) return;
+    authUnsubs[a] = fbDb.collection('stories').where('author', '==', a).onSnapshot(function (snap) {
+      const now = Date.now(), list = [], trash = [];
+      snap.forEach(function (d) {
+        const v = d.data();
+        const ms = v.createdAt && v.createdAt.toMillis ? v.createdAt.toMillis() : now;
+        if (!v.ready) { if (a === myUid && now - ms > 3600000) trash.push(d.ref); return; }
+        list.push({ id: d.id, author: a, kind: v.kind, mime: v.mime || '', n: v.n || 1, dur: v.dur || 0, ms: ms, ref: d.ref });
+      });
+      byAuthor[a] = list;
+      render();
+      trash.forEach(delStory);
+    }, function (e) { console.error('Hikoyalar', a, e); });
+  }
+  function start(uid) {
+    if (myUid === uid) return;
+    myUid = uid;
+    listenAuthor(uid);
+    if (linksUnsub) { try { linksUnsub(); } catch (_) {} }
+    linksUnsub = fbDb.collection('storyLinks').where('members', 'array-contains', uid).onSnapshot(function (snap) {
+      Object.keys(links).forEach(function (k) { delete links[k]; });
+      linked.clear();
+      snap.forEach(function (d) {
+        const v = d.data() || {};
+        if (!v.status) return;
+        const other = (v.members || []).filter(function (u) { return u !== uid; })[0];
+        if (!other) return;
+        const t = v.updatedAt || v.at;
+        links[other] = { status: v.status, by: v.by, ms: t && t.toMillis ? t.toMillis() : Date.now() };
+        if (v.status === 'accepted') linked.add(other);
+      });
+      linked.forEach(listenAuthor);
+      Object.keys(authUnsubs).forEach(function (a) {
+        if (a !== uid && !linked.has(a)) { try { authUnsubs[a](); } catch (_) {} delete authUnsubs[a]; delete byAuthor[a]; }
+      });
+      render();
+      offersRefresh();
+    }, function (e) { console.error('Hikoya aloqalari', e); });
+  }
+  async function delStory(ref) {
+    try {
+      const subs = await Promise.all([ref.collection('chunks').get(), ref.collection('views').get()]);
+      const b = fbDb.batch();
+      subs.forEach(function (s) { s.forEach(function (c) { b.delete(c.ref); }); });
+      b.delete(ref);
+      await b.commit();
+    } catch (e) { console.error("Hikoyani o'chirish", e); }
+  }
+  function groups() {
+    const now = Date.now(), g = {};
+    Object.keys(byAuthor).forEach(function (a) {
+      const items = (byAuthor[a] || []).sort(function (x, y) { return x.ms - y.ms; });
+      if (items.length) g[a] = items;
+    });
+    return g;
+  }
+
+  // ---------- qator ----------
+  async function render() {
+    const row = $('storiesRow'); if (!row || !myUid) return;
+    const tok = ++renderTok;
+    const g = groups(), seen = seenMap();
+    const mine = g[myUid] || [];
+    const others = Object.keys(g).filter(function (k) { return k !== myUid; }).map(function (k) {
+      return { uid: k, items: g[k], unseen: g[k].some(function (s) { return !seen[s.id]; }), last: g[k][g[k].length - 1].ms };
+    }).sort(function (a, b) { return (b.unseen - a.unseen) || (b.last - a.last); });
+    const users = await Promise.all([myUid].concat(others.map(function (o) { return o.uid; })).map(function (u) { return fbGetUser(u).catch(function () { return { uid: u, name: '?', avatar: null, color: '#999' }; }); }));
+    if (tok !== renderTok) return;
+    const frag = document.createDocumentFragment();
+    function item(u, ringCls, label, onClick, badge) {
+      const it = document.createElement('div'); it.className = 'story-item';
+      const ring = document.createElement('div'); ring.className = 'story-avatar-ring ' + ringCls;
+      const av = document.createElement('div'); av.className = 'story-avatar'; setAv(av, u);
+      ring.appendChild(av);
+      if (badge) {
+        const b = document.createElement('span'); b.className = 'story-add-badge'; b.textContent = '+';
+        b.addEventListener('click', function (e) { e.stopPropagation(); addFlow(); });
+        ring.appendChild(b);
+      }
+      const lb = document.createElement('span'); lb.className = 'story-label'; lb.textContent = label;
+      it.append(ring, lb); it.addEventListener('click', onClick);
+      return it;
+    }
+    const my = users[0];
+    if (mine.length) {
+      frag.appendChild(item(my, mine.every(function (s) { return seen[s.id]; }) ? 'seen' : '', T('Hikoyam', 'Моя история'), function () {
+        openSheet(T('Hikoyam', 'Моя история'), [['👁️', T("Hikoyalarimni ko'rish", 'Посмотреть мои истории'), function () { openViewer(myUid); }], ['➕', T("Hikoya qo'shish", 'Добавить историю'), function () { addFlow(); }]]);
+      }, true));
+    } else {
+      const it = document.createElement('div'); it.className = 'story-item';
+      it.innerHTML = '<div class="story-avatar-ring no-story"><div class="story-avatar" style="background:#2AABEE">+</div></div><span class="story-label"></span>';
+      it.lastChild.textContent = T('Hikoyam', 'Моя история');
+      it.addEventListener('click', function () { addFlow(); });
+      frag.appendChild(it);
+    }
+    others.forEach(function (o, i) {
+      const u = users[i + 1];
+      frag.appendChild(item(u, o.unseen ? '' : 'seen', (u.name || '').split(' ')[0], function () { openViewer(o.uid); }, false));
+    });
+    row.innerHTML = '';
+    row.appendChild(frag);
+  }
+  window.pldnStoriesRender = render;
+
+  // ---------- qo'shish ----------
+  function addFlow() {
+    openSheet(T("Hikoya qo'shish", 'Добавить историю') + ' · ' + T('ulashilgan kontaktlar ko\'radi', 'увидят контакты с общим доступом'), [
+      ['🖼️', T('Galereyadan rasm', 'Фото из галереи'), function () { pickPhoto('PHOTOS'); }],
+      ['📷', T('Kameradan rasm', 'Сделать фото'), function () { pickPhoto('CAMERA'); }],
+      ['🎥', T('Video (3 daqiqagacha)', 'Видео (до 3 минут)'), function () { openRecorder(); }]
+    ]);
+  }
+  function shrink(url, maxSide, q) {
+    return new Promise(function (res, rej) {
+      const im = new Image();
+      im.onload = function () {
+        const k = Math.min(1, maxSide / Math.max(im.width, im.height));
+        const c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        res(c.toDataURL('image/jpeg', q));
+      };
+      im.onerror = rej; im.src = url;
+    });
+  }
+  async function pickPhoto(source) {
+    const Cam = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Camera;
+    if (!Cam) { alert(T('Galereya mavjud emas', 'Галерея недоступна')); return; }
+    try {
+      const r = await Cam.getPhoto({ source: source, resultType: 'dataUrl', quality: 80, width: 1280, correctOrientation: true });
+      if (!r || !r.dataUrl) return;
+      let url = r.dataUrl, side = 1280, q = 0.8;
+      while (url.length > 850000 && side > 320) { side = Math.round(side * 0.75); q = Math.max(0.5, q - 0.05); url = await shrink(r.dataUrl, side, q); }
+      const m = /^data:([^;]+);base64,(.*)$/.exec(url);
+      if (!m) throw new Error("rasm formati noto'g'ri");
+      await publish({ kind: 'photo', mime: m[1], dur: 0 }, 1, async function () { return m[2]; });
+    } catch (e) {
+      const msg = String((e && (e.message || e.errorMessage)) || e);
+      if (!/cancel/i.test(msg)) alert(T('Hikoya joylanmadi: ', 'Не удалось опубликовать: ') + msg);
+    }
+  }
+  async function publish(meta, n, getChunk) {
+    const m = me(); if (!m) return;
+    toast(T('Hikoya yuklanmoqda...', 'Публикация истории...'));
+    try {
+      const ref = fbDb.collection('stories').doc();
+      await ref.set({ author: m.uid, kind: meta.kind, mime: meta.mime, n: n, dur: meta.dur || 0, ready: false, createdAt: fbSrvTs() });
+      for (let i = 0; i < n; i++) {
+        const d = await getChunk(i);
+        await ref.collection('chunks').doc(String(i).padStart(4, '0')).set({ i: i, d: d });
+        toast(T('Hikoya yuklanmoqda: ', 'Публикация: ') + (i + 1) + '/' + n);
+      }
+      await ref.update({ ready: true });
+      toast('✅ ' + T('Hikoya joylandi', 'История опубликована') + (linked.size ? '' : ' · ' + T("hali hech kim bilan ulashilmagan (kontakt profilida ⋮ → +Hikoya)", 'пока ни с кем не общая (профиль контакта ⋮ → +История)')), linked.size ? 2500 : 6000);
+    } catch (e) {
+      console.error(e);
+      toast('');
+      alert(T('Hikoya joylanmadi: ', 'Не удалось опубликовать: ') + fbErrMsg(e));
+    }
+  }
+
+  // ---------- video yozish ----------
+  let rs = null;
+  function recTime(sec) { return Math.floor(sec / 60) + ':' + pad(sec % 60) + ' / 3:00'; }
+  async function openRecorder() {
+    if (typeof MediaRecorder === 'undefined') { alert(T('Bu qurilmada video yozish ishlamaydi', 'Запись видео не поддерживается')); return; }
+    rs = { chunks: [], sec: 0, rec: null, stream: null, blob: null, iv: null };
+    $('pgxRecRetry').textContent = T('Qayta olish', 'Заново');
+    $('pgxRecPost').textContent = T('Joylash', 'Опубликовать');
+    $('pgxRecT').textContent = recTime(0);
+    $('pgxRecBtn').classList.remove('on');
+    rec.classList.remove('review'); rec.classList.add('open');
+    try {
+      const P = (window.Capacitor && window.Capacitor.Plugins) || {};
+      try { if (P.VoiceRecorder) { const h = await P.VoiceRecorder.hasAudioRecordingPermission(); if (!h || h.value === false) await P.VoiceRecorder.requestAudioRecordingPermission(); } } catch (_) {}
+      try { if (P.Camera && P.Camera.requestPermissions) await P.Camera.requestPermissions({ permissions: ['camera'] }); } catch (_) {}
+      rs.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 640 }, frameRate: { ideal: 24 } } });
+      const v = $('pgxRecV'); v.srcObject = rs.stream; v.muted = true; v.controls = false; v.loop = false; v.play().catch(function () {});
+    } catch (e) { closeRecorder(); alert(T('Kamera ochilmadi: ', 'Камера не открылась: ') + ((e && (e.name || e.message)) || e)); }
+  }
+  function stopTracks() { try { if (rs && rs.stream) rs.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (_) {} }
+  function closeRecorder() {
+    if (rs) { clearInterval(rs.iv); try { if (rs.rec && rs.rec.state !== 'inactive') { rs.rec.onstop = null; rs.rec.stop(); } } catch (_) {} stopTracks(); }
+    const v = $('pgxRecV'); v.pause(); v.srcObject = null; if (v.src) { try { URL.revokeObjectURL(v.src); } catch (_) {} v.removeAttribute('src'); }
+    rec.classList.remove('open', 'review');
+    rs = null;
+  }
+  function stopRecording() { if (rs && rs.rec && rs.rec.state !== 'inactive') rs.rec.stop(); }
+  $('pgxRecBtn').addEventListener('click', function () {
+    if (!rs || !rs.stream) return;
+    if (rs.rec && rs.rec.state === 'recording') { stopRecording(); return; }
+    const mt = ['video/webm;codecs=vp8,opus', 'video/webm'].find(function (t) { return MediaRecorder.isTypeSupported(t); }) || '';
+    try { rs.rec = new MediaRecorder(rs.stream, mt ? { mimeType: mt, videoBitsPerSecond: 400000, audioBitsPerSecond: 32000 } : { videoBitsPerSecond: 400000 }); }
+    catch (e) { alert(String(e)); return; }
+    rs.chunks = []; rs.sec = 0;
+    rs.rec.ondataavailable = function (e) { if (e.data && e.data.size) rs.chunks.push(e.data); };
+    rs.rec.onstop = function () {
+      clearInterval(rs.iv); stopTracks();
+      rs.blob = new Blob(rs.chunks, { type: (rs.rec.mimeType || 'video/webm').split(';')[0] });
+      const v = $('pgxRecV'); v.srcObject = null; v.src = URL.createObjectURL(rs.blob); v.muted = false; v.controls = true; v.loop = true; v.play().catch(function () {});
+      $('pgxRecBtn').classList.remove('on');
+      rec.classList.add('review');
+    };
+    rs.rec.start(1000);
+    $('pgxRecBtn').classList.add('on');
+    rs.iv = setInterval(function () { rs.sec++; $('pgxRecT').textContent = recTime(rs.sec); if (rs.sec >= MAX_VIDEO_SEC) stopRecording(); }, 1000);
+  });
+  $('pgxRecClose').addEventListener('click', closeRecorder);
+  $('pgxRecRetry').addEventListener('click', function () { closeRecorder(); openRecorder(); });
+  $('pgxRecPost').addEventListener('click', function () {
+    if (!rs || !rs.blob) return;
+    const blob = rs.blob, dur = Math.max(1, rs.sec);
+    closeRecorder();
+    const n = Math.max(1, Math.ceil(blob.size / CHUNK));
+    publish({ kind: 'video', mime: blob.type || 'video/webm', dur: dur }, n, function (i) {
+      return new Promise(function (res, rej) {
+        const r = new FileReader();
+        r.onload = function () { res(String(r.result).split(',')[1] || ''); };
+        r.onerror = rej;
+        r.readAsDataURL(blob.slice(i * CHUNK, (i + 1) * CHUNK));
+      });
+    });
+  });
+
+  // ---------- ko'ruvchi ----------
+  let V = null;
+  async function loadMedia(s) {
+    if (V.urls[s.id]) return V.urls[s.id];
+    const cs = await s.ref.collection('chunks').orderBy('i').get();
+    const parts = []; cs.forEach(function (d) { parts.push(d.data().d || ''); });
+    let url;
+    if (s.kind === 'photo') url = 'data:' + (s.mime || 'image/jpeg') + ';base64,' + parts.join('');
+    else {
+      const bin = parts.map(function (b64) { const raw = atob(b64); const u8 = new Uint8Array(raw.length); for (let i = 0; i < raw.length; i++) u8[i] = raw.charCodeAt(i); return u8; });
+      url = URL.createObjectURL(new Blob(bin, { type: s.mime || 'video/webm' }));
+    }
+    V.urls[s.id] = url;
+    return url;
+  }
+  function openViewer(uid) {
+    const g = groups()[uid]; if (!g || !g.length) return;
+    const seen = seenMap();
+    let idx = g.findIndex(function (s) { return !seen[s.id]; }); if (idx < 0) idx = 0;
+    V = { uid: uid, items: g.slice(), idx: idx, tok: 0, timer: null, urls: {} };
+    sv.classList.add('open');
+    fbGetUser(uid).then(function (u) { if (!V) return; setAv($('pgxSvAv'), u); $('pgxSvName').textContent = uid === myUid ? T('Hikoyam', 'Моя история') : u.name; });
+    $('pgxSvDel').style.display = uid === myUid ? '' : 'none';
+    show();
+  }
+  function closeViewer() {
+    if (!V) return;
+    clearTimeout(V.timer);
+    Object.keys(V.urls).forEach(function (k) { if (V.urls[k].indexOf('blob:') === 0) { try { URL.revokeObjectURL(V.urls[k]); } catch (_) {} } });
+    V = null;
+    $('pgxSvMedia').innerHTML = '';
+    $('pgxSvSeen').style.display = 'none';
+    sv.classList.remove('open');
+    render();
+  }
+  async function updateSeenCount(s) {
+    try {
+      const snap = await s.ref.collection('views').get();
+      if (V && V.items[V.idx] === s) $('pgxSvSeenBtn').textContent = '👁 ' + snap.size;
+    } catch (_) {}
+  }
+  async function show() {
+    if (!V) return;
+    clearTimeout(V.timer);
+    const tok = ++V.tok;
+    const s = V.items[V.idx];
+    const bars = $('pgxSvBars'); bars.innerHTML = '';
+    const many = V.items.length > 25;
+    (many ? [0] : V.items).forEach(function (_, i) {
+      const t = document.createElement('div'); t.className = 'pgx-sv-track';
+      const f = document.createElement('div'); f.className = 'pgx-sv-fill'; f.style.width = (!many && i < V.idx) ? '100%' : '0';
+      t.appendChild(f); bars.appendChild(t);
+    });
+    $('pgxSvTime').textContent = ago(s.ms) + (many ? ' · ' + (V.idx + 1) + '/' + V.items.length : '');
+    markSeen(s.id);
+    const mineS = s.author === myUid;
+    $('pgxSvSeen').style.display = mineS ? 'flex' : 'none';
+    if (mineS) { $('pgxSvSeenBtn').textContent = '👁 …'; updateSeenCount(s); }
+    else { fbDb.collection('stories').doc(s.id).collection('views').doc(myUid).set({ at: fbSrvTs() }).catch(function () {}); }
+    const media = $('pgxSvMedia'); media.innerHTML = '';
+    $('pgxSvLoad').style.display = 'flex';
+    let url;
+    try { url = await loadMedia(s); } catch (e) { if (V && tok === V.tok) { $('pgxSvLoad').style.display = 'none'; alert(fbErrMsg(e)); closeViewer(); } return; }
+    if (!V || tok !== V.tok) return;
+    $('pgxSvLoad').style.display = 'none';
+    const fill = bars.children[many ? 0 : V.idx].firstChild;
+    if (s.kind === 'photo') {
+      const im = document.createElement('img'); im.src = url; media.appendChild(im);
+      fill.style.transition = 'width ' + PHOTO_MS + 'ms linear';
+      void fill.offsetWidth; fill.style.width = '100%';
+      V.timer = setTimeout(next, PHOTO_MS);
+    } else {
+      const v = document.createElement('video'); v.src = url; v.autoplay = true; v.playsInline = true; media.appendChild(v);
+      v.ontimeupdate = function () { const d = s.dur || v.duration || 1; fill.style.width = Math.min(100, (v.currentTime / d) * 100) + '%'; };
+      v.onended = next;
+      v.play().catch(function () {});
+    }
+  }
+  function next() { if (!V) return; if (V.idx < V.items.length - 1) { V.idx++; show(); } else closeViewer(); }
+  function prev() { if (!V) return; if (V.idx > 0) { V.idx--; show(); } else show(); }
+  function pauseNow() { if (!V) return; clearTimeout(V.timer); const vv = $('pgxSvMedia').querySelector('video'); if (vv) vv.pause(); const bc = $('pgxSvBars'); const f = bc.children[bc.children.length > 1 ? V.idx : 0]; if (f) { const fi = f.firstChild; const w = fi.getBoundingClientRect().width / f.getBoundingClientRect().width * 100; fi.style.transition = 'none'; fi.style.width = w + '%'; } }
+  $('pgxSvR').addEventListener('click', next);
+  $('pgxSvL').addEventListener('click', prev);
+  $('pgxSvClose').addEventListener('click', closeViewer);
+  $('pgxSvDel').addEventListener('click', async function () {
+    if (!V || V.uid !== myUid) return;
+    pauseNow();
+    const ok = await pldnConfirm(T("Hikoya o'chirilsinmi?", 'Удалить историю?'));
+    if (!V) return;
+    if (!ok) { show(); return; }
+    const s = V.items[V.idx];
+    delStory(s.ref);
+    if (byAuthor[myUid]) byAuthor[myUid] = byAuthor[myUid].filter(function (x) { return x.id !== s.id; });
+    V.items.splice(V.idx, 1);
+    if (!V.items.length) { closeViewer(); return; }
+    if (V.idx >= V.items.length) V.idx = V.items.length - 1;
+    show();
+  });
+  // ---------- ko'rganlar ro'yxati ----------
+  const vw = document.createElement('div'); vw.className = 'pgx-ov'; vw.id = 'pgxVwOv'; vw.style.zIndex = '99999';
+  vw.innerHTML = '<div class="pgx-sheet"><div class="pgx-sheet-title" id="pgxVwTitle"></div><div class="pgx-vw-list" id="pgxVwList"></div></div>';
+  vw.addEventListener('click', function (e) { if (e.target === vw) { vw.classList.remove('open'); if (V) show(); } });
+  document.body.appendChild(vw);
+  $('pgxSvSeenBtn').addEventListener('click', async function () {
+    if (!V) return;
+    const s = V.items[V.idx];
+    pauseNow();
+    $('pgxVwTitle').textContent = T("Ko'rganlar", 'Просмотры');
+    const list = $('pgxVwList'); list.innerHTML = '';
+    vw.classList.add('open');
+    try {
+      const snap = await s.ref.collection('views').get();
+      const rows = [];
+      snap.forEach(function (d) { const v = d.data(); rows.push({ uid: d.id, ms: v.at && v.at.toMillis ? v.at.toMillis() : Date.now() }); });
+      rows.sort(function (a, b) { return b.ms - a.ms; });
+      $('pgxVwTitle').textContent = T("Ko'rganlar: ", 'Просмотры: ') + rows.length;
+      if (!rows.length) { const e = document.createElement('div'); e.className = 'pgx-sheet-title'; e.textContent = T("Hali hech kim ko'rmagan", 'Пока никто не смотрел'); list.appendChild(e); return; }
+      const users = await Promise.all(rows.map(function (r) { return fbGetUser(r.uid).catch(function () { return { uid: r.uid, name: '?', avatar: null, color: '#999' }; }); }));
+      rows.forEach(function (r, i) {
+        const u = users[i];
+        const row = document.createElement('div'); row.className = 'pgx-vw-row';
+        const av = document.createElement('div'); av.className = 'pgx-vw-av'; setAv(av, u);
+        const mid = document.createElement('div');
+        const n = document.createElement('div'); n.className = 'pgx-vw-name'; n.textContent = u.name;
+        const t = document.createElement('div'); t.className = 'pgx-vw-time'; t.textContent = when(r.ms);
+        mid.append(n, t); row.append(av, mid); list.appendChild(row);
+      });
+    } catch (e) { list.textContent = fbErrMsg(e); }
+  });
+  let sy = 0;
+  sv.addEventListener('touchstart', function (e) { sy = e.touches[0].clientY; }, { passive: true });
+  sv.addEventListener('touchmove', function (e) { if (e.touches[0].clientY - sy > 110 && !vw.classList.contains('open')) closeViewer(); }, { passive: true });
+
+  // ---------- ulash ----------
+  try { $('storiesRow').innerHTML = ''; } catch (_) {}
+  const prevStart = window.pldnCallsStart;
+  window.pldnCallsStart = function (uid) { if (prevStart) prevStart(uid); start(uid); };
 })();
 </script>
 </body>
