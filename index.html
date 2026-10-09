@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-fix-v26 (2026-10-09) -->
+<!-- VERSION: firebase-stickers-v27 (2026-10-09) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -8012,6 +8012,7 @@
             } else {
               b = isText ? addBubble(m.text, dir, md, !!m.editedAt) : addImageBubble(m.image, dir, md);
             }
+            if (m.sticker) b.classList.add('sticker-bubble');
             b.dataset.msgId = doc.id;
             if (myChat.type === 'group' && dir === 'incoming' && typeof pldnAddSender === 'function') pldnAddSender(b, m.from);
             if (m.reply && typeof m.reply === 'object') fbAddQuote(b, m.reply);
@@ -10136,6 +10137,201 @@
   try { $('storiesRow').innerHTML = ''; } catch (_) {}
   const prevStart = window.pldnCallsStart;
   window.pldnCallsStart = function (uid) { if (prevStart) prevStart(uid); start(uid); };
+})();
+</script>
+<script>
+// ===== STIKERLAR ===== VERSION: stickers-v1
+(function () {
+  const T = function (a, b) { return fbT(a, b); };
+  const el = function (tag, css, html) { const e = document.createElement(tag); if (css) e.style.cssText = css; if (html) e.innerHTML = html; return e; };
+  const st = el('style');
+  st.textContent = '.message-bubble.sticker-bubble{background:transparent!important;box-shadow:none!important;padding:0!important}' +
+    '.message-bubble.sticker-bubble::before,.message-bubble.sticker-bubble::after{display:none!important}' +
+    '.message-bubble.sticker-bubble img{width:150px;height:150px;max-height:none;object-fit:contain;border-radius:0;background:none}' +
+    '#stkBd{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:99990}' +
+    '#stkPn{position:absolute;left:0;right:0;bottom:0;max-height:55%;overflow:auto;background:#fff;border-radius:18px 18px 0 0;padding:12px}' +
+    '.stk-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}' +
+    '.stk-cell{aspect-ratio:1;border-radius:12px;background:#f1f2f6;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;color:#2AABEE;-webkit-user-select:none;user-select:none}' +
+    '.stk-cell img{width:100%;height:100%;object-fit:contain;pointer-events:none}.stk-add span{font-size:30px;line-height:1}.stk-add small{font-size:12px}' +
+    '#stkEd{display:none;position:fixed;inset:0;background:#111;z-index:99995;flex-direction:column;align-items:center;color:#fff;overflow:auto}' +
+    '.stk-top{display:flex;align-items:center;justify-content:space-between;width:100%;padding:12px 14px;box-sizing:border-box}' +
+    '.stk-top button,.stk-row button{background:#2AABEE;color:#fff;border:0;border-radius:10px;padding:9px 14px;font-size:15px}' +
+    '.stk-row button.off{background:#444}.stk-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:10px 0}' +
+    '#stkCv{width:min(86vw,60vh);aspect-ratio:1;border-radius:12px;touch-action:none;background:repeating-conic-gradient(#555 0 25%,#777 0 50%) 0 0/20px 20px}' +
+    '.stk-tools{width:min(86vw,420px);text-align:center;padding-bottom:20px}.stk-tools input{width:100%}.stk-tools small{color:#aaa;display:block;margin-top:4px}';
+  document.head.appendChild(st);
+
+  let list = [], unsub = null, uid = null;
+  const bd = el('div'); bd.id = 'stkBd';
+  const pn = el('div'); pn.id = 'stkPn'; bd.appendChild(pn); document.body.appendChild(bd);
+  bd.addEventListener('click', function (e) { if (e.target === bd) bd.style.display = 'none'; });
+  const fileIn = el('input'); fileIn.type = 'file'; fileIn.accept = 'image/*'; fileIn.id = 'stkFile'; fileIn.style.display = 'none'; document.body.appendChild(fileIn);
+
+  async function send(data) {
+    const me = fbAuth && fbAuth.currentUser, chat = fbCurrentChat;
+    if (!me || !chat) return;
+    const ref = fbDb.collection('chats').doc(chat.id);
+    const ts = firebase.firestore.FieldValue.serverTimestamp();
+    const b = fbDb.batch();
+    b.set(ref.collection('messages').doc(), Object.assign({ from: me.uid, type: 'image', image: data, sticker: true, createdAt: ts }, fbTakeReply()));
+    b.set(ref, fbChatUpdate(chat, me.uid, T('🙂 Stiker', '🙂 Стикер'), ts), { merge: true });
+    try { await b.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
+  }
+
+  function renderPanel() {
+    pn.innerHTML = '';
+    pn.appendChild(el('div', 'font-weight:700;padding:2px 4px 10px;color:#222;', T('Stikerlar', 'Стикеры')));
+    const g = el('div'); g.className = 'stk-grid';
+    const add = el('div'); add.className = 'stk-cell stk-add'; add.innerHTML = '<span>＋</span><small>' + T('Tuzish', 'Создать') + '</small>';
+    add.addEventListener('click', function () { fileIn.click(); });
+    g.appendChild(add);
+    list.forEach(function (s) {
+      const c = el('div'); c.className = 'stk-cell';
+      const im = new Image(); im.src = s.d; c.appendChild(im);
+      let tm = null, lp = false;
+      c.addEventListener('touchstart', function () {
+        lp = false;
+        tm = setTimeout(async function () {
+          lp = true;
+          const ok = await pldnConfirm(T("Stiker o'chirilsinmi?", 'Удалить стикер?'));
+          if (ok) fbDb.collection('users').doc(uid).collection('stickers').doc(s.id).delete().catch(function (e) { alert(fbErrMsg(e)); });
+        }, 550);
+      }, { passive: true });
+      ['touchend', 'touchmove', 'touchcancel'].forEach(function (ev) { c.addEventListener(ev, function () { clearTimeout(tm); }, { passive: true }); });
+      c.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+      c.addEventListener('click', function () { if (lp) { lp = false; return; } bd.style.display = 'none'; send(s.d); });
+      g.appendChild(c);
+    });
+    pn.appendChild(g);
+    if (list.length) pn.appendChild(el('small', 'display:block;color:#888;margin-top:10px;', T("O'chirish uchun stikerni bosib turing.", 'Для удаления удерживайте стикер.')));
+  }
+
+  function openPanel() {
+    const me = fbAuth && fbAuth.currentUser;
+    if (!me || !fbCurrentChat) return;
+    if (uid !== me.uid) {
+      if (unsub) unsub();
+      uid = me.uid;
+      unsub = fbDb.collection('users').doc(uid).collection('stickers').orderBy('at', 'desc').onSnapshot(function (s) {
+        list = [];
+        s.forEach(function (d) { const v = d.data(); if (typeof v.d === 'string') list.push({ id: d.id, d: v.d }); });
+        renderPanel();
+      }, function (e) { console.error('Stikerlar', e); });
+    }
+    renderPanel();
+    bd.style.display = 'block';
+  }
+
+  const ab = document.getElementById('attachImageBtn');
+  if (ab) {
+    const btn = el('button'); btn.className = 'attach-btn'; btn.textContent = '🙂';
+    ab.parentNode.insertBefore(btn, ab.nextSibling);
+    btn.addEventListener('click', openPanel);
+  }
+
+  // ---------- muharrir ----------
+  const ed = el('div'); ed.id = 'stkEd';
+  ed.innerHTML = '<div class="stk-top"><button id="stkX" style="background:#444">✕</button><b>' + T('Stiker tuzish', 'Создать стикер') + '</b><button id="stkOk">' + T('Saqlash', 'Сохранить') + '</button></div>' +
+    '<canvas id="stkCv" width="512" height="512"></canvas>' +
+    '<div class="stk-tools"><div class="stk-row"><button id="stkEr" class="off">🪄 ' + T("Fonni o'chirish", 'Убрать фон') + '</button><button id="stkUn" class="off">↩</button><button id="stkOl" class="off">◻ ' + T('Kontur', 'Контур') + '</button></div>' +
+    '<small>' + T('Kattalik', 'Размер') + '</small><input type="range" id="stkZ" min="0.4" max="3" step="0.01" value="1">' +
+    '<small>' + T("Fon aniqligi (🪄 bosilganda)", 'Допуск фона (при 🪄)') + '</small><input type="range" id="stkTol" min="5" max="120" step="1" value="40">' +
+    '<small id="stkHint"></small></div>';
+  document.body.appendChild(ed);
+  const $ = function (id) { return document.getElementById(id); };
+  const cv = $('stkCv'), work = document.createElement('canvas');
+  work.width = work.height = 512;
+  const wctx = work.getContext('2d', { willReadFrequently: true });
+  let img = null, ox = 0, oy = 0, zm = 1, erase = false, outline = false, undo = [], dirty = false, dr = null;
+
+  function bake() { wctx.clearRect(0, 0, 512, 512); const k = (512 / Math.max(img.width, img.height)) * zm, w = img.width * k, h = img.height * k; wctx.drawImage(img, 256 - w / 2 + ox, 256 - h / 2 + oy, w, h); }
+  function compose() {
+    const o = document.createElement('canvas'); o.width = o.height = 512;
+    const c = o.getContext('2d');
+    if (outline) {
+      const s = document.createElement('canvas'); s.width = s.height = 512;
+      const sc = s.getContext('2d'); sc.drawImage(work, 0, 0);
+      sc.globalCompositeOperation = 'source-in'; sc.fillStyle = '#fff'; sc.fillRect(0, 0, 512, 512);
+      for (let a = 0; a < 16; a++) c.drawImage(s, Math.cos(a * Math.PI / 8) * 7, Math.sin(a * Math.PI / 8) * 7);
+    }
+    c.drawImage(work, 0, 0);
+    return o;
+  }
+  function draw() { const c = cv.getContext('2d'); c.clearRect(0, 0, 512, 512); c.drawImage(compose(), 0, 0); }
+  function hint() { $('stkHint').textContent = erase ? T("Olib tashlamoqchi bo'lgan fonga bosing.", 'Нажмите на фон, который нужно убрать.') : T("Rasmni surib joylang.", 'Перетащите изображение.'); }
+
+  function eraseAt(e) {
+    const r = cv.getBoundingClientRect();
+    const x = Math.floor((e.clientX - r.left) * 512 / r.width), y = Math.floor((e.clientY - r.top) * 512 / r.height);
+    if (x < 0 || y < 0 || x > 511 || y > 511) return;
+    const id = wctx.getImageData(0, 0, 512, 512), d = id.data, i0 = (y * 512 + x) * 4;
+    if (d[i0 + 3] === 0) return;
+    undo.push(wctx.getImageData(0, 0, 512, 512)); if (undo.length > 8) undo.shift();
+    const tr = d[i0], tg = d[i0 + 1], tb = d[i0 + 2], tol = +$('stkTol').value, stack = [x + y * 512], seen = new Uint8Array(512 * 512);
+    while (stack.length) {
+      const p = stack.pop(); if (seen[p]) continue; seen[p] = 1;
+      const q = p * 4;
+      if (d[q + 3] === 0 || Math.abs(d[q] - tr) > tol || Math.abs(d[q + 1] - tg) > tol || Math.abs(d[q + 2] - tb) > tol) continue;
+      d[q + 3] = 0;
+      const px = p % 512;
+      if (px > 0) stack.push(p - 1); if (px < 511) stack.push(p + 1); if (p >= 512) stack.push(p - 512); if (p < 512 * 511) stack.push(p + 512);
+    }
+    wctx.putImageData(id, 0, 0); dirty = true; draw();
+  }
+
+  cv.addEventListener('pointerdown', function (e) {
+    if (erase) { eraseAt(e); return; }
+    if (dirty) return;
+    dr = { x: e.clientX, y: e.clientY, ox: ox, oy: oy };
+    try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  cv.addEventListener('pointermove', function (e) {
+    if (!dr) return;
+    const k = 512 / cv.getBoundingClientRect().width;
+    ox = dr.ox + (e.clientX - dr.x) * k; oy = dr.oy + (e.clientY - dr.y) * k; bake(); draw();
+  });
+  ['pointerup', 'pointercancel'].forEach(function (ev) { cv.addEventListener(ev, function () { dr = null; }); });
+  $('stkZ').addEventListener('input', function () { if (dirty) { this.value = zm; return; } zm = +this.value; bake(); draw(); });
+  $('stkEr').addEventListener('click', function () { erase = !erase; this.classList.toggle('off', !erase); hint(); });
+  $('stkOl').addEventListener('click', function () { outline = !outline; this.classList.toggle('off', !outline); draw(); });
+  $('stkUn').addEventListener('click', function () { if (!undo.length) return; wctx.putImageData(undo.pop(), 0, 0); if (!undo.length) dirty = false; draw(); });
+  $('stkX').addEventListener('click', function () { ed.style.display = 'none'; });
+
+  async function save() {
+    const me = fbAuth && fbAuth.currentUser; if (!me) return;
+    let o = compose(), data = '', sz = 512;
+    for (let i = 0; i < 3; i++) {
+      data = o.toDataURL('image/webp', 0.85);
+      if (data.indexOf('data:image/webp') !== 0) data = o.toDataURL('image/png');
+      if (data.length <= 450000) break;
+      sz = Math.round(sz * 0.75);
+      const s = document.createElement('canvas'); s.width = s.height = sz;
+      s.getContext('2d').drawImage(compose(), 0, 0, sz, sz); o = s;
+    }
+    if (data.length > 650000) { alert(T('Stiker juda katta.', 'Стикер слишком большой.')); return; }
+    try {
+      await fbDb.collection('users').doc(me.uid).collection('stickers').add({ d: data, at: firebase.firestore.FieldValue.serverTimestamp() });
+      ed.style.display = 'none'; openPanel();
+    } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
+  }
+  $('stkOk').addEventListener('click', save);
+
+  fileIn.addEventListener('change', function () {
+    const f = fileIn.files && fileIn.files[0]; fileIn.value = '';
+    if (!f) return;
+    const rd = new FileReader();
+    rd.onload = function () {
+      const im = new Image();
+      im.onload = function () {
+        img = im; ox = oy = 0; zm = 1; undo = []; dirty = false; erase = false; outline = false;
+        $('stkZ').value = 1; $('stkEr').classList.add('off'); $('stkOl').classList.add('off');
+        bake(); draw(); hint(); bd.style.display = 'none'; ed.style.display = 'flex';
+      };
+      im.onerror = function () { alert(T("Rasmni o'qib bo'lmadi.", 'Не удалось прочитать изображение.')); };
+      im.src = rd.result;
+    };
+    rd.readAsDataURL(f);
+  });
 })();
 </script>
 </body>
