@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-contact-v21 (2026-10-08) -->
+<!-- VERSION: firebase-contact-v22 (2026-10-08) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -9378,7 +9378,7 @@
 </script>
 <script>
 // ===== KONTAKT PROFILI (sarlavhani bosganda) + FAQAT O'ZIM UCHUN ISM =====
-// VERSION: firebase-contact-v21
+// VERSION: firebase-contact-v22
 (function () {
   const $ = function (id) { return document.getElementById(id); };
   const T = function (uz, ru) { return fbT(uz, ru); };
@@ -9392,7 +9392,8 @@
 
   const st = document.createElement('style');
   st.textContent =
-    '.pgx-ct-big{height:0;overflow:hidden;flex-shrink:0;transition:height .28s ease;background-size:cover;background-position:center;display:flex;align-items:center;justify-content:center;color:#fff;font-size:120px;font-weight:700;cursor:pointer}' +
+    '#pgxContactScreen,#pgxInfoScreen,#pgxSetScreen{padding:0;align-items:stretch;overflow:hidden}' +
+    '.pgx-ct-big{width:100%;height:0;overflow:hidden;flex-shrink:0;transition:height .28s ease;background-size:cover;background-position:center;display:flex;align-items:center;justify-content:center;color:#fff;font-size:120px;font-weight:700;cursor:pointer}' +
     '#pgxContactScreen.expanded .pgx-ct-big{height:50vh}' +
     '#pgxContactScreen .profile-header{gap:10px;position:relative;z-index:5}' +
     '#pgxContactScreen.expanded .profile-header{position:absolute;top:0;left:0;right:0;background:transparent;border-bottom:0}' +
@@ -9514,7 +9515,7 @@
     $('pgxCtEdit').style.display = on ? 'none' : '';
     $('pgxCtBtns').style.display = on ? 'flex' : 'none';
     $('pgxCtNote').style.display = on ? '' : 'none';
-    if (on) $('pgxCtI1').focus();
+    if (on) { setExpanded(false); setTimeout(function () { $('pgxCtI1').focus(); $('pgxCtI1').scrollIntoView({ block: 'center' }); }, 150); }
   }
   async function openContact() {
     const c = fbCurrentChat;
