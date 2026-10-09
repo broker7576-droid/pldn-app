@@ -85,6 +85,7 @@ jobs:
           import androidx.core.app.ActivityCompat;
           import androidx.core.content.ContextCompat;
           import com.getcapacitor.BridgeActivity;
+          import com.getcapacitor.BridgeWebChromeClient;
 
           public class MainActivity extends BridgeActivity {
               @Override
@@ -94,7 +95,7 @@ jobs:
                       ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
                   }
                   getBridge().getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
-                  getBridge().getWebView().setWebChromeClient(new WebChromeClient() {
+                  getBridge().getWebView().setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
                       @Override
                       public void onPermissionRequest(final PermissionRequest request) {
                           runOnUiThread(() -> request.grant(request.getResources()));
@@ -129,5 +130,6 @@ jobs:
         run: |
           cp android/app/build/outputs/apk/debug/app-debug.apk pldn-app.apk
           gh release create "v$VERSION_CODE" pldn-app.apk --repo "${{ github.repository }}" --title "PLDN $VERSION_NAME" --notes "Build $VERSION_CODE" --latest
+
 
           
