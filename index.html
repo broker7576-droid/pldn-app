@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-stickers-v27 (2026-10-09) -->
+<!-- VERSION: firebase-media-v28 (2026-10-09) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -8906,7 +8906,7 @@
       if (!/cancel/i.test(msg)) alert('Galereya ochilmadi: ' + msg);
     } finally { busy = false; }
   }
-  function isImgInput(inp) { return inp && inp.tagName === 'INPUT' && inp.type === 'file' && /image/.test(inp.accept || '') && inp.id !== 'chatImageInput'; }
+  function isImgInput(inp) { return inp && inp.tagName === 'INPUT' && inp.type === 'file' && /image/.test(inp.accept || '') && inp.id !== 'chatImageInput' && inp.id !== 'pgxStoryMedia'; }
   document.addEventListener('click', function (e) {
     if (!Cam()) return;
     const lab = e.target && e.target.closest ? e.target.closest('label[for]') : null;
@@ -9884,9 +9884,9 @@
   // ---------- qo'shish ----------
   function addFlow() {
     openSheet(T("Hikoya qo'shish", 'Добавить историю') + ' · ' + T('ulashilgan kontaktlar ko\'radi', 'увидят контакты с общим доступом'), [
-      ['🖼️', T('Galereyadan rasm', 'Фото из галереи'), function () { pickPhoto('PHOTOS'); }],
+      ['🖼️', T('Galereyadan rasm yoki video', 'Фото или видео из галереи'), function () { mediaIn.click(); }],
       ['📷', T('Kameradan rasm', 'Сделать фото'), function () { pickPhoto('CAMERA'); }],
-      ['🎥', T('Video (3 daqiqagacha)', 'Видео (до 3 минут)'), function () { openRecorder(); }]
+      ['🎥', T('Kameradan video (3 daqiqagacha)', 'Снять видео (до 3 минут)'), function () { openRecorder(); }]
     ]);
   }
   function shrink(url, maxSide, q) {
@@ -9907,16 +9907,111 @@
     try {
       const r = await Cam.getPhoto({ source: source, resultType: 'dataUrl', quality: 80, width: 1280, correctOrientation: true });
       if (!r || !r.dataUrl) return;
-      let url = r.dataUrl, side = 1280, q = 0.8;
-      while (url.length > 850000 && side > 320) { side = Math.round(side * 0.75); q = Math.max(0.5, q - 0.05); url = await shrink(r.dataUrl, side, q); }
-      const m = /^data:([^;]+);base64,(.*)$/.exec(url);
-      if (!m) throw new Error("rasm formati noto'g'ri");
-      await publish({ kind: 'photo', mime: m[1], dur: 0 }, 1, async function () { return m[2]; });
+      await publishPhotoUrl(r.dataUrl);
     } catch (e) {
       const msg = String((e && (e.message || e.errorMessage)) || e);
       if (!/cancel/i.test(msg)) alert(T('Hikoya joylanmadi: ', 'Не удалось опубликовать: ') + msg);
     }
   }
+
+  async function publishPhotoUrl(src) {
+    let url = src, side = 1280, q = 0.8;
+    if (url.length > 850000) url = await shrink(src, side, q);
+    while (url.length > 850000 && side > 320) { side = Math.round(side * 0.75); q = Math.max(0.5, q - 0.05); url = await shrink(src, side, q); }
+    const m = /^data:([^;]+);base64,(.*)$/.exec(url);
+    if (!m) throw new Error("rasm formati noto'g'ri");
+    await publish({ kind: 'photo', mime: m[1], dur: 0 }, 1, async function () { return m[2]; });
+  }
+  function publishVideo(blob, dur) {
+    const n = Math.max(1, Math.ceil(blob.size / CHUNK));
+    return publish({ kind: 'video', mime: blob.type || 'video/webm', dur: dur }, n, function (i) {
+      return new Promise(function (res, rej) {
+        const r = new FileReader();
+        r.onload = function () { res(String(r.result).split(',')[1] || ''); };
+        r.onerror = rej;
+        r.readAsDataURL(blob.slice(i * CHUNK, (i + 1) * CHUNK));
+      });
+    });
+  }
+  // ---------- galereyadan rasm yoki video ----------
+  const mediaIn = document.createElement('input');
+  mediaIn.type = 'file'; mediaIn.accept = 'image/*,video/*'; mediaIn.id = 'pgxStoryMedia'; mediaIn.style.display = 'none';
+  document.body.appendChild(mediaIn);
+  function mmss(sec) { sec = Math.max(0, Math.floor(sec)); return Math.floor(sec / 60) + ':' + pad(sec % 60); }
+  function videoMeta(file) {
+    return new Promise(function (res, rej) {
+      const url = URL.createObjectURL(file), v = document.createElement('video');
+      v.preload = 'metadata'; v.muted = true;
+      v.onloadedmetadata = function () { const o = { dur: v.duration, w: v.videoWidth, h: v.videoHeight }; URL.revokeObjectURL(url); res(o); };
+      v.onerror = function () { URL.revokeObjectURL(url); rej(new Error(T("Video ochilmadi (format qo'llanmaydi)", 'Не удалось открыть видео'))); };
+      v.src = url;
+    });
+  }
+  // Videoni 640px / ~400kbps ga siqadi (video oxirigacha ijro etib qayta yozadi)
+  async function transcode(file, total) {
+    const url = URL.createObjectURL(file), v = document.createElement('video');
+    v.src = url; v.playsInline = true; v.preload = 'auto';
+    let ac = null, iv = null, guard = null;
+    try {
+      await new Promise(function (res, rej) { v.onloadeddata = res; v.onerror = function () { rej(new Error(T('Video ochilmadi', 'Не удалось открыть видео'))); }; });
+      const k = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight));
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(2, Math.round(v.videoWidth * k / 2) * 2); cv.height = Math.max(2, Math.round(v.videoHeight * k / 2) * 2);
+      const cx = cv.getContext('2d');
+      const stream = cv.captureStream(24);
+      try {
+        ac = new (window.AudioContext || window.webkitAudioContext)();
+        const dst = ac.createMediaStreamDestination();
+        ac.createMediaElementSource(v).connect(dst);
+        dst.stream.getAudioTracks().forEach(function (t) { stream.addTrack(t); });
+        if (ac.state === 'suspended') await ac.resume();
+      } catch (_) {}
+      const mt = ['video/webm;codecs=vp8,opus', 'video/webm'].find(function (t) { return MediaRecorder.isTypeSupported(t); }) || '';
+      const rc = new MediaRecorder(stream, mt ? { mimeType: mt, videoBitsPerSecond: 400000, audioBitsPerSecond: 32000 } : { videoBitsPerSecond: 400000 });
+      const parts = [];
+      rc.ondataavailable = function (e) { if (e.data && e.data.size) parts.push(e.data); };
+      const done = new Promise(function (res) { rc.onstop = res; });
+      rc.start(1000);
+      v.onended = function () { if (rc.state !== 'inactive') rc.stop(); };
+      guard = setTimeout(function () { if (rc.state !== 'inactive') rc.stop(); }, (total + 15) * 1000);
+      iv = setInterval(function () {
+        cx.drawImage(v, 0, 0, cv.width, cv.height);
+        toast(T('Video tayyorlanmoqda (ilovani yopmang): ', 'Подготовка видео (не закрывайте приложение): ') + mmss(v.currentTime) + ' / ' + mmss(total), 3000);
+      }, 42);
+      try { await v.play(); } catch (_) { v.muted = true; await v.play(); }
+      await done;
+      return new Blob(parts, { type: 'video/webm' });
+    } finally {
+      clearInterval(iv); clearTimeout(guard);
+      try { v.pause(); } catch (_) {}
+      if (ac) { try { ac.close(); } catch (_) {} }
+      URL.revokeObjectURL(url);
+    }
+  }
+  mediaIn.addEventListener('change', async function () {
+    const f = mediaIn.files && mediaIn.files[0]; mediaIn.value = '';
+    if (!f) return;
+    try {
+      if (/^image\//.test(f.type)) {
+        const dataUrl = await new Promise(function (res, rej) { const r = new FileReader(); r.onload = function () { res(r.result); }; r.onerror = rej; r.readAsDataURL(f); });
+        await publishPhotoUrl(dataUrl);
+        return;
+      }
+      if (!/^video\//.test(f.type)) { alert(T('Faqat rasm yoki video tanlang.', 'Выберите фото или видео.')); return; }
+      const meta = await videoMeta(f);
+      if (!isFinite(meta.dur) || meta.dur <= 0) throw new Error(T("Video uzunligini aniqlab bo'lmadi", 'Не удалось определить длину видео'));
+      if (meta.dur > MAX_VIDEO_SEC + 1) { alert(T('Video 3 daqiqadan uzun. Qisqaroq video tanlang.', 'Видео длиннее 3 минут. Выберите короче.')); return; }
+      const dur = Math.max(1, Math.round(meta.dur));
+      if (f.size <= 6 * 1024 * 1024 && /^video\/(mp4|webm)$/.test(f.type)) { await publishVideo(f, dur); return; }
+      const blob = await transcode(f, meta.dur);
+      if (!blob || blob.size < 1000) throw new Error(T("Video tayyorlanmadi", 'Видео не подготовлено'));
+      toast('');
+      await publishVideo(blob, dur);
+    } catch (e) {
+      toast('');
+      alert(T('Hikoya joylanmadi: ', 'Не удалось опубликовать: ') + String((e && (e.message || e.errorMessage)) || e));
+    }
+  });
   async function publish(meta, n, getChunk) {
     const m = me(); if (!m) return;
     toast(T('Hikoya yuklanmoqda...', 'Публикация истории...'));
@@ -9989,15 +10084,7 @@
     if (!rs || !rs.blob) return;
     const blob = rs.blob, dur = Math.max(1, rs.sec);
     closeRecorder();
-    const n = Math.max(1, Math.ceil(blob.size / CHUNK));
-    publish({ kind: 'video', mime: blob.type || 'video/webm', dur: dur }, n, function (i) {
-      return new Promise(function (res, rej) {
-        const r = new FileReader();
-        r.onload = function () { res(String(r.result).split(',')[1] || ''); };
-        r.onerror = rej;
-        r.readAsDataURL(blob.slice(i * CHUNK, (i + 1) * CHUNK));
-      });
-    });
+    publishVideo(blob, dur);
   });
 
   // ---------- ko'ruvchi ----------
