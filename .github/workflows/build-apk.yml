@@ -88,6 +88,38 @@ jobs:
           import com.getcapacitor.BridgeWebChromeClient;
 
           public class MainActivity extends BridgeActivity {
+              public class PldnSaver {
+                  java.io.OutputStream os;
+                  String path = "";
+                  @android.webkit.JavascriptInterface
+                  public boolean begin(String name) {
+                      try {
+                          if (android.os.Build.VERSION.SDK_INT >= 29) {
+                              android.content.ContentValues v = new android.content.ContentValues();
+                              v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
+                              v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/pdf");
+                              v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/PLDN");
+                              android.net.Uri u = getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                              os = getContentResolver().openOutputStream(u);
+                              path = "Download/PLDN/" + name;
+                          } else {
+                              java.io.File f = new java.io.File(getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS), name);
+                              os = new java.io.FileOutputStream(f);
+                              path = f.getAbsolutePath();
+                          }
+                          return true;
+                      } catch (Exception e) { return false; }
+                  }
+                  @android.webkit.JavascriptInterface
+                  public boolean chunk(String b64) {
+                      try { os.write(android.util.Base64.decode(b64, android.util.Base64.DEFAULT)); return true; } catch (Exception e) { return false; }
+                  }
+                  @android.webkit.JavascriptInterface
+                  public String end() {
+                      try { os.close(); } catch (Exception e) { }
+                      return path;
+                  }
+              }
               @Override
               public void onStart() {
                   super.onStart();
@@ -95,6 +127,7 @@ jobs:
                       ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
                   }
                   getBridge().getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
+                  getBridge().getWebView().addJavascriptInterface(new PldnSaver(), "PldnSave");
                   getBridge().getWebView().setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
                       @Override
                       public void onPermissionRequest(final PermissionRequest request) {
