@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-pdf-v30 (2026-10-09) -->
+<!-- VERSION: firebase-accounts-v31 (2026-10-09) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -10714,6 +10714,131 @@
   const vb = document.getElementById('callVideoBtn');
   if (vb) { const b = document.createElement('button'); b.className = 'call-hdr-btn'; b.textContent = '📄'; b.addEventListener('click', openPanel); vb.parentNode.appendChild(b); }
   dbGet('job').then(function (j) { if (j && !j.finished) { job = j; paintPill(); } }).catch(function () {});
+})();
+</script>
+<script>
+// ===== HISOBLAR ===== VERSION: accounts-v1
+(function () {
+  if (typeof fbAuth === 'undefined' || !fbAuth) return;
+  const T = function (a, b) { return fbT(a, b); }, KEY = 'pldn_accs_v1', BACK = 'pldn_addacc', MAX = 5;
+  const load = function () { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch (_) { return []; } };
+  const save = function (a) { try { localStorage.setItem(KEY, JSON.stringify(a)); } catch (_) {} };
+  const uname = function (e) { return String(e || '').replace('@pldn.app', ''); };
+  function remember(u, p, uid) {
+    const a = load(), i = a.findIndex(function (x) { return x.u === u; });
+    if (i >= 0) { a[i].p = p; a[i].uid = uid || a[i].uid; } else if (a.length < MAX) a.push({ u: u, p: p, uid: uid }); else return;
+    save(a);
+  }
+  ['signInWithEmailAndPassword', 'createUserWithEmailAndPassword'].forEach(function (n) {
+    const o = fbAuth[n].bind(fbAuth);
+    fbAuth[n] = async function (e, p) { const r = await o(e, p); try { remember(uname(e), p, r.user.uid); } catch (_) {} return r; };
+  });
+  async function verify(u, p) {
+    const app = firebase.initializeApp(fbAuth.app.options, 'chk' + Date.now());
+    try { const c = await app.auth().signInWithEmailAndPassword(fbEmail(u), p); return c.user.uid; }
+    finally { app.delete().catch(function () {}); }
+  }
+  async function switchTo(a) {
+    ov.style.display = 'none';
+    try {
+      await fbAuth.signInWithEmailAndPassword(fbEmail(a.u), a.p);
+      fbSetHint(true); location.reload();
+    } catch (e) {
+      const c = (e && e.code) || '';
+      alert((c.indexOf('password') >= 0 || c.indexOf('credential') >= 0) ? T("Bu hisob paroli o'zgargan. Uni ro'yxatdan olib tashlab, qayta ulang.", 'Пароль этого аккаунта изменился. Удалите его из списка и подключите заново.') : fbErrMsg(e));
+    }
+  }
+  // ---------- kichik oyna (kiritish) ----------
+  function ask(title, fields, okText) {
+    return new Promise(function (res) {
+      const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      const c = document.createElement('div'); c.style.cssText = 'background:#fff;border-radius:16px;padding:18px;width:100%;max-width:340px;color:#222';
+      const h = document.createElement('div'); h.style.cssText = 'font-weight:700;font-size:17px;margin-bottom:10px'; h.textContent = title; c.appendChild(h);
+      const ins = fields.map(function (f) { const i = document.createElement('input'); i.type = f.type; i.placeholder = f.ph; i.autocapitalize = 'none'; i.autocomplete = 'off'; i.style.cssText = 'width:100%;box-sizing:border-box;padding:12px;margin-top:8px;border:1px solid #ccd;border-radius:10px;font-size:16px'; c.appendChild(i); return i; });
+      const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;margin-top:14px';
+      const mk = function (t, bg, fg, v) { const b = document.createElement('button'); b.textContent = t; b.style.cssText = 'flex:1;border:0;border-radius:10px;padding:12px;font-size:16px;background:' + bg + ';color:' + fg; b.addEventListener('click', function () { o.remove(); res(v ? ins.map(function (i) { return i.value; }) : null); }); row.appendChild(b); };
+      mk(T('Bekor', 'Отмена'), '#eef0f4', '#222', false); mk(okText, '#2AABEE', '#fff', true);
+      c.appendChild(row); o.appendChild(c); document.body.appendChild(o); if (ins[0]) ins[0].focus();
+    });
+  }
+  async function ensureCurrent() {
+    const me = fbAuth.currentUser; if (!me) return false;
+    if (load().some(function (a) { return a.uid === me.uid; })) return true;
+    const r = await ask(T('Joriy hisob parolini kiriting', 'Введите пароль текущего аккаунта'), [{ ph: T('Parol', 'Пароль'), type: 'password' }], T('Tasdiqlash', 'Подтвердить'));
+    if (!r) return false;
+    try { await verify(uname(me.email), r[0]); } catch (e) { alert(fbErrMsg(e)); return false; }
+    remember(uname(me.email), r[0], me.uid); return true;
+  }
+  async function addExisting() {
+    if (load().length >= MAX) { alert(T('Eng ko\'pi bilan 5 ta hisob.', 'Максимум 5 аккаунтов.')); return; }
+    if (!(await ensureCurrent())) return;
+    const r = await ask(T('Hisobni ulash', 'Подключить аккаунт'), [{ ph: T('Foydalanuvchi nomi', 'Имя пользователя'), type: 'text' }, { ph: T('Parol', 'Пароль'), type: 'password' }], T('Ulash', 'Подключить'));
+    if (!r) return;
+    const u = r[0].trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (u.length < 4 || !r[1]) { alert(T('Nom va parolni kiriting.', 'Введите имя и пароль.')); return; }
+    if (load().some(function (a) { return a.u === u; })) { alert(T('Bu hisob allaqachon ulangan.', 'Этот аккаунт уже подключён.')); return; }
+    try { const uid = await verify(u, r[1]); remember(u, r[1], uid); await switchTo(load().find(function (a) { return a.u === u; })); }
+    catch (e) { alert(fbErrMsg(e)); }
+  }
+  async function addNew() {
+    if (load().length >= MAX) { alert(T('Eng ko\'pi bilan 5 ta hisob.', 'Максимум 5 аккаунтов.')); return; }
+    if (!(await ensureCurrent())) return;
+    const ok = await pldnConfirm(T("Yangi hisob ochish uchun joriy hisobdan chiqiladi (u ro'yxatda qoladi). Davom etamizmi?", 'Для создания нового аккаунта вы выйдете из текущего (он останется в списке). Продолжить?'));
+    if (!ok) return;
+    try { localStorage.setItem(BACK, fbAuth.currentUser.uid); } catch (_) {}
+    fbSetHint(false); await fbAuth.signOut().catch(function () {}); location.reload();
+  }
+  // ---------- oyna ----------
+  const ov = document.createElement('div'); ov.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:99990';
+  const sh = document.createElement('div'); sh.style.cssText = 'position:absolute;left:0;right:0;bottom:0;max-height:80%;overflow:auto;background:#fff;border-radius:18px 18px 0 0;padding:14px 14px calc(18px + env(safe-area-inset-bottom,0px));color:#222';
+  ov.appendChild(sh); document.body.appendChild(ov);
+  ov.addEventListener('click', function (e) { if (e.target === ov) ov.style.display = 'none'; });
+  function btn(t, fn, col) { const b = document.createElement('button'); b.textContent = t; b.style.cssText = 'display:block;width:100%;margin-top:8px;background:#f1f2f6;border:0;border-radius:12px;padding:13px;font-size:16px;text-align:left;color:' + (col || '#222'); b.addEventListener('click', fn); sh.appendChild(b); }
+  function render() {
+    const me = fbAuth.currentUser, a = load(); sh.innerHTML = '';
+    const h = document.createElement('div'); h.style.cssText = 'font-weight:700;font-size:18px;padding:2px 2px 6px'; h.textContent = T('Hisoblar', 'Аккаунты') + ' · ' + a.length + '/' + MAX; sh.appendChild(h);
+    a.forEach(function (x) {
+      const cur = me && x.uid === me.uid;
+      const r = document.createElement('div'); r.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 6px;border-bottom:1px solid #eee';
+      const av = document.createElement('div'); av.style.cssText = 'width:44px;height:44px;border-radius:50%;background:#9aa;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none'; av.textContent = (x.u[0] || '?').toUpperCase();
+      const mid = document.createElement('div'); mid.style.cssText = 'flex:1;min-width:0';
+      const n = document.createElement('div'); n.style.fontWeight = '600'; n.textContent = x.u;
+      const s = document.createElement('div'); s.style.cssText = 'color:#889;font-size:13px'; s.textContent = '@' + x.u + (cur ? ' · ' + T('joriy', 'текущий') : '');
+      mid.append(n, s); r.append(av, mid);
+      if (cur) { const k = document.createElement('div'); k.textContent = '✓'; k.style.cssText = 'color:#2AABEE;font-size:22px'; r.appendChild(k); }
+      else {
+        r.addEventListener('click', function () { switchTo(x); });
+        const d = document.createElement('button'); d.textContent = '✕'; d.style.cssText = 'border:0;background:none;font-size:18px;color:#c44;padding:8px';
+        d.addEventListener('click', async function (e) { e.stopPropagation(); if (await pldnConfirm(T("Hisob ro'yxatdan olib tashlansinmi? (hisobning o'zi o'chmaydi)", 'Убрать аккаунт из списка? (сам аккаунт не удаляется)'))) { save(load().filter(function (y) { return y.u !== x.u; })); render(); paintRow(); } });
+        r.appendChild(d);
+      }
+      sh.appendChild(r);
+      if (x.uid) fbGetUser(x.uid).then(function (u) {
+        if (u.name) n.textContent = u.name;
+        if (u.avatar) { av.textContent = ''; av.style.background = 'url(' + u.avatar + ') center/cover'; } else if (u.name) { av.textContent = u.name[0].toUpperCase(); if (u.color) av.style.background = u.color; }
+      }).catch(function () {});
+    });
+    if (a.length < MAX) { btn('＋ ' + T('Yangi hisob ochish', 'Создать новый аккаунт'), addNew, '#2AABEE'); btn('🔗 ' + T('Mavjud hisobni ulash', 'Подключить существующий'), addExisting, '#2AABEE'); }
+    else { const m = document.createElement('div'); m.style.cssText = 'color:#889;font-size:13px;padding:10px 4px'; m.textContent = T("Eng ko'pi bilan 5 ta hisob qo'shish mumkin.", 'Можно добавить не более 5 аккаунтов.'); sh.appendChild(m); }
+  }
+  // ---------- Sozlamalardagi qator ----------
+  const row = document.createElement('div'); row.className = 'settings-item'; row.id = 'accountsRow';
+  row.innerHTML = '<span class="settings-icon">👥</span><span class="settings-label">' + T('Hisoblar', 'Аккаунты') + '</span><span id="accCnt" style="color:#999;margin-right:8px"></span><span class="settings-arrow">›</span>';
+  const grp = document.createElement('div'); grp.className = 'settings-group'; grp.appendChild(row);
+  function paintRow() { const c = document.getElementById('accCnt'); if (c) c.textContent = load().length + '/' + MAX; }
+  const pr = document.getElementById('pldnSettingsRow');
+  if (pr && pr.parentElement) pr.parentElement.insertAdjacentElement('afterend', grp);
+  row.addEventListener('click', function () { render(); ov.style.display = 'block'; });
+  paintRow();
+  // ---------- yangi hisob ochishdan qaytish ----------
+  const prev = (function () { try { return localStorage.getItem(BACK); } catch (_) { return null; } })();
+  if (prev) {
+    const bk = document.createElement('button'); bk.textContent = '↩ ' + T('Oldingi hisobga qaytish', 'Вернуться к прошлому аккаунту');
+    bk.style.cssText = 'position:fixed;top:10px;left:10px;z-index:99970;background:#2AABEE;color:#fff;border:0;border-radius:16px;padding:8px 14px;font-size:14px';
+    bk.addEventListener('click', function () { const x = load().find(function (y) { return y.uid === prev; }); try { localStorage.removeItem(BACK); } catch (_) {} if (x) switchTo(x); else location.reload(); });
+    document.body.appendChild(bk);
+    fbAuth.onAuthStateChanged(function (u) { if (u) { try { localStorage.removeItem(BACK); } catch (_) {} bk.remove(); } });
+  }
 })();
 </script>
 </body>
