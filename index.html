@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-viewer-v33 (2026-10-09) -->
+<!-- VERSION: firebase-video-v34 (2026-10-09) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -6076,7 +6076,7 @@
   // ===== XABAR USTIDAGI MENYU (Tahrirlash / O'chirish) =====
   function openMsgMenu(bubble) {
     currentMenuBubble = bubble;
-    msgEditAction.style.display = (bubble.dataset.kind === 'image' || bubble.dataset.kind === 'voice') ? 'none' : 'block';
+    msgEditAction.style.display = (bubble.dataset.kind === 'image' || bubble.dataset.kind === 'voice' || bubble.dataset.kind === 'video') ? 'none' : 'block';
     const screenEl = document.getElementById('chatDetailScreen');
     const screenRect = screenEl.getBoundingClientRect();
     const bubbleRect = bubble.getBoundingClientRect();
@@ -8018,7 +8018,8 @@
           const isImage = m.type === 'image' && typeof m.image === 'string' && m.image.indexOf('data:image/') === 0;
           const isVoice = m.type === 'voice' && typeof m.audio === 'string' && m.audio.indexOf('data:audio/') === 0;
           const isCall = m.type === 'call' && typeof m.outcome === 'string';
-          if (isText || isImage || isVoice || isCall) {
+          const isVideo = m.type === 'video' && typeof window.pldnVideoBubble === 'function';
+          if (isText || isImage || isVoice || isCall || isVideo) {
             const md = (m.createdAt && m.createdAt.toDate) ? m.createdAt.toDate() : new Date();
             const dayKey = md.toDateString();
             if (dayKey !== lastDayKey) {
@@ -8042,6 +8043,8 @@
               }
             } else if (isCall) {
               b = addCallBubble(m, dir, md);
+            } else if (isVideo) {
+              b = window.pldnVideoBubble(m, dir, md, doc.id);
             } else {
               b = isText ? addBubble(m.text, dir, md, !!m.editedAt) : addImageBubble(m.image, dir, md);
             }
@@ -8133,7 +8136,7 @@
       await chatRef.set({ lastText: '' }, { merge: true });
     } else {
       const m = snap.docs[0].data();
-      await chatRef.set({ lastText: (m.type === 'image' ? fbT('📷 Rasm', '📷 Фото') : m.type === 'voice' ? fbT('🎤 Ovozli xabar', '🎤 Голосовое') : m.type === 'call' ? fbT("📞 Qo'ng'iroq", '📞 Звонок') : String(m.text || '')).slice(0, 100), lastFrom: m.from }, { merge: true });
+      await chatRef.set({ lastText: (m.type === 'image' ? fbT('📷 Rasm', '📷 Фото') : m.type === 'voice' ? fbT('🎤 Ovozli xabar', '🎤 Голосовое') : m.type === 'video' ? fbT('🎥 Video', '🎥 Видео') : m.type === 'call' ? fbT("📞 Qo'ng'iroq", '📞 Звонок') : String(m.text || '')).slice(0, 100), lastFrom: m.from }, { merge: true });
     }
   }
 
@@ -8153,6 +8156,7 @@
     const chat = fbCurrentChat;
     if (!me || !chat) return;
     try {
+      if (window.pldnVideoCleanup) await window.pldnVideoCleanup(chat.id, msgId);
       await fbDb.collection('chats').doc(chat.id).collection('messages').doc(msgId).delete();
       await fbRefreshLastText(chat.id);
     } catch (e) { console.error(e); alert(fbErrMsg(e)); }
@@ -10028,6 +10032,17 @@
       URL.revokeObjectURL(url);
     }
   }
+  window.pldnPrepVideo = async function (f) {
+    const meta = await videoMeta(f);
+    if (!isFinite(meta.dur) || meta.dur <= 0) throw new Error(T("Video uzunligini aniqlab bo'lmadi", 'Не удалось определить длину видео'));
+    if (meta.dur > MAX_VIDEO_SEC + 1) throw new Error(T('Video 3 daqiqadan uzun.', 'Видео длиннее 3 минут.'));
+    const dur = Math.max(1, Math.round(meta.dur));
+    if (f.size <= 6 * 1024 * 1024 && /^video\/(mp4|webm)$/.test(f.type)) return { blob: f, dur: dur };
+    const blob = await transcode(f, meta.dur);
+    if (!blob || blob.size < 1000) throw new Error(T('Video tayyorlanmadi', 'Видео не подготовлено'));
+    toast('');
+    return { blob: blob, dur: dur };
+  };
   mediaIn.addEventListener('change', async function () {
     const f = mediaIn.files && mediaIn.files[0]; mediaIn.value = '';
     if (!f) return;
@@ -10619,7 +10634,7 @@
     if (!sticker) { cx.font = '20px sans-serif'; cx.fillStyle = '#8a97a3'; cx.textAlign = 'right'; cx.fillText(foot, x + bw - 12, L.y + total - 9); cx.textAlign = 'left'; }
     L.y += total + 10;
   }
-  async function drawMsg(m, ms) {
+  async function drawMsg(m, ms, id) {
     const mine = m.from === job.me, d = new Date(ms), p2 = function (n) { return String(n).padStart(2, '0'); };
     const day = d.getDate() + '.' + p2(d.getMonth() + 1) + '.' + d.getFullYear(), foot = p2(d.getHours()) + ':' + p2(d.getMinutes());
     if (L.day !== day) {
@@ -10631,7 +10646,15 @@
     const head = (job.type === 'group' || job.type === 'channel') && !mine ? await nameOf(m.from) : '';
     if (m.type === 'image' && m.image) await imgBubble(m.image, mine, !!m.sticker, head, foot);
     else if (m.type === 'voice') await bubble(['🎤 ' + T('Ovozli xabar', 'Голосовое') + ' ' + mmss(m.duration)], mine, head, foot);
-    else if (m.type === 'call') {
+    else if (m.type === 'video') {
+      let code = '';
+      try { code = await window.pldnVideoSave(job.chatId, job.name, job.type, id, m, ms); } catch (e) { console.error(e); }
+      if (m.thumb) await imgBubble(m.thumb, mine, false, head, foot);
+      const lines = ['🎥 ' + T('Video', 'Видео') + ' ' + mmss(m.dur)];
+      if (code) { lines.push(T('KOD: ', 'КОД: ') + code.slice(0, 17)); lines.push(code.slice(18)); }
+      else lines.push(T('(video saqlanmadi)', '(видео не сохранено)'));
+      await bubble(lines, mine, m.thumb ? '' : head, foot);
+    } else if (m.type === 'call') {
       const o = { missed: T("o'tkazib yuborilgan", 'пропущен'), cancelled: T('bekor qilingan', 'отменён'), declined: T('rad etilgan', 'отклонён'), ended: T('tugadi', 'завершён') }[m.outcome] || m.outcome;
       await bubble(['📞 ' + (m.callType === 'video' ? T("Video qo'ng'iroq", 'Видеозвонок') : T("Qo'ng'iroq", 'Звонок')) + ' · ' + o + (m.duration ? ' · ' + mmss(m.duration) : '')], mine, head, foot);
     } else {
@@ -10668,7 +10691,7 @@
           if (cancelReq) return;
           const m = d.data(), ts = m.createdAt;
           if (!ts || !ts.toMillis) continue;
-          await drawMsg(m, ts.toMillis()); job.msgs++; n++; cur = ts; incl = false;
+          await drawMsg(m, ts.toMillis(), d.id); job.msgs++; n++; cur = ts; incl = false;
           if (job.msgs % 10 === 0) paintPill();
         }
         paintPill();
@@ -10887,6 +10910,163 @@
     bk.addEventListener('click', function () { const x = load().find(function (y) { return y.uid === prev; }); try { localStorage.removeItem(BACK); } catch (_) {} if (x) switchTo(x); else location.reload(); });
     document.body.appendChild(bk);
     fbAuth.onAuthStateChanged(function (u) { if (u) { try { localStorage.removeItem(BACK); } catch (_) {} bk.remove(); } });
+  }
+})();
+</script>
+<script>
+// ===== CHAT VIDEO + KODLAR ===== VERSION: video-v1
+(function () {
+  const T = function (a, b) { return fbT(a, b); };
+  const CH = 450 * 1024, ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const mm = function (s) { s = Math.max(0, Math.round(s || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+  const el = function (t, css, txt) { const e = document.createElement(t); if (css) e.style.cssText = css; if (txt != null) e.textContent = txt; return e; };
+  // ---------- saqlangan videolar bazasi ----------
+  const vdb = new Promise(function (res, rej) { const r = indexedDB.open('pldnvid', 1); r.onupgradeneeded = function () { r.result.createObjectStore('v', { keyPath: 'code' }); }; r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; });
+  function vtx(mode, fn) { return vdb.then(function (db) { return new Promise(function (res, rej) { const t = db.transaction('v', mode), q = fn(t.objectStore('v')); t.oncomplete = function () { res(q && q.result); }; t.onerror = function () { rej(t.error); }; }); }); }
+  const vGet = function (k) { return vtx('readonly', function (s) { return s.get(k); }); };
+  const vAll = function () { return vtx('readonly', function (s) { return s.getAll(); }); };
+  const vPut = function (r) { return vtx('readwrite', function (s) { return s.put(r); }); };
+  const vDel = function (k) { return vtx('readwrite', function (s) { return s.delete(k); }); };
+  // Har bir video uchun takrorlanmas 30 belgili kod (chat + xabar identifikatoridan)
+  async function vcode(chatId, msgId) {
+    const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(chatId + '/' + msgId)));
+    let s = ''; for (let i = 0; i < 30; i++) s += ALPHA[h[i] % 32];
+    return s.match(/.{5}/g).join('-');
+  }
+  const mem = {};
+  async function fetchBlob(chatId, msgId, mime) {
+    const k = chatId + '/' + msgId; if (mem[k]) return mem[k];
+    const snap = await fbDb.collection('chats').doc(chatId).collection('messages').doc(msgId).collection('chunks').get();
+    const docs = snap.docs.sort(function (a, b) { return a.id < b.id ? -1 : 1; }), parts = [];
+    docs.forEach(function (d) { const bin = atob(d.data().d || ''), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); parts.push(u); });
+    if (!parts.length) throw new Error(T('Video topilmadi', 'Видео не найдено'));
+    return (mem[k] = new Blob(parts, { type: mime || 'video/webm' }));
+  }
+  window.pldnVideoSave = async function (chatId, chatName, chatType, msgId, m, ms) {
+    const code = await vcode(chatId, msgId);
+    if (await vGet(code)) return code;
+    if (!m.ready) return code;
+    const blob = await fetchBlob(chatId, msgId, m.mime);
+    await vPut({ code: code, chatId: chatId, chat: chatName, type: chatType, msgId: msgId, ms: ms, dur: m.dur || 0, mime: m.mime || 'video/webm', thumb: m.thumb || '', size: blob.size, blob: blob });
+    delete mem[chatId + '/' + msgId];
+    return code;
+  };
+  window.pldnVideoCleanup = async function (chatId, msgId) {
+    try {
+      const snap = await fbDb.collection('chats').doc(chatId).collection('messages').doc(msgId).collection('chunks').get();
+      if (snap.empty) return;
+      const b = fbDb.batch(); snap.forEach(function (d) { b.delete(d.ref); }); await b.commit();
+    } catch (e) { console.error('video cleanup', e); }
+  };
+  // ---------- ijro oynasi ----------
+  const pl = el('div', 'display:none;position:fixed;inset:0;background:#000;z-index:99996;flex-direction:column');
+  const plX = el('button', 'position:absolute;top:12px;left:12px;z-index:2;width:42px;height:42px;border:0;border-radius:50%;background:rgba(255,255,255,.2);color:#fff;font-size:20px', '✕');
+  const plV = el('video', 'flex:1;width:100%;min-height:0;background:#000'); plV.controls = true; plV.playsInline = true;
+  pl.append(plX, plV); document.body.appendChild(pl);
+  function closePlayer() { try { plV.pause(); } catch (_) {} pl.style.display = 'none'; if (plV.src) { URL.revokeObjectURL(plV.src); plV.removeAttribute('src'); plV.load(); } }
+  plX.addEventListener('click', closePlayer);
+  function play(blob) { plV.src = URL.createObjectURL(blob); pl.style.display = 'flex'; plV.play().catch(function () {}); }
+  function toast(msg, ms) { const t = el('div', 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(0,0,0,.8);color:#fff;padding:10px 18px;border-radius:18px;z-index:99999;font-size:15px', msg); document.body.appendChild(t); setTimeout(function () { t.remove(); }, ms || 2500); return t; }
+  // ---------- chatdagi video pufagi ----------
+  window.pldnVideoBubble = function (m, dir, md, id) {
+    const b = document.createElement('div'); b.className = 'message-bubble image-bubble ' + dir; b.dataset.kind = 'video';
+    const w = el('div', 'position:relative;min-width:150px;min-height:90px');
+    const im = new Image(); im.src = m.thumb || ''; im.style.cssText = 'display:block;max-width:100%;max-height:260px;border-radius:12px;background:#223;min-width:150px;min-height:90px;object-fit:cover';
+    const pb = el('div', 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:48px;height:48px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px', m.ready ? '▶' : '⏳');
+    const du = el('div', 'position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.55);color:#fff;font-size:12px;padding:2px 7px;border-radius:9px', '🎥 ' + mm(m.dur));
+    w.append(im, pb, du); b.appendChild(w);
+    if (md && typeof bubbleClock === 'function') { const tm = el('span'); tm.className = 'msg-time'; tm.textContent = bubbleClock(md); b.appendChild(tm); }
+    b.addEventListener('click', async function () {
+      if (!m.ready) { toast(T('Video hali yuklanmoqda…', 'Видео ещё загружается…')); return; }
+      const c = fbCurrentChat; if (!c) return;
+      const t = toast(T('Video yuklanmoqda…', 'Загрузка видео…'), 60000);
+      try { play(await fetchBlob(c.id, id, m.mime)); } catch (e) { alert(fbErrMsg(e)); } finally { t.remove(); }
+    });
+    messagesArea.appendChild(b);
+    if (typeof attachBubbleInteractions === 'function') attachBubbleInteractions(b, dir);
+    return b;
+  };
+  // ---------- yuborish ----------
+  function thumbOf(file) {
+    return new Promise(function (res) {
+      const u = URL.createObjectURL(file), v = document.createElement('video'); let fin = false;
+      const done = function (d) { if (fin) return; fin = true; URL.revokeObjectURL(u); res(d || ''); };
+      v.muted = true; v.preload = 'auto'; v.playsInline = true;
+      v.onloadeddata = function () { try { v.currentTime = Math.min(0.3, (v.duration || 1) / 2); } catch (_) { done(''); } };
+      v.onseeked = function () { try { const k = Math.min(1, 320 / Math.max(v.videoWidth, v.videoHeight)), c = document.createElement('canvas'); c.width = Math.round(v.videoWidth * k) || 1; c.height = Math.round(v.videoHeight * k) || 1; c.getContext('2d').drawImage(v, 0, 0, c.width, c.height); done(c.toDataURL('image/jpeg', 0.6)); } catch (_) { done(''); } };
+      v.onerror = function () { done(''); }; v.src = u; setTimeout(function () { done(''); }, 8000);
+    });
+  }
+  const b64 = function (blob) { return new Promise(function (r) { const fr = new FileReader(); fr.onload = function () { r(String(fr.result).split(',')[1] || ''); }; fr.readAsDataURL(blob); }); };
+  async function sendVideo(f) {
+    const me = fbAuth && fbAuth.currentUser, chat = fbCurrentChat; if (!me || !chat) return;
+    let mref = null;
+    try {
+      if (!window.pldnPrepVideo) throw new Error(T('Video moduli tayyor emas', 'Модуль видео не готов'));
+      const pr = await window.pldnPrepVideo(f), thumb = await thumbOf(pr.blob), n = Math.max(1, Math.ceil(pr.blob.size / CH));
+      const ref = fbDb.collection('chats').doc(chat.id); mref = ref.collection('messages').doc();
+      const ts = firebase.firestore.FieldValue.serverTimestamp(), bt = fbDb.batch();
+      bt.set(mref, Object.assign({ from: me.uid, type: 'video', dur: pr.dur, mime: pr.blob.type || 'video/webm', n: n, thumb: thumb, ready: false, createdAt: ts }, fbTakeReply()));
+      bt.set(ref, fbChatUpdate(chat, me.uid, T('🎥 Video', '🎥 Видео'), ts), { merge: true });
+      await bt.commit();
+      const tt = toast('', 600000);
+      for (let i = 0; i < n; i++) {
+        tt.textContent = T('Video yuborilmoqda: ', 'Отправка видео: ') + Math.round(i * 100 / n) + '%';
+        await mref.collection('chunks').doc(String(i).padStart(4, '0')).set({ d: await b64(pr.blob.slice(i * CH, (i + 1) * CH)) });
+      }
+      tt.remove(); await mref.update({ ready: true });
+    } catch (e) {
+      console.error(e); alert(T('Video yuborilmadi: ', 'Не удалось отправить: ') + String((e && (e.message || e.code)) || e));
+      if (mref) { await window.pldnVideoCleanup(chat.id, mref.id); mref.delete().catch(function () {}); }
+    }
+  }
+  const vin = document.createElement('input'); vin.type = 'file'; vin.accept = 'video/*'; vin.id = 'pldnVidIn'; vin.style.display = 'none'; document.body.appendChild(vin);
+  vin.addEventListener('change', function () { const f = vin.files && vin.files[0]; vin.value = ''; if (f) sendVideo(f); });
+  const ab = document.getElementById('attachImageBtn');
+  if (ab) { const vb = el('button'); vb.className = 'attach-btn'; vb.textContent = '🎥'; vb.addEventListener('click', function () { vin.click(); }); ab.parentNode.insertBefore(vb, ab.nextSibling); }
+
+  // ---------- PLDN sozlamalaridagi "Videolar" bo'limi ----------
+  const ov = el('div', 'display:none;position:fixed;inset:0;background:#f4f5f7;z-index:99985;flex-direction:column;color:#222');
+  const top = el('div', 'display:flex;align-items:center;gap:10px;padding:12px;background:#fff;border-bottom:1px solid #e5e7eb');
+  const back = el('button', 'border:0;background:none;font-size:24px;padding:4px 8px', '‹'); const ttl = el('div', 'font-weight:700;font-size:18px;flex:1', '');
+  top.append(back, ttl);
+  const q = el('input', 'margin:10px 12px 4px;padding:11px;border:1px solid #ccd;border-radius:10px;font-size:15px'); q.placeholder = T('Kod yoki chat nomi bo‘yicha qidirish', 'Поиск по коду или названию чата');
+  const lst = el('div', 'flex:1;overflow:auto;padding:4px 12px 20px');
+  ov.append(top, q, lst); document.body.appendChild(ov);
+  back.addEventListener('click', function () { ov.style.display = 'none'; });
+  let all = [];
+  const icon = function (t) { return t === 'channel' ? '📢' : t === 'group' ? '👥' : '💬'; };
+  const fmt = function (n) { return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB'; };
+  function paint() {
+    const f = q.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ''), ft = q.value.trim().toLowerCase();
+    const rows = all.filter(function (r) { return !ft || r.code.replace(/-/g, '').indexOf(f) >= 0 && f || String(r.chat).toLowerCase().indexOf(ft) >= 0; }).sort(function (a, b) { return b.ms - a.ms; });
+    lst.innerHTML = '';
+    ttl.textContent = '🎬 ' + T('Videolar', 'Видео') + ' · ' + all.length + ' · ' + fmt(all.reduce(function (s, r) { return s + (r.size || 0); }, 0));
+    if (!rows.length) { lst.appendChild(el('div', 'color:#889;padding:30px 10px;text-align:center;line-height:1.5', T('Bu yerda PDF qilingan chat, guruh yoki kanallarning videolari saqlanadi. Chatda 📄 tugmasi orqali PDF qiling.', 'Здесь сохраняются видео из чатов, групп и каналов, экспортированных в PDF (кнопка 📄 в чате).'))); return; }
+    let last = '';
+    rows.forEach(function (r) {
+      if (r.chatId !== last) { last = r.chatId; lst.appendChild(el('div', 'font-weight:700;margin:14px 2px 6px;color:#2a7fc0', icon(r.type) + ' ' + r.chat)); }
+      const c = el('div', 'background:#fff;border-radius:14px;padding:10px;margin-bottom:8px;display:flex;gap:10px');
+      const th = el('div', 'position:relative;width:84px;height:84px;flex:none;border-radius:10px;background:#223 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px', '▶');
+      if (r.thumb) th.style.backgroundImage = 'url(' + r.thumb + ')';
+      th.addEventListener('click', function () { play(r.blob); });
+      const mid = el('div', 'flex:1;min-width:0');
+      const d = new Date(r.ms);
+      mid.appendChild(el('div', 'font-size:13px;color:#667', d.getDate() + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear() + ' · 🎥 ' + mm(r.dur) + ' · ' + fmt(r.size || 0)));
+      const code = el('div', 'font-family:monospace;font-size:13px;margin-top:6px;word-break:break-all;color:#111;background:#eef3f8;border-radius:8px;padding:6px', r.code);
+      code.addEventListener('click', function () { try { navigator.clipboard.writeText(r.code); toast(T('Kod nusxalandi', 'Код скопирован')); } catch (_) {} });
+      const del = el('button', 'border:0;background:none;color:#d33;font-size:13px;margin-top:4px;padding:4px 0', '🗑 ' + T("O'chirish", 'Удалить'));
+      del.addEventListener('click', async function () { if (await pldnConfirm(T("Video qurilmadan o'chirilsinmi? (PDF dagi kod qoladi)", 'Удалить видео с устройства? (код в PDF останется)'))) { await vDel(r.code); all = all.filter(function (x) { return x.code !== r.code; }); paint(); } });
+      mid.append(code, del); c.append(th, mid); lst.appendChild(c);
+    });
+  }
+  q.addEventListener('input', paint);
+  const body = document.querySelector('#pldnSettingsScreen .settings-body');
+  if (body) {
+    const g = el('div'); g.className = 'settings-group'; g.style.marginTop = '14px';
+    const row = el('div'); row.className = 'settings-item'; row.innerHTML = '<span class="settings-icon">🎬</span><span class="settings-label">' + T('Videolar (PDF kodlari)', 'Видео (коды из PDF)') + '</span><span class="settings-arrow">›</span>';
+    row.addEventListener('click', async function () { q.value = ''; all = await vAll(); paint(); ov.style.display = 'flex'; });
+    g.appendChild(row); body.appendChild(g);
   }
 })();
 </script>
