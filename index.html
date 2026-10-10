@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-intro-v37 (2026-10-09) -->
+<!-- VERSION: firebase-updhist-v38 (2026-10-10) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -782,6 +782,13 @@
   .pldn-np-btns button { flex: 1; border: 0; border-radius: 12px; padding: 12px; font-size: 16px; font-weight: 600; cursor: pointer; }
   .pldn-np-btns .np-cancel { background: var(--bg-elevated, #fff); color: var(--text-primary, #000); }
   .pldn-np-btns .np-yes { background: #2AABEE; color: #fff; }
+  .pldn-np-card.upd { position: relative; margin-bottom: 12px; }
+  .pldn-np-card.upd .upd-del { position: absolute; top: 8px; right: 10px; border: 0; background: transparent; color: var(--text-secondary, #8e8e93); font-size: 20px; line-height: 1; padding: 6px; cursor: pointer; }
+  .pldn-np-card.upd .upd-ver { margin: 0 0 6px; }
+  .pldn-np-card.upd .upd-st { margin: 0; font-weight: 600; }
+  .pldn-np-card.upd .upd-st.ok { color: #34C759; }
+  .pldn-np-card.upd .upd-st.no { color: #FF3B30; }
+  .pldn-np-card.upd .pldn-np-btns { margin-top: 12px; }
 
   /* ===== CHAT ROʻYXATINI TANLASH REJIMI (bir nechta chatni oʻchirish) ===== */
   .chat-header-normal,
@@ -7698,6 +7705,30 @@
   const PLDN_BUILD = '__PLDN_BUILD__'; // GitHub Actions yig'ishda raqamga almashtiradi
   const PLDN_REPO = 'broker7576-droid/pldn-app';
   let pldnUpdateInfo = null; // {latest, url} yangilanish bor bo'lsa
+  // Yangilanish tarixi (doimiy kartalar): [{v, st:'pending'|'downloaded'|'skipped', ts}]
+  function pldnUpdHistGet() { try { const a = JSON.parse(localStorage.getItem('pldn_upd_hist') || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } }
+  function pldnUpdHistSet(a) { try { localStorage.setItem('pldn_upd_hist', JSON.stringify(a)); } catch (_) {} }
+  function pldnUpdHistAdd(v) {
+    const a = pldnUpdHistGet();
+    if (a.some(x => x.v === v)) return;
+    // yangi yangilanish chiqdi: yuklanmagan eskilari "yuklab olmadingiz" bo'ladi
+    a.forEach(x => { if (x.st === 'pending' && x.v < v) x.st = 'skipped'; });
+    a.push({ v: v, st: 'pending', ts: Date.now() });
+    pldnUpdHistSet(a);
+  }
+  function pldnUpdHistMark(v, st) {
+    const a = pldnUpdHistGet();
+    const x = a.find(y => y.v === v);
+    if (x) { x.st = st; pldnUpdHistSet(a); }
+  }
+  // O'rnatilgan versiya yetib kelgan bo'lsa, kutilayotgan kartalar "yuklab oldingiz" bo'ladi
+  function pldnUpdHistSync(cur) {
+    const a = pldnUpdHistGet();
+    let ch = false;
+    a.forEach(x => { if (x.st === 'pending' && x.v <= cur) { x.st = 'downloaded'; ch = true; } });
+    if (ch) pldnUpdHistSet(a);
+  }
+  function pldnUpdHistDel(v) { pldnUpdHistSet(pldnUpdHistGet().filter(x => x.v !== v)); }
   async function pldnCheckUpdate(manual) {
     const cur = parseInt(PLDN_BUILD, 10);
     const val = document.getElementById('appUpdateVal');
@@ -7715,13 +7746,15 @@
       if (val) val.textContent = 'v' + cur;
       if (latest > cur && asset) {
         pldnUpdateInfo = { latest: latest, url: asset.browser_download_url };
+        pldnUpdHistAdd(latest);
         pldnRefreshBell();
         if (!manual) return;
         const ok = await pldnConfirm(fbT('Yangi versiya mavjud (v' + latest + '). Yuklab olib o\'rnatasizmi?', 'Доступна новая версия (v' + latest + '). Скачать и установить?'));
-        if (ok) { window.location.href = asset.browser_download_url; }
+        if (ok) { pldnUpdHistMark(latest, 'downloaded'); window.location.href = asset.browser_download_url; }
       } else if (manual) {
         alert(fbT("Eng so'nggi versiya o'rnatilgan (v" + cur + ').', 'Установлена последняя версия (v' + cur + ').'));
       }
+      pldnUpdHistSync(cur);
     } catch (e) {
       console.error('Yangilanish tekshiruvi', e);
       if (val) val.textContent = 'v' + cur;
@@ -7751,26 +7784,47 @@
     body.innerHTML = '';
     if (tab === 'offers' && typeof pldnOffersRender === 'function') {
       pldnOffersRender(body);
-    } else if (tab === 'update' && pldnUpdateInfo) {
-      const card = document.createElement('div');
-      card.className = 'pldn-np-card';
-      const h = document.createElement('h4');
-      h.textContent = fbT('Yangilanish', 'Обновление');
-      const p = document.createElement('p');
-      p.textContent = fbT('PLDN ilovasida yangilanish bor. Yuklab olasizmi?', 'В приложении PLDN есть обновление. Скачать?');
-      const row = document.createElement('div');
-      row.className = 'pldn-np-btns';
-      const no = document.createElement('button');
-      no.className = 'np-cancel';
-      no.textContent = fbT('Bekor qilish', 'Отмена');
-      no.onclick = pldnNpClose;
-      const yes = document.createElement('button');
-      yes.className = 'np-yes';
-      yes.textContent = fbT('Ha', 'Да');
-      yes.onclick = function () { const u = pldnUpdateInfo && pldnUpdateInfo.url; pldnNpClose(); if (u) window.location.href = u; };
-      row.append(no, yes);
-      card.append(h, p, row);
-      body.appendChild(card);
+    } else if (tab === 'update' && pldnUpdHistGet().length) {
+      const list = pldnUpdHistGet().slice().sort((x, y) => y.v - x.v);
+      list.forEach(function (it) {
+        const card = document.createElement('div');
+        card.className = 'pldn-np-card upd';
+        const h = document.createElement('h4');
+        h.textContent = fbT('PLDN ilovasi: yangilanish', 'Приложение PLDN: обновление');
+        const ver = document.createElement('p');
+        ver.className = 'upd-ver';
+        ver.textContent = fbT('versiya: ', 'версия: ') + 'v' + it.v;
+        const del = document.createElement('button');
+        del.className = 'upd-del';
+        del.textContent = '✕';
+        del.onclick = function () { pldnUpdHistDel(it.v); pldnNpRender('update'); };
+        card.append(h, ver, del);
+        if (it.st === 'downloaded' || it.st === 'skipped') {
+          const st = document.createElement('p');
+          st.className = 'upd-st ' + (it.st === 'downloaded' ? 'ok' : 'no');
+          st.textContent = it.st === 'downloaded' ? fbT('yuklab oldingiz', 'вы скачали') : fbT('yuklab olmadingiz', 'вы не скачали');
+          card.appendChild(st);
+        } else {
+          const row = document.createElement('div');
+          row.className = 'pldn-np-btns';
+          const no = document.createElement('button');
+          no.className = 'np-cancel';
+          no.textContent = fbT('Bekor qilish', 'Отмена');
+          no.onclick = pldnNpClose;
+          const yes = document.createElement('button');
+          yes.className = 'np-yes';
+          yes.textContent = fbT('Ha', 'Да');
+          yes.onclick = function () {
+            const u = pldnUpdateInfo && pldnUpdateInfo.latest === it.v ? pldnUpdateInfo.url : (pldnUpdateInfo && pldnUpdateInfo.url);
+            pldnUpdHistMark(it.v, 'downloaded');
+            pldnNpClose();
+            if (u) window.location.href = u;
+          };
+          row.append(no, yes);
+          card.appendChild(row);
+        }
+        body.appendChild(card);
+      });
     } else {
       const e = document.createElement('div');
       e.className = 'pldn-np-empty';
