@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-pdfinfo-v36 (2026-10-09) -->
+<!-- VERSION: firebase-intro-v37 (2026-10-09) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -10650,7 +10650,7 @@
     else if (m.type === 'voice') await bubble(['🎤 ' + T('Ovozli xabar', 'Голосовое') + ' ' + mmss(m.duration)], mine, head, foot);
     else if (m.type === 'video') {
       let vr = null;
-      try { vr = await window.pldnVideoSave(job.chatId, job.name, job.type, id, m, ms); } catch (e) { console.error(e); }
+      try { vr = await window.pldnVideoSave(job.chatId, job.name, job.type, id, m, ms, job.code); } catch (e) { console.error(e); }
       if (m.thumb) await imgBubble(m.thumb, mine, false, head, foot);
       const lines = ['🎥 ' + T('Video', 'Видео') + ' ' + mmss(m.dur) + (vr && vr.no ? ' · #' + vr.no : '')];
       if (!vr || !vr.no) lines.push(T('(video saqlanmadi)', '(видео не сохранено)'));
@@ -10970,13 +10970,20 @@
     if (!parts.length) throw new Error(T('Video topilmadi', 'Видео не найдено'));
     return (mem[k] = new Blob(parts, { type: mime || 'video/webm' }));
   }
-  function nextNo(chatId) { const k = 'pldn_vno_' + chatId; let n = 0; try { n = (+localStorage.getItem(k) || 0) + 1; localStorage.setItem(k, String(n)); } catch (_) { n = Date.now() % 100000; } return n; }
-  window.pldnVideoSave = async function (chatId, chatName, chatType, msgId, m, ms) {
+  function freeNo(used) { let n = 1; while (used.has(n)) n++; return n; }
+  window.pldnVideoSave = async function (chatId, chatName, chatType, msgId, m, ms, pdfCode) {
     const code = await vcode(chatId, msgId), ex = await vGet(code);
-    if (ex) { if (!ex.no) { ex.no = nextNo(chatId); await vPut(ex); } return { code: code, no: ex.no }; }
+    const used = function () { return vAll().then(function (a) { return new Set(a.filter(function (r) { return r.chatId === chatId && r.no; }).map(function (r) { return r.no; })); }); };
+    if (ex) {
+      let ch = false;
+      if (!ex.no) { ex.no = freeNo(await used()); ch = true; }
+      if (pdfCode && ex.pdfCode !== pdfCode) { ex.pdfCode = pdfCode; ch = true; }
+      if (ch) await vPut(ex);
+      return { code: code, no: ex.no };
+    }
     if (!m.ready) return { code: code, no: 0 };
-    const blob = await fetchBlob(chatId, msgId, m.mime), no = nextNo(chatId);
-    await vPut({ code: code, chatId: chatId, chat: chatName, type: chatType, msgId: msgId, ms: ms, dur: m.dur || 0, mime: m.mime || 'video/webm', thumb: m.thumb || '', size: blob.size, blob: blob, no: no });
+    const blob = await fetchBlob(chatId, msgId, m.mime), no = freeNo(await used());
+    await vPut({ code: code, chatId: chatId, chat: chatName, type: chatType, msgId: msgId, ms: ms, dur: m.dur || 0, mime: m.mime || 'video/webm', thumb: m.thumb || '', size: blob.size, blob: blob, no: no, pdfCode: pdfCode || '' });
     delete mem[chatId + '/' + msgId];
     return { code: code, no: no };
   };
@@ -10992,9 +10999,33 @@
   const plX = el('button', 'position:absolute;top:12px;left:12px;z-index:2;width:42px;height:42px;border:0;border-radius:50%;background:rgba(255,255,255,.2);color:#fff;font-size:20px', '✕');
   const plV = el('video', 'flex:1;width:100%;min-height:0;background:#000'); plV.controls = true; plV.playsInline = true;
   pl.append(plX, plV); document.body.appendChild(pl);
-  function closePlayer() { try { plV.pause(); } catch (_) {} pl.style.display = 'none'; if (plV.src) { URL.revokeObjectURL(plV.src); plV.removeAttribute('src'); plV.load(); } }
+  const intro = el('div', 'display:none;position:absolute;inset:0;z-index:3;background:#0b1220;color:#fff;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px');
+  pl.appendChild(intro); let itv = null;
+  function endIntro() { clearInterval(itv); intro.style.display = 'none'; plV.play().catch(function () {}); }
+  function closePlayer() { clearInterval(itv); intro.style.display = 'none'; try { plV.pause(); } catch (_) {} pl.style.display = 'none'; if (plV.src) { URL.revokeObjectURL(plV.src); plV.removeAttribute('src'); plV.load(); } }
   plX.addEventListener('click', closePlayer);
-  function play(blob) { plV.src = URL.createObjectURL(blob); pl.style.display = 'flex'; plV.play().catch(function () {}); }
+  function play(blob, meta) {
+    plV.src = URL.createObjectURL(blob); pl.style.display = 'flex';
+    if (!meta || !meta.no) { plV.play().catch(function () {}); return; }
+    plV.pause(); intro.innerHTML = '';
+    intro.appendChild(el('div', 'font-size:15px;color:#8fa3b8;margin-bottom:10px', meta.chat || ''));
+    intro.appendChild(el('div', 'font-size:84px;font-weight:800;line-height:1;margin-bottom:22px', '#' + meta.no));
+    if (meta.code) {
+      intro.appendChild(el('div', 'font-size:14px;color:#8fa3b8;margin-bottom:6px', T('PDF kodi', 'Код PDF')));
+      const gs = meta.code.split('-');
+      for (let k = 0; k < gs.length; k += 3) intro.appendChild(el('div', 'font-family:monospace;font-size:22px;letter-spacing:1px;line-height:1.5', gs.slice(k, k + 3).join('-')));
+    }
+    const barW = el('div', 'width:70%;max-width:320px;height:4px;background:#243246;border-radius:2px;margin-top:26px;overflow:hidden'), fill = el('div', 'height:100%;width:0;background:#2AABEE');
+    barW.appendChild(fill); intro.appendChild(barW);
+    const hint = el('div', 'font-size:13px;color:#8fa3b8;margin-top:10px', T('Bosing: to‘xtatish / davom', 'Нажмите: пауза / продолжить')); intro.appendChild(hint);
+    const skip = el('button', 'margin-top:18px;border:0;border-radius:18px;background:#2AABEE;color:#fff;font-size:15px;padding:10px 22px', T('Videoga o‘tish ▶', 'К видео ▶')); intro.appendChild(skip);
+    let t = 0, paused = false; const TOTAL = 3000;
+    intro.onclick = function (e) { if (e.target === skip) return; paused = !paused; hint.textContent = paused ? T('To‘xtatilgan — bosing, davom etadi', 'Пауза — нажмите, чтобы продолжить') : T('Bosing: to‘xtatish / davom', 'Нажмите: пауза / продолжить'); };
+    skip.onclick = endIntro;
+    clearInterval(itv);
+    itv = setInterval(function () { if (paused) return; t += 100; fill.style.width = Math.min(100, t / TOTAL * 100) + '%'; if (t >= TOTAL) endIntro(); }, 100);
+    intro.style.display = 'flex';
+  }
   function toast(msg, ms) { const t = el('div', 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(0,0,0,.8);color:#fff;padding:10px 18px;border-radius:18px;z-index:99999;font-size:15px', msg); document.body.appendChild(t); setTimeout(function () { t.remove(); }, ms || 2500); return t; }
   // ---------- chatdagi video pufagi ----------
   window.pldnVideoBubble = function (m, dir, md, id) {
@@ -11091,7 +11122,10 @@
   }
   async function fixNumbers() {
     const miss = all.filter(function (r) { return !r.no; }).sort(function (a, b) { return a.ms - b.ms; });
-    for (const r of miss) { r.no = nextNo(r.chatId); await vPut(r); }
+    for (const r of miss) {
+      const used = new Set(all.filter(function (x) { return x.chatId === r.chatId && x.no; }).map(function (x) { return x.no; }));
+      r.no = freeNo(used); await vPut(r);
+    }
   }
   // ---------- chatdagi videolar ro'yxati (#1, #2, ...) ----------
   const vl = el('div', 'display:none;position:fixed;inset:0;background:#f4f5f7;z-index:99994;flex-direction:column;color:#222');
@@ -11109,7 +11143,10 @@
       const c = el('div', 'background:#fff;border-radius:14px;padding:10px;margin-bottom:8px;display:flex;gap:12px;align-items:center');
       const th = el('div', 'width:92px;height:92px;flex:none;border-radius:10px;background:#223 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px', '▶');
       if (r.thumb) th.style.backgroundImage = 'url(' + r.thumb + ')';
-      th.addEventListener('click', function () { play(r.blob); });
+      th.addEventListener('click', function () {
+        const lp = pdfs.filter(function (p) { return p.chatId === r.chatId; }).sort(function (a, b) { return b.ms - a.ms; })[0];
+        play(r.blob, { no: r.no, chat: r.chat, code: r.pdfCode || (lp && lp.code) || '' });
+      });
       const mid = el('div', 'flex:1;min-width:0');
       mid.appendChild(el('div', 'font-weight:800;font-size:18px;color:#2a7fc0', '#' + r.no));
       mid.appendChild(el('div', 'font-size:13px;color:#667;margin-top:2px', fdt(r.ms) + ' · 🎥 ' + mm(r.dur) + ' · ' + fmt(r.size || 0)));
