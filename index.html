@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-video-v34 (2026-10-09) -->
+<!-- VERSION: firebase-pdfinfo-v36 (2026-10-09) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -10564,6 +10564,8 @@
   const mmss = function (s) { s = Math.max(0, Math.round(s || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
   const names = {};
   async function nameOf(uid) { if (!names[uid]) { try { names[uid] = (await fbGetUser(uid)).name || '?'; } catch (_) { names[uid] = '?'; } } return names[uid]; }
+  function code45() { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', r = crypto.getRandomValues(new Uint8Array(45)); let s = ''; for (let i = 0; i < 45; i++) s += A[r[i] % 32]; return s.match(/.{5}/g).join('-'); }
+  function fdt(ms) { const d = new Date(ms), p = function (n) { return String(n).padStart(2, '0'); }; return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }
   function paintPill() {
     if (!job || job.finished) { pill.style.display = 'none'; return; }
     pill.textContent = '📄 PDF: ' + job.msgs + ' ' + T('xabar', 'сообщ.') + ' · ' + job.pages + ' ' + T('sahifa', 'стр.') + (running ? '' : ' · ' + T('to‘xtagan, bosing', 'остановлено, нажмите'));
@@ -10647,12 +10649,11 @@
     if (m.type === 'image' && m.image) await imgBubble(m.image, mine, !!m.sticker, head, foot);
     else if (m.type === 'voice') await bubble(['🎤 ' + T('Ovozli xabar', 'Голосовое') + ' ' + mmss(m.duration)], mine, head, foot);
     else if (m.type === 'video') {
-      let code = '';
-      try { code = await window.pldnVideoSave(job.chatId, job.name, job.type, id, m, ms); } catch (e) { console.error(e); }
+      let vr = null;
+      try { vr = await window.pldnVideoSave(job.chatId, job.name, job.type, id, m, ms); } catch (e) { console.error(e); }
       if (m.thumb) await imgBubble(m.thumb, mine, false, head, foot);
-      const lines = ['🎥 ' + T('Video', 'Видео') + ' ' + mmss(m.dur)];
-      if (code) { lines.push(T('KOD: ', 'КОД: ') + code.slice(0, 17)); lines.push(code.slice(18)); }
-      else lines.push(T('(video saqlanmadi)', '(видео не сохранено)'));
+      const lines = ['🎥 ' + T('Video', 'Видео') + ' ' + mmss(m.dur) + (vr && vr.no ? ' · #' + vr.no : '')];
+      if (!vr || !vr.no) lines.push(T('(video saqlanmadi)', '(видео не сохранено)'));
       await bubble(lines, mine, m.thumb ? '' : head, foot);
     } else if (m.type === 'call') {
       const o = { missed: T("o'tkazib yuborilgan", 'пропущен'), cancelled: T('bekor qilingan', 'отменён'), declined: T('rad etilgan', 'отклонён'), ended: T('tugadi', 'завершён') }[m.outcome] || m.outcome;
@@ -10673,9 +10674,30 @@
     try {
       if (!fbDb || !fbAuth || !fbAuth.currentUser) throw new Error(T('Tizimga kirilmagan', 'Вы не вошли'));
       job.me = fbAuth.currentUser.uid;
+      if (!job.code) job.code = code45();
+      if (!job.created) job.created = Date.now();
       await newPage();
       if (!job.pages && !job.cursor) {
-        cx.font = 'bold 40px sans-serif'; cx.fillStyle = '#17212b'; cx.fillText(job.name, M, L.y + 40); L.y += 70;
+        let cu = { first: '', last: '', username: '' }, ou = null;
+        try { cu = await fbGetUser(job.me); } catch (_) {}
+        if (job.type === 'dm' && job.other) { try { ou = await fbGetUser(job.other); } catch (_) {} }
+        const put = function (txt, font, col, adv) { if (L.y + adv > BOT) return; cx.font = font; cx.fillStyle = col; cx.fillText(txt, M, L.y + adv - 10); L.y += adv; };
+        const nm = function (u) { return (u.first || u.realName || '-') + (u.last ? ' ' + u.last : ''); };
+        put(job.name, 'bold 38px sans-serif', '#17212b', 58);
+        put(T("MA'LUMOTLAR", 'ИНФОРМАЦИЯ'), 'bold 26px sans-serif', '#2a7fc0', 46);
+        put(T('PDFning yagona kodi:', 'Уникальный код PDF:'), '22px sans-serif', '#5b6b7a', 34);
+        const gs = job.code.split('-');
+        for (let k = 0; k < gs.length; k += 3) put(gs.slice(k, k + 3).join('-'), 'bold 24px monospace', '#17212b', 32);
+        L.y += 14;
+        put(T("PDF yaratuvchisining ma'lumotlari:", 'Данные создателя PDF:'), '22px sans-serif', '#5b6b7a', 36);
+        put(T('Ism: ', 'Имя: ') + (cu.first || cu.realName || '-'), '24px sans-serif', '#17212b', 32);
+        if (cu.last) put(T('Familiya: ', 'Фамилия: ') + cu.last, '24px sans-serif', '#17212b', 32);
+        put(T('Foydalanuvchi nomi: ', 'Имя пользователя: ') + '@' + (cu.username || '-'), '24px sans-serif', '#17212b', 32);
+        L.y += 14;
+        const who = job.type === 'group' ? T('Guruh', 'Группа') : job.type === 'channel' ? T('Kanal', 'Канал') : (ou ? nm(ou) + (ou.username ? ' (@' + ou.username + ')' : '') : '-');
+        put(T('Kim ishtirokida: ', 'Участник: ') + who, '24px sans-serif', '#17212b', 36);
+        put(T('Yaratilgan: ', 'Создано: ') + fdt(job.created), '22px sans-serif', '#5b6b7a', 36);
+        L.y += 24;
       }
       const ref = fbDb.collection('chats').doc(job.chatId).collection('messages');
       let cur = job.cursor ? firebase.firestore.Timestamp.fromMillis(job.cursor) : (job.since ? firebase.firestore.Timestamp.fromMillis(job.since) : null);
@@ -10701,9 +10723,10 @@
       if (L && (L.y > TOP + 1 || !job.pages)) await flush();
       job.built = true; await dbPut('job', job);
       pill.textContent = '📄 ' + T('PDF yig‘ilmoqda…', 'Сборка PDF…');
-      const where = await finish();
+      const res = await finish(), where = res.where;
+      try { await window.pldnPdfSave({ code: job.code, chatId: job.chatId, chat: job.name, type: job.type, ms: job.created, msgs: job.msgs, size: res.size, pages: res.pages }); } catch (e) { console.error('pdf lib', e); }
       job.finished = true; job.where = where; await dbClear(); paintPill();
-      bd.style.display = 'none'; alert(T('PDF saqlandi: ', 'PDF сохранён: ') + where);
+      bd.style.display = 'none'; alert(T('PDF saqlandi: ', 'PDF сохранён: ') + where + '\n' + T('Ilovada: PLDN sozlamalari → Videolar va PDF fayllar.', 'В приложении: Настройки PLDN → Видео и PDF-файлы.'));
       job = null;
     } catch (e) { console.error('PDF', e); err = String((e && (e.message || e.code)) || e); alert('PDF: ' + err); }
     finally { running = false; paintPill(); }
@@ -10729,7 +10752,8 @@
     return new Blob(parts, { type: 'application/pdf' });
   }
   async function finish() {
-    const blob = await buildPdf(), d = new Date();
+    const blob = await buildPdf(), d = new Date(), pgs = [];
+    for (let i = 0; i < job.pages; i++) pgs.push(await dbGet('pg' + i));
     const name = String(job.name).replace(/[^A-Za-z0-9]+/g, '_').slice(0, 30) + '_' + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0') + '_' + Date.now() % 100000 + '.pdf';
     if (window.PldnSave && PldnSave.begin(name)) {
       const S = 524288;
@@ -10737,17 +10761,17 @@
         const b64 = await new Promise(function (r) { const fr = new FileReader(); fr.onload = function () { r(String(fr.result).split(',')[1] || ''); }; fr.readAsDataURL(blob.slice(o, o + S)); });
         if (!PldnSave.chunk(b64)) throw new Error(T('Faylga yozib bo‘lmadi', 'Не удалось записать файл'));
       }
-      return PldnSave.end();
+      return { where: PldnSave.end(), size: blob.size, pages: pgs };
     }
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
-    return name;
+    return { where: name, size: blob.size, pages: pgs };
   }
 
   // ---------- oyna ----------
   function btn(txt, cls, fn) { const b = document.createElement('button'); b.textContent = txt; if (cls) b.className = cls; b.addEventListener('click', fn); pn.appendChild(b); }
   function start(days) {
     const c = fbCurrentChat; if (!c) return;
-    job = { chatId: c.id, name: c.name || 'chat', type: c.type || 'dm', since: days ? Date.now() - days * 86400000 : 0, cursor: 0, pages: 0, msgs: 0, finished: false };
+    job = { chatId: c.id, name: c.name || 'chat', type: c.type || 'dm', since: days ? Date.now() - days * 86400000 : 0, cursor: 0, pages: 0, msgs: 0, finished: false, created: Date.now(), code: code45(), other: (c.type || 'dm') === 'dm' ? (c.otherUid || '') : '' };
     dbClear().then(function () { return dbPut('job', job); }).then(function () { bd.style.display = 'none'; run(); });
   }
   function openPanel() {
@@ -10921,12 +10945,16 @@
   const mm = function (s) { s = Math.max(0, Math.round(s || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
   const el = function (t, css, txt) { const e = document.createElement(t); if (css) e.style.cssText = css; if (txt != null) e.textContent = txt; return e; };
   // ---------- saqlangan videolar bazasi ----------
-  const vdb = new Promise(function (res, rej) { const r = indexedDB.open('pldnvid', 1); r.onupgradeneeded = function () { r.result.createObjectStore('v', { keyPath: 'code' }); }; r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; });
-  function vtx(mode, fn) { return vdb.then(function (db) { return new Promise(function (res, rej) { const t = db.transaction('v', mode), q = fn(t.objectStore('v')); t.oncomplete = function () { res(q && q.result); }; t.onerror = function () { rej(t.error); }; }); }); }
+  const vdb = new Promise(function (res, rej) { const r = indexedDB.open('pldnvid', 2); r.onupgradeneeded = function () { const d = r.result; if (!d.objectStoreNames.contains('v')) d.createObjectStore('v', { keyPath: 'code' }); if (!d.objectStoreNames.contains('p')) d.createObjectStore('p', { keyPath: 'code' }); }; r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; });
+  function vtx(mode, fn, st) { return vdb.then(function (db) { return new Promise(function (res, rej) { const t = db.transaction(st || 'v', mode), q = fn(t.objectStore(st || 'v')); t.oncomplete = function () { res(q && q.result); }; t.onerror = function () { rej(t.error); }; }); }); }
   const vGet = function (k) { return vtx('readonly', function (s) { return s.get(k); }); };
   const vAll = function () { return vtx('readonly', function (s) { return s.getAll(); }); };
   const vPut = function (r) { return vtx('readwrite', function (s) { return s.put(r); }); };
   const vDel = function (k) { return vtx('readwrite', function (s) { return s.delete(k); }); };
+  const pAll = function () { return vtx('readonly', function (s) { return s.getAll(); }, 'p'); };
+  const pPut = function (r) { return vtx('readwrite', function (s) { return s.put(r); }, 'p'); };
+  const pDel = function (k) { return vtx('readwrite', function (s) { return s.delete(k); }, 'p'); };
+  window.pldnPdfSave = pPut;
   // Har bir video uchun takrorlanmas 30 belgili kod (chat + xabar identifikatoridan)
   async function vcode(chatId, msgId) {
     const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(chatId + '/' + msgId)));
@@ -10942,14 +10970,15 @@
     if (!parts.length) throw new Error(T('Video topilmadi', 'Видео не найдено'));
     return (mem[k] = new Blob(parts, { type: mime || 'video/webm' }));
   }
+  function nextNo(chatId) { const k = 'pldn_vno_' + chatId; let n = 0; try { n = (+localStorage.getItem(k) || 0) + 1; localStorage.setItem(k, String(n)); } catch (_) { n = Date.now() % 100000; } return n; }
   window.pldnVideoSave = async function (chatId, chatName, chatType, msgId, m, ms) {
-    const code = await vcode(chatId, msgId);
-    if (await vGet(code)) return code;
-    if (!m.ready) return code;
-    const blob = await fetchBlob(chatId, msgId, m.mime);
-    await vPut({ code: code, chatId: chatId, chat: chatName, type: chatType, msgId: msgId, ms: ms, dur: m.dur || 0, mime: m.mime || 'video/webm', thumb: m.thumb || '', size: blob.size, blob: blob });
+    const code = await vcode(chatId, msgId), ex = await vGet(code);
+    if (ex) { if (!ex.no) { ex.no = nextNo(chatId); await vPut(ex); } return { code: code, no: ex.no }; }
+    if (!m.ready) return { code: code, no: 0 };
+    const blob = await fetchBlob(chatId, msgId, m.mime), no = nextNo(chatId);
+    await vPut({ code: code, chatId: chatId, chat: chatName, type: chatType, msgId: msgId, ms: ms, dur: m.dur || 0, mime: m.mime || 'video/webm', thumb: m.thumb || '', size: blob.size, blob: blob, no: no });
     delete mem[chatId + '/' + msgId];
-    return code;
+    return { code: code, no: no };
   };
   window.pldnVideoCleanup = async function (chatId, msgId) {
     try {
@@ -11034,38 +11063,109 @@
   const lst = el('div', 'flex:1;overflow:auto;padding:4px 12px 20px');
   ov.append(top, q, lst); document.body.appendChild(ov);
   back.addEventListener('click', function () { ov.style.display = 'none'; });
-  let all = [];
+  let all = [], pdfs = [], thUrls = [];
   const icon = function (t) { return t === 'channel' ? '📢' : t === 'group' ? '👥' : '💬'; };
   const fmt = function (n) { return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB'; };
-  function paint() {
-    const f = q.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ''), ft = q.value.trim().toLowerCase();
-    const rows = all.filter(function (r) { return !ft || r.code.replace(/-/g, '').indexOf(f) >= 0 && f || String(r.chat).toLowerCase().indexOf(ft) >= 0; }).sort(function (a, b) { return b.ms - a.ms; });
-    lst.innerHTML = '';
-    ttl.textContent = '🎬 ' + T('Videolar', 'Видео') + ' · ' + all.length + ' · ' + fmt(all.reduce(function (s, r) { return s + (r.size || 0); }, 0));
-    if (!rows.length) { lst.appendChild(el('div', 'color:#889;padding:30px 10px;text-align:center;line-height:1.5', T('Bu yerda PDF qilingan chat, guruh yoki kanallarning videolari saqlanadi. Chatda 📄 tugmasi orqali PDF qiling.', 'Здесь сохраняются видео из чатов, групп и каналов, экспортированных в PDF (кнопка 📄 в чате).'))); return; }
-    let last = '';
+  const p2 = function (n) { return String(n).padStart(2, '0'); };
+  const fdt = function (ms) { const d = new Date(ms); return p2(d.getDate()) + '.' + p2(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()); };
+  const sumSize = function (a) { return a.reduce(function (s, r) { return s + (r.size || 0); }, 0); };
+  function codeBox(code) {
+    const c = el('div', 'font-family:monospace;font-size:13px;margin-top:6px;word-break:break-all;color:#111;background:#eef3f8;border-radius:8px;padding:6px', code);
+    c.addEventListener('click', function () { try { navigator.clipboard.writeText(code); toast(T('Kod nusxalandi', 'Код скопирован')); } catch (_) {} });
+    return c;
+  }
+  function section(txt) { lst.appendChild(el('div', 'font-weight:800;font-size:16px;margin:18px 2px 2px;color:#17212b', txt)); }
+  // ---------- PDF ko'rish oynasi (ilovaning o'zida) ----------
+  const pv = el('div', 'display:none;position:fixed;inset:0;background:#8d949b;z-index:99996;flex-direction:column');
+  const pvTop = el('div', 'display:flex;align-items:center;gap:10px;padding:10px 12px;background:#17212b;color:#fff');
+  const pvX = el('button', 'border:0;background:none;color:#fff;font-size:22px;padding:4px 8px', '✕'), pvT = el('div', 'flex:1;font-weight:600;font-size:15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis', '');
+  const pvB = el('div', 'flex:1;overflow:auto;padding:8px'); let pvUrls = [];
+  pvTop.append(pvX, pvT); pv.append(pvTop, pvB); document.body.appendChild(pv);
+  function closePdf() { pv.style.display = 'none'; pvB.innerHTML = ''; pvUrls.forEach(function (u) { URL.revokeObjectURL(u); }); pvUrls = []; }
+  pvX.addEventListener('click', closePdf);
+  function openPdf(r) {
+    pvB.innerHTML = ''; pvUrls = [];
+    r.pages.forEach(function (b) { const u = URL.createObjectURL(b); pvUrls.push(u); const im = new Image(); im.src = u; im.style.cssText = 'display:block;width:100%;max-width:520px;margin:0 auto 8px;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.4)'; pvB.appendChild(im); });
+    pvT.textContent = r.chat + ' · ' + r.pages.length + ' ' + T('sahifa', 'стр.');
+    pv.style.display = 'flex'; pvB.scrollTop = 0;
+  }
+  async function fixNumbers() {
+    const miss = all.filter(function (r) { return !r.no; }).sort(function (a, b) { return a.ms - b.ms; });
+    for (const r of miss) { r.no = nextNo(r.chatId); await vPut(r); }
+  }
+  // ---------- chatdagi videolar ro'yxati (#1, #2, ...) ----------
+  const vl = el('div', 'display:none;position:fixed;inset:0;background:#f4f5f7;z-index:99994;flex-direction:column;color:#222');
+  const vlTop = el('div', 'display:flex;align-items:center;gap:10px;padding:12px;background:#fff;border-bottom:1px solid #e5e7eb');
+  const vlBack = el('button', 'border:0;background:none;font-size:24px;padding:4px 8px', '‹'), vlT = el('div', 'font-weight:700;font-size:17px;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis', '');
+  const vlB = el('div', 'flex:1;overflow:auto;padding:10px 12px 20px'); let vlChat = null;
+  vlTop.append(vlBack, vlT); vl.append(vlTop, vlB); document.body.appendChild(vl);
+  vlBack.addEventListener('click', function () { vl.style.display = 'none'; });
+  function openVideos(chatId) {
+    vlChat = chatId; vlB.innerHTML = '';
+    const rows = all.filter(function (r) { return r.chatId === chatId; }).sort(function (a, b) { return (a.no || 0) - (b.no || 0); });
+    if (!rows.length) { vl.style.display = 'none'; return; }
+    vlT.textContent = icon(rows[0].type) + ' ' + rows[0].chat + ' · ' + rows.length + ' ' + T('video', 'видео');
     rows.forEach(function (r) {
-      if (r.chatId !== last) { last = r.chatId; lst.appendChild(el('div', 'font-weight:700;margin:14px 2px 6px;color:#2a7fc0', icon(r.type) + ' ' + r.chat)); }
-      const c = el('div', 'background:#fff;border-radius:14px;padding:10px;margin-bottom:8px;display:flex;gap:10px');
-      const th = el('div', 'position:relative;width:84px;height:84px;flex:none;border-radius:10px;background:#223 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px', '▶');
+      const c = el('div', 'background:#fff;border-radius:14px;padding:10px;margin-bottom:8px;display:flex;gap:12px;align-items:center');
+      const th = el('div', 'width:92px;height:92px;flex:none;border-radius:10px;background:#223 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px', '▶');
       if (r.thumb) th.style.backgroundImage = 'url(' + r.thumb + ')';
       th.addEventListener('click', function () { play(r.blob); });
       const mid = el('div', 'flex:1;min-width:0');
-      const d = new Date(r.ms);
-      mid.appendChild(el('div', 'font-size:13px;color:#667', d.getDate() + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear() + ' · 🎥 ' + mm(r.dur) + ' · ' + fmt(r.size || 0)));
-      const code = el('div', 'font-family:monospace;font-size:13px;margin-top:6px;word-break:break-all;color:#111;background:#eef3f8;border-radius:8px;padding:6px', r.code);
-      code.addEventListener('click', function () { try { navigator.clipboard.writeText(r.code); toast(T('Kod nusxalandi', 'Код скопирован')); } catch (_) {} });
+      mid.appendChild(el('div', 'font-weight:800;font-size:18px;color:#2a7fc0', '#' + r.no));
+      mid.appendChild(el('div', 'font-size:13px;color:#667;margin-top:2px', fdt(r.ms) + ' · 🎥 ' + mm(r.dur) + ' · ' + fmt(r.size || 0)));
       const del = el('button', 'border:0;background:none;color:#d33;font-size:13px;margin-top:4px;padding:4px 0', '🗑 ' + T("O'chirish", 'Удалить'));
-      del.addEventListener('click', async function () { if (await pldnConfirm(T("Video qurilmadan o'chirilsinmi? (PDF dagi kod qoladi)", 'Удалить видео с устройства? (код в PDF останется)'))) { await vDel(r.code); all = all.filter(function (x) { return x.code !== r.code; }); paint(); } });
-      mid.append(code, del); c.append(th, mid); lst.appendChild(c);
+      del.addEventListener('click', async function () { if (await pldnConfirm(T("Video qurilmadan o'chirilsinmi?", 'Удалить видео с устройства?'))) { await vDel(r.code); all = all.filter(function (x) { return x.code !== r.code; }); openVideos(chatId); paint(); } });
+      mid.appendChild(del); c.append(th, mid); vlB.appendChild(c);
+    });
+    vl.style.display = 'flex';
+  }
+  function paint() {
+    const ft = q.value.trim().toLowerCase(), f = q.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    thUrls.forEach(function (u) { URL.revokeObjectURL(u); }); thUrls = [];
+    const gm = {};
+    const G = function (r) { return gm[r.chatId] || (gm[r.chatId] = { chatId: r.chatId, chat: r.chat, type: r.type, vids: [], pdfs: [], ms: 0 }); };
+    all.forEach(function (r) { const g = G(r); g.vids.push(r); g.ms = Math.max(g.ms, r.ms); });
+    pdfs.forEach(function (r) { const g = G(r); g.pdfs.push(r); g.ms = Math.max(g.ms, r.ms); });
+    const gs = Object.keys(gm).map(function (k) { return gm[k]; }).filter(function (g) {
+      return !ft || String(g.chat).toLowerCase().indexOf(ft) >= 0 || (f.length >= 3 && g.pdfs.some(function (p) { return p.code.replace(/-/g, '').indexOf(f) >= 0; }));
+    }).sort(function (a, b) { return b.ms - a.ms; });
+    lst.innerHTML = '';
+    ttl.textContent = '🎬 ' + T('Videolar va PDF', 'Видео и PDF') + ' · ' + fmt(sumSize(all) + sumSize(pdfs));
+    if (!gs.length) { lst.appendChild(el('div', 'color:#889;padding:30px 10px;text-align:center;line-height:1.5', T('Bu yerda PDF qilingan chat, guruh yoki kanallarning videolari va PDF fayllari saqlanadi. Chatda 📄 tugmasi orqali PDF qiling.', 'Здесь сохраняются видео и PDF-файлы чатов, групп и каналов, экспортированных кнопкой 📄 в чате.'))); return; }
+    gs.forEach(function (g) {
+      const vids = g.vids.sort(function (a, b) { return (a.no || 0) - (b.no || 0); }), ps = g.pdfs.sort(function (a, b) { return b.ms - a.ms; });
+      const c = el('div', 'background:#fff;border-radius:14px;padding:10px;margin-top:10px;display:flex;gap:10px');
+      const th = el('div', 'position:relative;width:96px;height:96px;flex:none;border-radius:12px;background:#223;overflow:hidden;display:flex;align-items:center;justify-content:center');
+      if (vids.length) {
+        const im = el('div', 'position:absolute;inset:0;background:#223 center/cover no-repeat;opacity:.4'); if (vids[0].thumb) im.style.backgroundImage = 'url(' + vids[0].thumb + ')';
+        const n = el('div', 'position:relative;color:#fff;font-weight:800;font-size:' + (vids.length > 99 ? 30 : 38) + 'px;text-shadow:0 1px 6px #000', String(vids.length));
+        th.append(im, n); th.addEventListener('click', function () { openVideos(g.chatId); });
+      } else if (ps[0] && ps[0].pages[0]) {
+        const u = URL.createObjectURL(ps[0].pages[0]); thUrls.push(u);
+        th.style.background = '#dde url(' + u + ') center top/cover no-repeat'; th.addEventListener('click', function () { openPdf(ps[0]); });
+      }
+      const mid = el('div', 'flex:1;min-width:0');
+      mid.appendChild(el('div', 'font-weight:700;color:#2a7fc0', icon(g.type) + ' ' + g.chat));
+      if (vids.length) mid.appendChild(el('div', 'font-size:12px;color:#889;margin-top:2px', '🎥 ' + vids.length + ' ' + T('video', 'видео') + ' · ' + fmt(sumSize(vids))));
+      if (!ps.length) mid.appendChild(el('div', 'font-size:13px;color:#889;margin-top:8px', T('PDF yo‘q', 'PDF нет')));
+      ps.forEach(function (r) {
+        const b = el('div', 'margin-top:8px;padding-top:8px;border-top:1px solid #eef0f3');
+        b.appendChild(el('div', 'font-size:13px;color:#667', fdt(r.ms) + ' · 📄 ' + fmt(r.size || 0) + ' · ' + r.pages.length + ' ' + T('sah.', 'стр.')));
+        const op = el('button', 'border:0;background:#2AABEE;color:#fff;border-radius:10px;padding:7px 14px;font-size:14px;margin:6px 8px 0 0', T('Ochish', 'Открыть'));
+        op.addEventListener('click', function () { openPdf(r); });
+        const del = el('button', 'border:0;background:none;color:#d33;font-size:13px;padding:4px 0', '🗑 ' + T("O'chirish", 'Удалить'));
+        del.addEventListener('click', async function () { if (await pldnConfirm(T("PDF ilovadan o'chirilsinmi? (Yuklanmalardagi fayl qoladi)", 'Удалить PDF из приложения? (файл в Загрузках останется)'))) { await pDel(r.code); pdfs = pdfs.filter(function (x) { return x.code !== r.code; }); paint(); } });
+        b.append(codeBox(r.code), op, del); mid.appendChild(b);
+      });
+      c.append(th, mid); lst.appendChild(c);
     });
   }
   q.addEventListener('input', paint);
   const body = document.querySelector('#pldnSettingsScreen .settings-body');
   if (body) {
     const g = el('div'); g.className = 'settings-group'; g.style.marginTop = '14px';
-    const row = el('div'); row.className = 'settings-item'; row.innerHTML = '<span class="settings-icon">🎬</span><span class="settings-label">' + T('Videolar (PDF kodlari)', 'Видео (коды из PDF)') + '</span><span class="settings-arrow">›</span>';
-    row.addEventListener('click', async function () { q.value = ''; all = await vAll(); paint(); ov.style.display = 'flex'; });
+    const row = el('div'); row.className = 'settings-item'; row.innerHTML = '<span class="settings-icon">🎬</span><span class="settings-label">' + T('Videolar va PDF fayllar', 'Видео и PDF-файлы') + '</span><span class="settings-arrow">›</span>';
+    row.addEventListener('click', async function () { q.value = ''; all = await vAll(); pdfs = await pAll(); await fixNumbers(); paint(); ov.style.display = 'flex'; });
     g.appendChild(row); body.appendChild(g);
   }
 })();
