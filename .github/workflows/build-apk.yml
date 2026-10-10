@@ -119,6 +119,30 @@ jobs:
                       try { os.close(); } catch (Exception e) { }
                       return path;
                   }
+                  @android.webkit.JavascriptInterface
+                  public String saveImage(String name, String mime, String b64) {
+                      try {
+                          byte[] data = android.util.Base64.decode(b64, android.util.Base64.DEFAULT);
+                          java.io.OutputStream o;
+                          String p;
+                          if (android.os.Build.VERSION.SDK_INT >= 29) {
+                              android.content.ContentValues v = new android.content.ContentValues();
+                              v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
+                              v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime);
+                              v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/PLDN");
+                              android.net.Uri u = getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
+                              o = getContentResolver().openOutputStream(u);
+                              p = "Pictures/PLDN/" + name;
+                          } else {
+                              java.io.File f = new java.io.File(getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES), name);
+                              o = new java.io.FileOutputStream(f);
+                              p = f.getAbsolutePath();
+                          }
+                          o.write(data);
+                          o.close();
+                          return p;
+                      } catch (Exception e) { return ""; }
+                  }
               }
               @Override
               public void onStart() {
