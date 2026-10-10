@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-accounts-v31 (2026-10-09) -->
+<!-- VERSION: firebase-viewer-v33 (2026-10-09) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -5849,7 +5849,10 @@
     v = document.createElement('div');
     v.id = 'imageViewer';
     v.innerHTML = '<div class="iv-bar"><button class="iv-btn" id="ivClose" aria-label="close">✕</button>' +
-      '<button class="iv-btn" id="ivDelete" aria-label="delete">🗑️</button></div>' +
+      '<button class="iv-btn" id="ivDelete" aria-label="more">⋮</button></div>' +
+      '<div id="ivMenu" style="display:none;position:absolute;top:58px;right:12px;z-index:3;min-width:170px;background:#fff;border-radius:12px;box-shadow:0 4px 18px rgba(0,0,0,.35);overflow:hidden">' +
+      '<div class="iv-mi" id="ivSave" style="padding:14px 18px;font-size:16px;color:#222">💾 ' + fbT('Saqlash', 'Сохранить') + '</div>' +
+      '<div class="iv-mi" id="ivDel" style="padding:14px 18px;font-size:16px;color:#d33;border-top:1px solid #eee">🗑️ ' + fbT("O'chirish", 'Удалить') + '</div></div>' +
       '<div class="iv-scroll"><img id="ivImg" alt="rasm"></div>';
     document.querySelector('.phone-frame').appendChild(v);
     document.getElementById('ivClose').addEventListener('click', closeImageViewer);
@@ -5860,7 +5863,36 @@
       if (now - lastTap < 320) { v.classList.toggle('zoomed'); lastTap = 0; }
       else lastTap = now;
     });
-    document.getElementById('ivDelete').addEventListener('click', () => {
+    const ivMenu = document.getElementById('ivMenu');
+    document.getElementById('ivDelete').addEventListener('click', (e) => {
+      e.stopPropagation();
+      ivMenu.style.display = ivMenu.style.display === 'block' ? 'none' : 'block';
+    });
+    v.addEventListener('click', () => { ivMenu.style.display = 'none'; });
+    function ivToast(msg) {
+      const t = document.createElement('div');
+      t.textContent = msg;
+      t.style.cssText = 'position:absolute;left:50%;bottom:50px;transform:translateX(-50%);background:rgba(0,0,0,.8);color:#fff;padding:10px 18px;border-radius:18px;z-index:5;font-size:15px';
+      v.appendChild(t);
+      setTimeout(() => t.remove(), 2300);
+    }
+    document.getElementById('ivSave').addEventListener('click', () => {
+      ivMenu.style.display = 'none';
+      const src = document.getElementById('ivImg').src;
+      const m = /^data:([^;]+);base64,(.*)$/.exec(src);
+      if (m && window.PldnSave && PldnSave.saveImage) {
+        const ext = m[1].indexOf('png') >= 0 ? '.png' : (m[1].indexOf('webp') >= 0 ? '.webp' : '.jpg');
+        const path = PldnSave.saveImage('PLDN_' + Date.now() + ext, m[1], m[2]);
+        ivToast(path ? fbT('Galereyaga saqlandi', 'Сохранено в галерею') : fbT("Saqlab bo'lmadi", 'Не удалось сохранить'));
+      } else {
+        const a = document.createElement('a');
+        a.href = src; a.download = 'PLDN_' + Date.now() + '.jpg';
+        document.body.appendChild(a); a.click(); a.remove();
+        ivToast(fbT('Yuklab olindi', 'Скачано'));
+      }
+    });
+    document.getElementById('ivDel').addEventListener('click', () => {
+      ivMenu.style.display = 'none';
       const b = viewerBubble;
       if (!b) return;
       if (fbCurrentChat && b.dataset.msgId) {
@@ -5885,7 +5917,8 @@
     viewerBubble = bubble;
     v.classList.remove('zoomed');
     document.getElementById('ivImg').src = img.src;
-    document.getElementById('ivDelete').style.display = bubble.classList.contains('outgoing') ? 'block' : 'none';
+    document.getElementById('ivMenu').style.display = 'none';
+    document.getElementById('ivDel').style.display = bubble.classList.contains('outgoing') ? 'block' : 'none';
     v.classList.add('open');
   }
 
@@ -10749,12 +10782,24 @@
     }
   }
   // ---------- kichik oyna (kiritish) ----------
-  function ask(title, fields, okText) {
+  function ask(title, fields, okText, sub) {
     return new Promise(function (res) {
       const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
       const c = document.createElement('div'); c.style.cssText = 'background:#fff;border-radius:16px;padding:18px;width:100%;max-width:340px;color:#222';
       const h = document.createElement('div'); h.style.cssText = 'font-weight:700;font-size:17px;margin-bottom:10px'; h.textContent = title; c.appendChild(h);
-      const ins = fields.map(function (f) { const i = document.createElement('input'); i.type = f.type; i.placeholder = f.ph; i.autocapitalize = 'none'; i.autocomplete = 'off'; i.style.cssText = 'width:100%;box-sizing:border-box;padding:12px;margin-top:8px;border:1px solid #ccd;border-radius:10px;font-size:16px'; c.appendChild(i); return i; });
+      if (sub) { const sd = document.createElement('div'); sd.style.cssText = 'color:#667;font-size:14px;line-height:1.4;margin-bottom:4px'; sd.textContent = sub; c.appendChild(sd); }
+      const ins = fields.map(function (f) {
+        const w = document.createElement('div'); w.style.cssText = 'position:relative;margin-top:8px';
+        const i = document.createElement('input'); i.type = f.type; i.placeholder = f.ph; i.autocapitalize = 'none'; i.autocomplete = 'off';
+        i.style.cssText = 'width:100%;box-sizing:border-box;padding:12px' + (f.type === 'password' ? ' 44px 12px 12px' : '') + ';border:1px solid #ccd;border-radius:10px;font-size:16px';
+        w.appendChild(i);
+        if (f.type === 'password') {
+          const e = document.createElement('button'); e.type = 'button'; e.textContent = '👁'; e.style.cssText = 'position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;font-size:20px;padding:8px;opacity:.55';
+          e.addEventListener('click', function () { const sh = i.type === 'password'; i.type = sh ? 'text' : 'password'; e.style.opacity = sh ? '1' : '.55'; });
+          w.appendChild(e);
+        }
+        c.appendChild(w); return i;
+      });
       const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;margin-top:14px';
       const mk = function (t, bg, fg, v) { const b = document.createElement('button'); b.textContent = t; b.style.cssText = 'flex:1;border:0;border-radius:10px;padding:12px;font-size:16px;background:' + bg + ';color:' + fg; b.addEventListener('click', function () { o.remove(); res(v ? ins.map(function (i) { return i.value; }) : null); }); row.appendChild(b); };
       mk(T('Bekor', 'Отмена'), '#eef0f4', '#222', false); mk(okText, '#2AABEE', '#fff', true);
@@ -10764,21 +10809,25 @@
   async function ensureCurrent() {
     const me = fbAuth.currentUser; if (!me) return false;
     if (load().some(function (a) { return a.uid === me.uid; })) return true;
-    const r = await ask(T('Joriy hisob parolini kiriting', 'Введите пароль текущего аккаунта'), [{ ph: T('Parol', 'Пароль'), type: 'password' }], T('Tasdiqlash', 'Подтвердить'));
+    const r = await ask(T('Joriy hisob parolini kiriting', 'Введите пароль текущего аккаунта'), [{ ph: T('Parol', 'Пароль'), type: 'password' }], T('Tasdiqlash', 'Подтвердить'),
+      '@' + uname(me.email) + ' — ' + T("hisoblar orasida qaytib o'tish uchun bir marta kerak.", 'нужен один раз, чтобы можно было вернуться.'));
     if (!r) return false;
     try { await verify(uname(me.email), r[0]); } catch (e) { alert(fbErrMsg(e)); return false; }
     remember(uname(me.email), r[0], me.uid); return true;
   }
   async function addExisting() {
     if (load().length >= MAX) { alert(T('Eng ko\'pi bilan 5 ta hisob.', 'Максимум 5 аккаунтов.')); return; }
-    if (!(await ensureCurrent())) return;
-    const r = await ask(T('Hisobni ulash', 'Подключить аккаунт'), [{ ph: T('Foydalanuvchi nomi', 'Имя пользователя'), type: 'text' }, { ph: T('Parol', 'Пароль'), type: 'password' }], T('Ulash', 'Подключить'));
+    const r = await ask(T('Ulanadigan hisob', 'Подключаемый аккаунт'), [{ ph: T('Foydalanuvchi nomi', 'Имя пользователя'), type: 'text' }, { ph: T('Parol', 'Пароль'), type: 'password' }], T('Ulash', 'Подключить'),
+      T('Qo\'shmoqchi bo\'lgan hisobning nomi va parolini kiriting.', 'Введите имя и пароль добавляемого аккаунта.'));
     if (!r) return;
     const u = r[0].trim().toLowerCase().replace(/[^a-z0-9]/g, '');
     if (u.length < 4 || !r[1]) { alert(T('Nom va parolni kiriting.', 'Введите имя и пароль.')); return; }
     if (load().some(function (a) { return a.u === u; })) { alert(T('Bu hisob allaqachon ulangan.', 'Этот аккаунт уже подключён.')); return; }
-    try { const uid = await verify(u, r[1]); remember(u, r[1], uid); await switchTo(load().find(function (a) { return a.u === u; })); }
-    catch (e) { alert(fbErrMsg(e)); }
+    let uid;
+    try { uid = await verify(u, r[1]); } catch (e) { alert(fbErrMsg(e)); return; }
+    if (!(await ensureCurrent())) return;
+    remember(u, r[1], uid);
+    await switchTo(load().find(function (a) { return a.u === u; }));
   }
   async function addNew() {
     if (load().length >= MAX) { alert(T('Eng ko\'pi bilan 5 ta hisob.', 'Максимум 5 аккаунтов.')); return; }
