@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-updhist-v38 (2026-10-10) -->
+<!-- VERSION: firebase-security-v39 (2026-10-10) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -789,6 +789,13 @@
   .pldn-np-card.upd .upd-st.ok { color: #34C759; }
   .pldn-np-card.upd .upd-st.no { color: #FF3B30; }
   .pldn-np-card.upd .pldn-np-btns { margin-top: 12px; }
+  .pldn-np-card.sec { position: relative; margin-bottom: 12px; }
+  .pldn-np-card.sec h4 { padding-right: 30px; }
+  .pldn-np-card.sec p { margin: 0 0 10px; }
+  .pldn-np-card.sec .sec-reg { font-weight: 600; }
+  .pldn-np-card.sec .sec-list { font-size: 15px; line-height: 1.5; color: var(--text-secondary, #8e8e93); margin: 0 0 14px; padding-left: 20px; }
+  .pldn-np-card.sec .upd-del { position: absolute; top: 8px; right: 10px; border: 0; background: transparent; color: var(--text-secondary, #8e8e93); font-size: 20px; line-height: 1; padding: 6px; cursor: pointer; }
+  .pldn-np-card.sec .pldn-np-btns button { font-size: 14px; padding: 12px 8px; }
 
   /* ===== CHAT ROʻYXATINI TANLASH REJIMI (bir nechta chatni oʻchirish) ===== */
   .chat-header-normal,
@@ -7501,6 +7508,69 @@
 
   function fbSrvTs() { return firebase.firestore.FieldValue.serverTimestamp(); }
 
+  // ===== YANGI QURILMA KIRISHI HAQIDA XAVFSIZLIK XABARLARI =====
+  // VERSION: firebase-security-v39
+  async function pldnDeviceModel() {
+    try {
+      const ud = navigator.userAgentData;
+      if (ud && ud.getHighEntropyValues) {
+        const h = await ud.getHighEntropyValues(['model']);
+        if (h && h.model && h.model.length > 1) return String(h.model).slice(0, 40);
+      }
+    } catch (_) {}
+    const m = /Android [\d.]+; ([^;)]+)/.exec(navigator.userAgent || '');
+    if (m && m[1] && m[1].trim().length > 1 && !/^(K|Build)$/i.test(m[1].trim())) return m[1].replace(/\s*Build\/.*/, '').trim().slice(0, 40);
+    return '';
+  }
+  async function pldnRegion() {
+    const tryFetch = async function (url, pick) {
+      const ctl = new AbortController();
+      const tm = setTimeout(function () { ctl.abort(); }, 5000);
+      try {
+        const r = await fetch(url, { signal: ctl.signal });
+        if (!r.ok) return '';
+        return pick(await r.json()) || '';
+      } catch (_) { return ''; } finally { clearTimeout(tm); }
+    };
+    const join = function (a) { return a.filter(Boolean).join(', ').slice(0, 80); };
+    let r = await tryFetch('https://ipwho.is/', function (j) { return j && j.success !== false ? join([j.city, j.country]) : ''; });
+    if (!r) r = await tryFetch('https://ipapi.co/json/', function (j) { return j && !j.error ? join([j.city, j.country_name]) : ''; });
+    return r;
+  }
+  function pldnSecGet() { try { const a = JSON.parse(localStorage.getItem('pldn_sec_log') || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } }
+  function pldnSecSet(a) { try { localStorage.setItem('pldn_sec_log', JSON.stringify(a.slice(-100))); } catch (_) {} }
+  function pldnSecDelGet() { try { const a = JSON.parse(localStorage.getItem('pldn_sec_del') || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } }
+  function pldnSecDel(id) {
+    pldnSecSet(pldnSecGet().filter(x => x.id !== id));
+    try { localStorage.setItem('pldn_sec_del', JSON.stringify(pldnSecDelGet().concat(id).slice(-300))); } catch (_) {}
+  }
+  function pldnSecUnseen() { return pldnSecGet().some(x => !x.seen); }
+  function pldnSecMarkSeen() {
+    const a = pldnSecGet();
+    if (a.some(x => !x.seen)) { a.forEach(x => { x.seen = true; }); pldnSecSet(a); }
+  }
+  // Faqat mening seansim ochilganidan KEYIN kirgan qurilmalar xabar bo'ladi
+  function pldnSecIngest(items, ownMs) {
+    if (!ownMs) return;
+    const log = pldnSecGet();
+    const gone = pldnSecDelGet();
+    let ch = false;
+    items.forEach(function (it) {
+      if (!it.created || it.created <= ownMs || gone.indexOf(it.id) >= 0) return;
+      const ex = log.find(x => x.id === it.id);
+      if (!ex) { log.push({ id: it.id, ts: it.created, name: it.model || it.name || '', region: it.region || '', seen: false }); ch = true; }
+      else if (!ex.region && it.region) { ex.region = it.region; ch = true; }
+    });
+    if (!ch) return;
+    pldnSecSet(log);
+    if (typeof pldnRefreshBell === 'function') pldnRefreshBell();
+    const ov = document.getElementById('pldnNpOv');
+    const tab = document.getElementById('pldnNpTabSecurity');
+    if (ov && ov.classList.contains('open') && tab && tab.classList.contains('active') && typeof pldnNpRender === 'function') {
+      pldnNpRender('security');
+    }
+  }
+
   function fbSessionMeta(ts) {
     const d = ts && ts.toDate ? ts.toDate() : null;
     if (!d) return fbT('Faol', 'Активен');
@@ -7530,11 +7600,19 @@
     try {
       const snap = await sref.get();
       if (snap.exists && snap.data().revoked) { fbForceLogout(); return; }
+      const isNewSess = !snap.exists || !snap.data().createdAt;
+      const sdata = { device: detectCurrentDeviceLabel(), icon: /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '') ? '📱' : '💻', lastActive: fbSrvTs() };
+      if (isNewSess) {
+        sdata.createdAt = fbSrvTs();
+        const mdl = await pldnDeviceModel();
+        if (mdl) sdata.model = mdl;
+      }
       const bt = fbDb.batch();
-      bt.set(sref, { device: detectCurrentDeviceLabel(), icon: /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '') ? '📱' : '💻', lastActive: fbSrvTs() }, { merge: true });
+      bt.set(sref, sdata, { merge: true });
       bt.set(ref, { lastActive: fbSrvTs() }, { merge: true });
       await bt.commit();
       fbLastTouch = Date.now();
+      if (isNewSess) pldnRegion().then(function (rg) { if (rg) sref.set({ region: rg }, { merge: true }).catch(function () {}); });
     } catch (e) { console.error('Seans yozilmadi', e); }
     fbMeUnsub = ref.onSnapshot(s => {
       const v = s.data() || {};
@@ -7543,16 +7621,20 @@
     }, err => console.error('Profil tinglovchisi', err));
     fbSessUnsub = ref.collection('sessions').onSnapshot(qs => {
       const list = [];
+      const secItems = [];
+      let ownMs = 0;
       let revoked = false;
       qs.forEach(d => {
         const x = d.data() || {};
-        if (d.id === fbSid) { if (x.revoked) revoked = true; return; }
+        if (d.id === fbSid) { if (x.revoked) revoked = true; if (x.createdAt && x.createdAt.toMillis) ownMs = x.createdAt.toMillis(); return; }
         if (x.revoked) return;
+        if (x.createdAt && x.createdAt.toMillis) secItems.push({ id: d.id, created: x.createdAt.toMillis(), model: x.model || '', name: x.device || '', region: x.region || '' });
         const dt = x.lastActive && x.lastActive.toDate ? x.lastActive.toDate() : null;
         if (dt && Date.now() - dt.getTime() > 30 * 86400000) return; // 30 kundan eski seanslarni yashiramiz
         list.push({ id: d.id, icon: x.icon || '📱', name: x.device || "Noma'lum qurilma", meta: fbSessionMeta(x.lastActive), t: dt ? dt.getTime() : 0 });
       });
       if (revoked) { fbForceLogout(); return; }
+      pldnSecIngest(secItems, ownMs);
       list.sort((a, b) => b.t - a.t);
       otherDevices = list;
       const scr = document.getElementById('connectedDevicesScreen');
@@ -7770,11 +7852,14 @@
   function pldnSeenVersion() { try { return localStorage.getItem('pldn_update_seen') || ''; } catch (_) { return ''; } }
   function pldnRefreshBell() {
     const unseen = !!(pldnUpdateInfo && pldnSeenVersion() !== String(pldnUpdateInfo.latest));
+    const secNew = (typeof pldnSecUnseen === 'function') ? pldnSecUnseen() : false;
     const offers = (typeof pldnOffersPending === 'function') ? pldnOffersPending() > 0 : false;
     const bell = document.getElementById('pldnBellBtn');
     const tab = document.getElementById('pldnNpTabUpdate');
     const tabO = document.getElementById('pldnNpTabOffers');
-    if (bell) bell.classList.toggle('has-new', unseen || offers);
+    const tabS = document.getElementById('pldnNpTabSecurity');
+    if (bell) bell.classList.toggle('has-new', unseen || offers || secNew);
+    if (tabS) tabS.classList.toggle('has-new', secNew);
     if (tab) tab.classList.toggle('has-new', unseen);
     if (tabO) tabO.classList.toggle('has-new', offers);
   }
@@ -7784,6 +7869,53 @@
     body.innerHTML = '';
     if (tab === 'offers' && typeof pldnOffersRender === 'function') {
       pldnOffersRender(body);
+    } else if (tab === 'security' && pldnSecGet().length) {
+      const list = pldnSecGet().slice().sort((x, y) => y.ts - x.ts);
+      const pad = n => String(n).padStart(2, '0');
+      list.forEach(function (it) {
+        const d = new Date(it.ts);
+        const when = (d.toDateString() === new Date().toDateString() ? '' : fbDateLabel(d) + ', ') + fbT('soat ', 'в ') + pad(d.getHours()) + ':' + pad(d.getMinutes());
+        const uname = 'PLDN/-' + (userData.username || '');
+        const card = document.createElement('div');
+        card.className = 'pldn-np-card sec';
+        const h = document.createElement('h4');
+        h.textContent = fbT('Yangi qurilmadan kirildi', 'Вход с нового устройства');
+        const del = document.createElement('button');
+        del.className = 'upd-del';
+        del.textContent = '✕';
+        del.onclick = function () { pldnSecDel(it.id); pldnNpRender('security'); pldnRefreshBell(); };
+        const p1 = document.createElement('p');
+        p1.textContent = fbT(uname + ' sizning hisobingizga ' + when + ' da ' + (it.name || "noma'lum") + ' qurilmasi kirdi.', 'В ваш аккаунт ' + uname + ' ' + when + ' вошли с устройства: ' + (it.name || 'неизвестное') + '.');
+        card.append(h, del, p1);
+        if (it.region) {
+          const pr = document.createElement('p');
+          pr.className = 'sec-reg';
+          pr.textContent = fbT('Hudud: ', 'Регион: ') + it.region;
+          card.appendChild(pr);
+        }
+        const p2 = document.createElement('p');
+        p2.textContent = fbT("Agar bu amalni siz qilmagan bo'lsangiz, bu amallarni bajaring:", 'Если это были не вы, выполните эти действия:');
+        const ul = document.createElement('ul');
+        ul.className = 'sec-list';
+        [fbT('Parolni yangilash', 'Обновить пароль'), fbT('Ikki bosqichli tekshiruvni yoqish', 'Включить двухэтапную проверку'), fbT('PLDN tomonidan beriladigan paroldan foydalanish', 'Использовать пароль, который предлагает PLDN')].forEach(function (t) {
+          const li = document.createElement('li'); li.textContent = t; ul.appendChild(li);
+        });
+        const row = document.createElement('div');
+        row.className = 'pldn-np-btns';
+        const b1 = document.createElement('button');
+        b1.className = 'np-cancel';
+        b1.textContent = fbT('Parol almashtirish', 'Сменить пароль');
+        b1.onclick = function () { pldnNpClose(); fbOpenChangePassword(); };
+        const b2 = document.createElement('button');
+        b2.className = 'np-yes';
+        b2.textContent = fbT('PLDN parolidan foydalanish', 'Пароль от PLDN');
+        b2.onclick = pldnUseGeneratedPassword;
+        row.append(b1, b2);
+        card.append(p2, ul, row);
+        body.appendChild(card);
+      });
+      pldnSecMarkSeen();
+      pldnRefreshBell();
     } else if (tab === 'update' && pldnUpdHistGet().length) {
       const list = pldnUpdHistGet().slice().sort((x, y) => y.v - x.v);
       list.forEach(function (it) {
@@ -7832,6 +7964,29 @@
       else e.textContent = fbT("Hozircha xabar yo'q.", 'Пока нет сообщений.');
       body.appendChild(e);
     }
+  }
+  function pldnGenPassword() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    const pick = function (n) {
+      const lim = Math.floor(4294967296 / n) * n;
+      const buf = new Uint32Array(1);
+      do { crypto.getRandomValues(buf); } while (buf[0] >= lim);
+      return buf[0] % n;
+    };
+    let out = '';
+    for (let i = 0; i < 14; i++) out += chars[pick(chars.length)];
+    return out;
+  }
+  function pldnUseGeneratedPassword() {
+    pldnNpClose();
+    fbOpenChangePassword();
+    const pw = pldnGenPassword();
+    const n1 = document.getElementById('chgPassNew');
+    const n2 = document.getElementById('chgPassNew2');
+    n1.value = pw; n2.value = pw;
+    n1.type = 'text'; n2.type = 'text';
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(pw).catch(function () {}); } catch (_) {}
+    fbChgMsg(fbT('PLDN yaratgan parol: ' + pw + " — nusxa olindi. Joriy parolni kiriting va saqlang. Yangi parolni eslab qoling!", 'Пароль от PLDN: ' + pw + ' — скопирован. Введите текущий пароль и сохраните. Запомните новый пароль!'), true);
   }
   function pldnNpClose() { document.getElementById('pldnNpOv').classList.remove('open'); }
   (function () {
