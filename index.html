@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-security-v39 (2026-10-10) -->
+<!-- VERSION: firebase-passwords-v40 (2026-10-10) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -697,6 +697,7 @@
   #pldnCodeFunctionsScreen,
   #notificationsScreen,
   #privacyScreen,
+  #myPasswordsScreen,
   #connectedDevicesScreen {
     padding: 0;
     align-items: stretch;
@@ -796,6 +797,12 @@
   .pldn-np-card.sec .sec-list { font-size: 15px; line-height: 1.5; color: var(--text-secondary, #8e8e93); margin: 0 0 14px; padding-left: 20px; }
   .pldn-np-card.sec .upd-del { position: absolute; top: 8px; right: 10px; border: 0; background: transparent; color: var(--text-secondary, #8e8e93); font-size: 20px; line-height: 1; padding: 6px; cursor: pointer; }
   .pldn-np-card.sec .pldn-np-btns button { font-size: 14px; padding: 12px 8px; }
+  .pldn-np-card .sec-date { font-size: 12px; color: var(--text-secondary, #8e8e93); margin: 0 0 8px; }
+  .pldn-np-card .sec-time { font-size: 12px; color: var(--text-secondary, #8e8e93); text-align: right; margin: 8px 0 0; }
+  .pldn-np-card.pin { margin-bottom: 14px; border: 1px solid var(--border-color, #e5e5ea); }
+  .pldn-np-card .pw-val { font-family: monospace; font-size: 20px; letter-spacing: 1px; word-break: break-all; color: var(--text-primary, #000); margin: 4px 0 2px; user-select: text; -webkit-user-select: text; }
+  .pldn-np-card .pw-note { font-size: 15px; line-height: 1.4; color: var(--text-secondary, #8e8e93); margin: 4px 0 2px; }
+  .pldn-np-card .pw-badge { display: inline-block; font-size: 12px; font-weight: 600; color: #fff; background: #34C759; border-radius: 8px; padding: 2px 8px; margin-left: 8px; vertical-align: middle; }
 
   /* ===== CHAT ROʻYXATINI TANLASH REJIMI (bir nechta chatni oʻchirish) ===== */
   .chat-header-normal,
@@ -3417,6 +3424,23 @@
 
   </div>
 
+  <!-- ============ PAROLLARIM EKRANI ============ -->
+  <div class="screen" id="myPasswordsScreen">
+    <div class="chat-detail-header">
+      <button class="chat-back-btn" id="myPasswordsBackBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+      </button>
+      <div class="chat-detail-info">
+        <div class="chat-detail-name" id="myPasswordsTitle">Parollarim</div>
+      </div>
+    </div>
+    <div class="settings-body">
+      <div id="myPasswordsList" style="padding: 16px;"></div>
+    </div>
+  </div>
+
   <!-- ============ MAXFIYLIK VA XAVFSIZLIK EKRANI ============ -->
   <div class="screen" id="privacyScreen">
 
@@ -3460,13 +3484,10 @@
           <span class="settings-label" id="changePasswordLabel">Parolni almashtirish</span>
           <span class="settings-arrow">›</span>
         </div>
-        <div class="settings-item" style="cursor: default;">
-          <span class="settings-icon">🔐</span>
-          <span class="settings-label" data-i18n="k101">Ikki bosqichli autentifikatsiya</span>
-          <label class="pldn-toggle">
-            <input type="checkbox" id="privacy2FAToggle">
-            <span class="pldn-toggle-slider"></span>
-          </label>
+        <div class="settings-item" id="myPasswordsRow">
+          <span class="settings-icon">🗝</span>
+          <span class="settings-label" id="myPasswordsLabel">Parollarim</span>
+          <span class="settings-arrow">›</span>
         </div>
         <div class="settings-item">
           <span class="settings-icon">🚫</span>
@@ -7740,10 +7761,15 @@
     el.textContent = txt || '';
     el.style.color = ok ? '#34C759' : '#FF3B30';
   }
-  function fbOpenChangePassword() {
-    ['chgPassOld', 'chgPassNew', 'chgPassNew2'].forEach(id => { document.getElementById(id).value = ''; });
+  let pldnPwMode = 'manual';   // 'manual' | 'pldn'
+  let pldnPwNeedOld = false;   // PLDN rejimida Firebase joriy parolni so'rasa
+  function fbOpenChangePassword(mode) {
+    pldnPwMode = mode === 'pldn' ? 'pldn' : 'manual';
+    pldnPwNeedOld = false;
+    ['chgPassOld', 'chgPassNew', 'chgPassNew2'].forEach(id => { const el = document.getElementById(id); el.value = ''; el.type = 'password'; });
+    document.getElementById('chgPassOld').parentNode.style.display = pldnPwMode === 'pldn' ? 'none' : '';
     fbChgMsg('');
-    document.getElementById('chgPassTitle').textContent = fbT('Parolni almashtirish', 'Смена пароля');
+    document.getElementById('chgPassTitle').textContent = pldnPwMode === 'pldn' ? fbT('PLDN paroli', 'Пароль от PLDN') : fbT('Parolni almashtirish', 'Смена пароля');
     document.getElementById('chgPassOld').placeholder = fbT('Joriy parol', 'Текущий пароль');
     document.getElementById('chgPassNew').placeholder = fbT('Yangi parol', 'Новый пароль');
     document.getElementById('chgPassNew2').placeholder = fbT('Yangi parolni takrorlang', 'Повторите новый пароль');
@@ -7752,7 +7778,7 @@
     fbChgOv.classList.add('open');
   }
   document.getElementById('changePasswordLabel').textContent = fbT('Parolni almashtirish', 'Смена пароля');
-  document.getElementById('changePasswordRow').addEventListener('click', fbOpenChangePassword);
+  document.getElementById('changePasswordRow').addEventListener('click', () => fbOpenChangePassword('manual'));
   document.getElementById('chgPassCancelBtn').addEventListener('click', () => fbChgOv.classList.remove('open'));
   fbChgOv.addEventListener('click', (e) => { if (e.target === fbChgOv) fbChgOv.classList.remove('open'); });
   document.getElementById('chgPassSaveBtn').addEventListener('click', async () => {
@@ -7760,17 +7786,40 @@
     const oldP = document.getElementById('chgPassOld').value;
     const newP = document.getElementById('chgPassNew').value;
     const newP2 = document.getElementById('chgPassNew2').value;
+    const isPldn = pldnPwMode === 'pldn';
+    const askOld = !isPldn || pldnPwNeedOld;
     if (!me || !me.email) return;
-    if (!oldP) { fbChgMsg(fbT('Joriy parolni kiriting.', 'Введите текущий пароль.')); return; }
+    if (askOld && !oldP) { fbChgMsg(fbT('Joriy parolni kiriting.', 'Введите текущий пароль.')); return; }
     if (newP.length < 6) { fbChgMsg(fbT("Yangi parol kamida 6 ta belgidan iborat bo'lsin.", 'Новый пароль — минимум 6 символов.')); return; }
     if (newP !== newP2) { fbChgMsg(fbT('Yangi parollar bir xil emas.', 'Новые пароли не совпадают.')); return; }
-    if (newP === oldP) { fbChgMsg(fbT("Yangi parol joriy paroldan farq qilsin.", 'Новый пароль должен отличаться от текущего.')); return; }
+    if (askOld && newP === oldP) { fbChgMsg(fbT("Yangi parol joriy paroldan farq qilsin.", 'Новый пароль должен отличаться от текущего.')); return; }
     const btn = document.getElementById('chgPassSaveBtn');
     btn.disabled = true;
     fbChgMsg(fbT('Saqlanmoqda...', 'Сохранение...'), true);
     try {
-      await me.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(me.email, oldP));
-      await me.updatePassword(newP);
+      const cred = (pw) => firebase.auth.EmailAuthProvider.credential(me.email, pw);
+      if (askOld) {
+        await me.reauthenticateWithCredential(cred(oldP));
+        await me.updatePassword(newP);
+      } else {
+        try {
+          await me.updatePassword(newP);
+        } catch (e1) {
+          if (!e1 || e1.code !== 'auth/requires-recent-login') throw e1;
+          // Firebase yaqinda kirishni talab qildi: avval saqlangan joriy parol bilan urinamiz
+          const stored = pldnPwLatestPlain();
+          let ok = false;
+          if (stored) { try { await me.reauthenticateWithCredential(cred(stored)); await me.updatePassword(newP); ok = true; } catch (_) {} }
+          if (!ok) {
+            pldnPwNeedOld = true;
+            document.getElementById('chgPassOld').parentNode.style.display = '';
+            fbChgMsg(fbT("Xavfsizlik uchun Firebase joriy parolni bir marta so'raydi. Uni kiriting va yana Saqlash ni bosing.", 'Из соображений безопасности Firebase один раз запросит текущий пароль. Введите его и снова нажмите «Сохранить».'));
+            btn.disabled = false;
+            return;
+          }
+        }
+      }
+      pldnPwAdd(isPldn ? newP : '');
       try { await fbEndAllOtherSessions(); } catch (_) {}
       fbChgOv.classList.remove('open');
       alert(fbT("Parol almashtirildi. Boshqa qurilmalardagi seanslar yakunlandi.", 'Пароль изменён. Сеансы на других устройствах завершены.'));
@@ -7781,6 +7830,66 @@
     }
     btn.disabled = false;
   });
+
+  // ===== PAROLLARIM (faqat shu qurilmada saqlanadi) =====
+  // VERSION: firebase-passwords-v40
+  function pldnPwGet() { try { const a = JSON.parse(localStorage.getItem('pldn_pw_list') || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } }
+  function pldnPwAdd(pw) {
+    const a = pldnPwGet();
+    a.push({ pw: pw || '', ts: Date.now() }); // pw bo'sh bo'lsa: foydalanuvchi o'zi tanlagan parol, saqlanmaydi
+    try { localStorage.setItem('pldn_pw_list', JSON.stringify(a.slice(-200))); } catch (_) {}
+  }
+  function pldnPwLatestPlain() { const a = pldnPwGet(); const l = a[a.length - 1]; return l && l.pw ? l.pw : ''; }
+  function pldnFullDate(d) {
+    const uz = ['yanvar','fevral','mart','aprel','may','iyun','iyul','avgust','sentabr','oktabr','noyabr','dekabr'];
+    const ru = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+    return currentLang === 'ru' ? d.getDate() + ' ' + ru[d.getMonth()] + ' ' + d.getFullYear() : d.getDate() + '-' + uz[d.getMonth()] + ' ' + d.getFullYear();
+  }
+  function pldnHM(d) { const pad = n => String(n).padStart(2, '0'); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function pldnPwRender() {
+    const box = document.getElementById('myPasswordsList');
+    box.innerHTML = '';
+    const list = pldnPwGet().slice().reverse();
+    if (!list.length) {
+      const e = document.createElement('div');
+      e.className = 'pldn-np-empty';
+      e.textContent = fbT("Hali parol qo'yilmagan.", 'Паролей пока нет.');
+      box.appendChild(e);
+      return;
+    }
+    list.forEach(function (it, i) {
+      const d = new Date(it.ts);
+      const card = document.createElement('div');
+      card.className = 'pldn-np-card';
+      card.style.marginBottom = '12px';
+      const dt = document.createElement('div');
+      dt.className = 'sec-date';
+      dt.textContent = pldnFullDate(d);
+      card.appendChild(dt);
+      if (it.pw) {
+        const v = document.createElement('div');
+        v.className = 'pw-val';
+        v.textContent = it.pw;
+        if (i === 0) { const bd = document.createElement('span'); bd.className = 'pw-badge'; bd.textContent = fbT('Joriy', 'Текущий'); v.appendChild(bd); }
+        card.appendChild(v);
+      } else {
+        const n = document.createElement('div');
+        n.className = 'pw-note';
+        n.textContent = fbT("O'zingiz tanlagan parol (PLDN uni saqlamaydi)", 'Пароль, выбранный вами (PLDN его не хранит)');
+        if (i === 0) { const bd = document.createElement('span'); bd.className = 'pw-badge'; bd.textContent = fbT('Joriy', 'Текущий'); n.appendChild(bd); }
+        card.appendChild(n);
+      }
+      const tm = document.createElement('div');
+      tm.className = 'sec-time';
+      tm.textContent = pldnHM(d);
+      card.appendChild(tm);
+      box.appendChild(card);
+    });
+  }
+  document.getElementById('myPasswordsLabel').textContent = fbT('Parollarim', 'Мои пароли');
+  document.getElementById('myPasswordsTitle').textContent = fbT('Parollarim', 'Мои пароли');
+  document.getElementById('myPasswordsRow').addEventListener('click', () => { pldnPwRender(); goToScreen('myPasswordsScreen'); });
+  document.getElementById('myPasswordsBackBtn').addEventListener('click', () => goToScreen('privacyScreen'));
 
   // ===== ILOVANI YANGILASH (GitHub Releases) =====
   // VERSION: firebase-update-v7
@@ -7869,15 +7978,47 @@
     body.innerHTML = '';
     if (tab === 'offers' && typeof pldnOffersRender === 'function') {
       pldnOffersRender(body);
-    } else if (tab === 'security' && pldnSecGet().length) {
+    } else if (tab === 'security') {
+      // Doim tepada turadigan, o'chirib bo'lmaydigan "Joriy parol" xabari
+      const pins = pldnPwGet();
+      const last = pins[pins.length - 1];
+      const pin = document.createElement('div');
+      pin.className = 'pldn-np-card pin';
+      const ph = document.createElement('h4');
+      ph.textContent = '🔑 ' + fbT('Joriy parol', 'Текущий пароль');
+      pin.appendChild(ph);
+      if (last) {
+        const pd = new Date(last.ts);
+        const pdt = document.createElement('div');
+        pdt.className = 'sec-date';
+        pdt.textContent = pldnFullDate(pd);
+        pin.appendChild(pdt);
+        const pv = document.createElement('div');
+        if (last.pw) { pv.className = 'pw-val'; pv.textContent = last.pw; }
+        else { pv.className = 'pw-note'; pv.textContent = fbT("Joriy parolni siz o'zingiz tanlagansiz (PLDN uni saqlamaydi).", 'Текущий пароль выбран вами (PLDN его не хранит).'); }
+        pin.appendChild(pv);
+        const ptm = document.createElement('div');
+        ptm.className = 'sec-time';
+        ptm.textContent = pldnHM(pd);
+        pin.appendChild(ptm);
+      } else {
+        const pn = document.createElement('div');
+        pn.className = 'pw-note';
+        pn.textContent = fbT("Hali PLDN paroli qo'yilmagan.", 'Пароль от PLDN ещё не задан.');
+        pin.appendChild(pn);
+      }
+      body.appendChild(pin);
+
       const list = pldnSecGet().slice().sort((x, y) => y.ts - x.ts);
-      const pad = n => String(n).padStart(2, '0');
       list.forEach(function (it) {
         const d = new Date(it.ts);
-        const when = (d.toDateString() === new Date().toDateString() ? '' : fbDateLabel(d) + ', ') + fbT('soat ', 'в ') + pad(d.getHours()) + ':' + pad(d.getMinutes());
         const uname = 'PLDN/-' + (userData.username || '');
+        const when = fbT('soat ', 'в ') + pldnHM(d);
         const card = document.createElement('div');
         card.className = 'pldn-np-card sec';
+        const dt = document.createElement('div');
+        dt.className = 'sec-date';
+        dt.textContent = pldnFullDate(d);
         const h = document.createElement('h4');
         h.textContent = fbT('Yangi qurilmadan kirildi', 'Вход с нового устройства');
         const del = document.createElement('button');
@@ -7886,7 +8027,7 @@
         del.onclick = function () { pldnSecDel(it.id); pldnNpRender('security'); pldnRefreshBell(); };
         const p1 = document.createElement('p');
         p1.textContent = fbT(uname + ' sizning hisobingizga ' + when + ' da ' + (it.name || "noma'lum") + ' qurilmasi kirdi.', 'В ваш аккаунт ' + uname + ' ' + when + ' вошли с устройства: ' + (it.name || 'неизвестное') + '.');
-        card.append(h, del, p1);
+        card.append(dt, h, del, p1);
         if (it.region) {
           const pr = document.createElement('p');
           pr.className = 'sec-reg';
@@ -7897,7 +8038,7 @@
         p2.textContent = fbT("Agar bu amalni siz qilmagan bo'lsangiz, bu amallarni bajaring:", 'Если это были не вы, выполните эти действия:');
         const ul = document.createElement('ul');
         ul.className = 'sec-list';
-        [fbT('Parolni yangilash', 'Обновить пароль'), fbT('Ikki bosqichli tekshiruvni yoqish', 'Включить двухэтапную проверку'), fbT('PLDN tomonidan beriladigan paroldan foydalanish', 'Использовать пароль, который предлагает PLDN')].forEach(function (t) {
+        [fbT('Parolni yangilash', 'Обновить пароль'), fbT('PLDN tomonidan beriladigan paroldan foydalanish', 'Использовать пароль, который предлагает PLDN')].forEach(function (t) {
           const li = document.createElement('li'); li.textContent = t; ul.appendChild(li);
         });
         const row = document.createElement('div');
@@ -7905,13 +8046,16 @@
         const b1 = document.createElement('button');
         b1.className = 'np-cancel';
         b1.textContent = fbT('Parol almashtirish', 'Сменить пароль');
-        b1.onclick = function () { pldnNpClose(); fbOpenChangePassword(); };
+        b1.onclick = function () { pldnNpClose(); fbOpenChangePassword('manual'); };
         const b2 = document.createElement('button');
         b2.className = 'np-yes';
         b2.textContent = fbT('PLDN parolidan foydalanish', 'Пароль от PLDN');
         b2.onclick = pldnUseGeneratedPassword;
         row.append(b1, b2);
-        card.append(p2, ul, row);
+        const tm = document.createElement('div');
+        tm.className = 'sec-time';
+        tm.textContent = pldnHM(d);
+        card.append(p2, ul, row, tm);
         body.appendChild(card);
       });
       pldnSecMarkSeen();
@@ -7979,14 +8123,13 @@
   }
   function pldnUseGeneratedPassword() {
     pldnNpClose();
-    fbOpenChangePassword();
+    fbOpenChangePassword('pldn');
     const pw = pldnGenPassword();
     const n1 = document.getElementById('chgPassNew');
     const n2 = document.getElementById('chgPassNew2');
     n1.value = pw; n2.value = pw;
     n1.type = 'text'; n2.type = 'text';
-    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(pw).catch(function () {}); } catch (_) {}
-    fbChgMsg(fbT('PLDN yaratgan parol: ' + pw + " — nusxa olindi. Joriy parolni kiriting va saqlang. Yangi parolni eslab qoling!", 'Пароль от PLDN: ' + pw + ' — скопирован. Введите текущий пароль и сохраните. Запомните новый пароль!'), true);
+    fbChgMsg(fbT("PLDN yaratgan yangi parol shu. «Saqlash» ni bossangiz parol almashadi va «Parollarim» bo'limida saqlanadi.", 'Новый пароль от PLDN указан выше. Нажмите «Сохранить» — пароль сменится и сохранится в разделе «Мои пароли».'), true);
   }
   function pldnNpClose() { document.getElementById('pldnNpOv').classList.remove('open'); }
   (function () {
