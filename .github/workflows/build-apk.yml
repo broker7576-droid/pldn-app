@@ -164,6 +164,30 @@ jobs:
                   }
               }
               @Override
+              public void onCreate(android.os.Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
+                      @Override
+                      public void handleOnBackPressed() {
+                          try {
+                              getBridge().getWebView().evaluateJavascript(
+                                  "(function(){try{return !!(window.pldnBack&&window.pldnBack());}catch(e){return false;}})()",
+                                  value -> {
+                                      if (!"true".equals(value)) {
+                                          setEnabled(false);
+                                          getOnBackPressedDispatcher().onBackPressed();
+                                          setEnabled(true);
+                                      }
+                                  });
+                          } catch (Exception e) {
+                              setEnabled(false);
+                              getOnBackPressedDispatcher().onBackPressed();
+                              setEnabled(true);
+                          }
+                      }
+                  });
+              }
+              @Override
               public void onStart() {
                   super.onStart();
                   if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
