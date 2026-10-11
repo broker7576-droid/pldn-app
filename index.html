@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-popmenu-v44 (2026-10-11) -->
+<!-- VERSION: firebase-storymenu-v45 (2026-10-11) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -7885,7 +7885,7 @@
       m.appendChild(r);
     });
     ov.appendChild(m);
-    ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    ov.addEventListener('click', function (e) { if (e.target === ov) { ov.remove(); if (pos && pos.onClose) pos.onClose(); } });
     document.body.appendChild(ov);
     const vw = window.innerWidth, mw = m.offsetWidth, mh = m.offsetHeight;
     let left, top;
@@ -10124,7 +10124,7 @@
   const up = document.createElement('div'); up.className = 'pgx-up'; up.id = 'pgxUp'; document.body.appendChild(up);
   const sv = document.createElement('div'); sv.className = 'pgx-sv'; sv.id = 'pgxSv';
   sv.innerHTML = '<div class="pgx-sv-bars" id="pgxSvBars"></div>' +
-    '<div class="pgx-sv-head"><div class="pgx-sv-av" id="pgxSvAv"></div><div><div class="pgx-sv-name" id="pgxSvName"></div><div class="pgx-sv-time" id="pgxSvTime"></div></div><div class="pgx-sv-sp"></div><button id="pgxSvDel" style="display:none;">🗑️</button><button id="pgxSvClose">✕</button></div>' +
+    '<div class="pgx-sv-head"><div class="pgx-sv-av" id="pgxSvAv"></div><div><div class="pgx-sv-name" id="pgxSvName"></div><div class="pgx-sv-time" id="pgxSvTime"></div></div><div class="pgx-sv-sp"></div><button id="pgxSvDel" style="display:none !important;">🗑️</button><button id="pgxSvClose">⋮</button></div>' +
     '<div class="pgx-sv-media" id="pgxSvMedia"></div><div class="pgx-sv-load" id="pgxSvLoad">⏳</div>' +
     '<div class="pgx-sv-l" id="pgxSvL"></div><div class="pgx-sv-r" id="pgxSvR"></div>' +
     '<div class="pgx-sv-seen" id="pgxSvSeen"><button id="pgxSvSeenBtn">👁 0</button><button class="pgx-rxc" id="pgxSvRxc"></button></div>' +
@@ -10362,6 +10362,16 @@
       ['🎥', T('Kameradan video (3 daqiqagacha)', 'Снять видео (до 3 минут)'), function () { openRecorder(); }]
     ]);
   }
+  // Tahrirlash: yangi rasm/video tanlanadi va u muvaffaqiyatli joylangach eski hikoya o'chiriladi
+  let replaceRef = null;
+  function editFlow(s0) {
+    const arm = function (fn) { return function () { replaceRef = { ref: s0.ref, at: Date.now() }; fn(); }; };
+    openSheet(T("Hikoyani tahrirlash · yangisi eskisining o'rniga qo'yiladi", 'Редактирование: новая история заменит эту'), [
+      ['🖼️', T('Galereyadan rasm yoki video', 'Фото или видео из галереи'), arm(function () { mediaIn.click(); })],
+      ['📷', T('Kameradan rasm', 'Сделать фото'), arm(function () { pickPhoto('CAMERA'); })],
+      ['🎥', T('Kameradan video (3 daqiqagacha)', 'Снять видео (до 3 минут)'), arm(function () { openRecorder(); })]
+    ]);
+  }
   function shrink(url, maxSide, q) {
     return new Promise(function (res, rej) {
       const im = new Image();
@@ -10498,6 +10508,8 @@
   });
   async function publish(meta, n, getChunk) {
     const m = me(); if (!m) return;
+    const oldRef = (replaceRef && Date.now() - replaceRef.at < 300000) ? replaceRef.ref : null;
+    replaceRef = null;
     toast(T('Hikoya yuklanmoqda...', 'Публикация истории...'));
     try {
       const ref = fbDb.collection('stories').doc();
@@ -10508,6 +10520,7 @@
         toast(T('Hikoya yuklanmoqda: ', 'Публикация: ') + (i + 1) + '/' + n);
       }
       await ref.update({ ready: true });
+      if (oldRef) { await delStory(oldRef); }
       toast('✅ ' + T('Hikoya joylandi', 'История опубликована') + (linked.size ? '' : ' · ' + T("hali hech kim bilan ulashilmagan (kontakt profilida ⋮ → +Hikoya)", 'пока ни с кем не общая (профиль контакта ⋮ → +История)')), linked.size ? 2500 : 6000);
     } catch (e) {
       console.error(e);
@@ -10593,10 +10606,11 @@
     V = { uid: uid, items: g.slice(), idx: idx, tok: 0, timer: null, urls: {} };
     sv.classList.add('open');
     fbGetUser(uid).then(function (u) { if (!V) return; setAv($('pgxSvAv'), u); $('pgxSvName').textContent = uid === myUid ? T('Hikoyam', 'Моя история') : u.name; });
-    $('pgxSvDel').style.display = uid === myUid ? '' : 'none';
+    if (!svHist) { try { history.pushState({ pldnSv: 1 }, ''); svHist = true; } catch (_) {} }
     show();
   }
-  function closeViewer() {
+  let svHist = false;
+  function closeViewer(fromPop) {
     if (!V) return;
     clearTimeout(V.timer);
     Object.keys(V.urls).forEach(function (k) { if (V.urls[k].indexOf('blob:') === 0) { try { URL.revokeObjectURL(V.urls[k]); } catch (_) {} } });
@@ -10604,8 +10618,11 @@
     $('pgxSvMedia').innerHTML = '';
     $('pgxSvSeen').style.display = 'none';
     sv.classList.remove('open');
+    if (svHist) { svHist = false; if (fromPop !== true) { try { history.back(); } catch (_) {} } }
     render();
   }
+  // Telefonning "orqaga" tugmasi hikoyani yopadi va asosiy chatga qaytaradi
+  window.addEventListener('popstate', function () { if (V) { svHist = false; closeViewer(true); } });
   async function updateSeenCount(s) {
     try {
       const snap = await s.ref.collection('views').get();
@@ -10712,7 +10729,65 @@
   function pauseNow() { if (!V) return; clearTimeout(V.timer); const vv = $('pgxSvMedia').querySelector('video'); if (vv) vv.pause(); const bc = $('pgxSvBars'); const f = bc.children[bc.children.length > 1 ? V.idx : 0]; if (f) { const fi = f.firstChild; const w = fi.getBoundingClientRect().width / f.getBoundingClientRect().width * 100; fi.style.transition = 'none'; fi.style.width = w + '%'; } }
   $('pgxSvR').addEventListener('click', next);
   $('pgxSvL').addEventListener('click', prev);
-  $('pgxSvClose').addEventListener('click', closeViewer);
+  function svToast(msg) {
+    let t = document.getElementById('pgxSvToast');
+    if (!t) {
+      t = document.createElement('div'); t.id = 'pgxSvToast';
+      t.style.cssText = 'position:fixed;left:50%;bottom:110px;transform:translateX(-50%);background:rgba(0,0,0,.82);color:#fff;padding:10px 16px;border-radius:14px;font-size:15px;z-index:100002;max-width:86%;text-align:center;display:none';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg; t.style.display = 'block';
+    clearTimeout(t._h); t._h = setTimeout(function () { t.style.display = 'none'; }, 2600);
+  }
+  async function saveCurrent() {
+    if (!V) return;
+    const s = V.items[V.idx];
+    try {
+      const url = await loadMedia(s);
+      if (s.kind === 'photo') {
+        const m = /^data:([^;]+);base64,(.*)$/.exec(url);
+        if (m && window.PldnSave && PldnSave.saveImage) {
+          const ext = m[1].indexOf('png') >= 0 ? '.png' : (m[1].indexOf('webp') >= 0 ? '.webp' : '.jpg');
+          const path = PldnSave.saveImage('PLDN_' + Date.now() + ext, m[1], m[2]);
+          svToast(path ? '✅ ' + T('Galereyaga saqlandi', 'Сохранено в галерею') : T("Saqlab bo'lmadi", 'Не удалось сохранить'));
+        } else {
+          const a = document.createElement('a'); a.href = url; a.download = 'PLDN_' + Date.now() + '.jpg';
+          document.body.appendChild(a); a.click(); a.remove();
+          svToast(T('Yuklab olindi', 'Скачано'));
+        }
+      } else {
+        const blob = await (await fetch(url)).blob();
+        const ext = (s.mime || '').indexOf('mp4') >= 0 ? '.mp4' : '.webm';
+        const name = 'PLDN_' + Date.now() + ext;
+        if (window.PldnSave && typeof PldnSave.beginVideo !== 'undefined' && PldnSave.beginVideo(name, s.mime || 'video/webm')) {
+          const S = 524288;
+          for (let o = 0; o < blob.size; o += S) {
+            const b64 = await new Promise(function (r) { const fr = new FileReader(); fr.onload = function () { r(String(fr.result).split(',')[1] || ''); }; fr.readAsDataURL(blob.slice(o, o + S)); });
+            if (!PldnSave.chunk(b64)) throw new Error(T("Faylga yozib bo'lmadi", 'Не удалось записать файл'));
+          }
+          PldnSave.end();
+          svToast('✅ ' + T('Galereyaga saqlandi', 'Сохранено в галерею'));
+        } else {
+          const a = document.createElement('a'); a.href = url; a.download = name;
+          document.body.appendChild(a); a.click(); a.remove();
+          svToast(T('Yuklab olindi', 'Скачано'));
+        }
+      }
+    } catch (e) { alert(fbErrMsg(e)); }
+    if (V) show();
+  }
+  $('pgxSvClose').addEventListener('click', function () {
+    if (!V) return;
+    pauseNow();
+    const mine = V.uid === myUid;
+    const items = [];
+    if (mine) {
+      items.push({ icon: '🗑️', label: T("O'chirish", 'Удалить'), fn: function () { $('pgxSvDel').click(); } });
+      items.push({ icon: '✏️', label: T('Tahrirlash', 'Редактировать'), fn: function () { const s0 = V.items[V.idx]; closeViewer(); editFlow(s0); } });
+    }
+    items.push({ icon: '💾', label: T('Saqlash', 'Сохранить'), fn: saveCurrent });
+    window.pldnPopMenu(items, { el: $('pgxSvClose'), onClose: function () { if (V) show(); } });
+  });
   $('pgxSvDel').addEventListener('click', async function () {
     if (!V || V.uid !== myUid) return;
     pauseNow();
