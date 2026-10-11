@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-selfupdate-v48 (2026-10-11) -->
+<!-- VERSION: video-download-intro-v49 (2026-10-11) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -11558,7 +11558,7 @@
 })();
 </script>
 <script>
-// ===== CHAT VIDEO + KODLAR ===== VERSION: video-v1
+// ===== CHAT VIDEO + KODLAR ===== VERSION: video-v2 (yuklab olish: boshida kodli sahifa)
 (function () {
   const T = function (a, b) { return fbT(a, b); };
   const CH = 450 * 1024, ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -11618,14 +11618,18 @@
   const pl = el('div', 'display:none;position:fixed;inset:0;background:#000;z-index:99996;flex-direction:column');
   const plX = el('button', 'position:absolute;top:12px;left:12px;z-index:2;width:42px;height:42px;border:0;border-radius:50%;background:rgba(255,255,255,.2);color:#fff;font-size:20px', '✕');
   const plV = el('video', 'flex:1;width:100%;min-height:0;background:#000'); plV.controls = true; plV.playsInline = true;
-  pl.append(plX, plV); document.body.appendChild(pl);
+  const plD = el('button', 'display:none;position:absolute;top:12px;right:12px;z-index:4;height:42px;border:0;border-radius:21px;background:rgba(255,255,255,.2);color:#fff;font-size:15px;padding:0 16px', '');
+  plD.textContent = '⬇ ' + T('Yuklab olish', 'Скачать');
+  pl.append(plX, plV, plD); document.body.appendChild(pl);
   const intro = el('div', 'display:none;position:absolute;inset:0;z-index:3;background:#0b1220;color:#fff;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px');
   pl.appendChild(intro); let itv = null;
   function endIntro() { clearInterval(itv); intro.style.display = 'none'; plV.play().catch(function () {}); }
-  function closePlayer() { clearInterval(itv); intro.style.display = 'none'; try { plV.pause(); } catch (_) {} pl.style.display = 'none'; if (plV.src) { URL.revokeObjectURL(plV.src); plV.removeAttribute('src'); plV.load(); } }
+  function closePlayer() { clearInterval(itv); intro.style.display = 'none'; plD.style.display = 'none'; try { plV.pause(); } catch (_) {} pl.style.display = 'none'; if (plV.src) { URL.revokeObjectURL(plV.src); plV.removeAttribute('src'); plV.load(); } }
   plX.addEventListener('click', closePlayer);
   function play(blob, meta) {
     plV.src = URL.createObjectURL(blob); pl.style.display = 'flex';
+    plD.style.display = (meta && meta.no) ? 'block' : 'none';
+    plD.onclick = function () { if (meta && meta.no) exportVideo(blob, meta); };
     if (!meta || !meta.no) { plV.play().catch(function () {}); return; }
     plV.pause(); intro.innerHTML = '';
     intro.appendChild(el('div', 'font-size:15px;color:#8fa3b8;margin-bottom:10px', meta.chat || ''));
@@ -11647,6 +11651,101 @@
     intro.style.display = 'flex';
   }
   function toast(msg, ms) { const t = el('div', 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(0,0,0,.8);color:#fff;padding:10px 18px;border-radius:18px;z-index:99999;font-size:15px', msg); document.body.appendChild(t); setTimeout(function () { t.remove(); }, ms || 2500); return t; }
+  // ---------- yuklab olish: video boshiga chat nomi, #raqam va PDF kodi sahifasi qo'shiladi ----------
+  let expBusy = false;
+  function drawIntro(cx, W, H, meta, prog) {
+    const fs = Math.min(W * 0.085, H * 0.065);
+    cx.fillStyle = '#0b1220'; cx.fillRect(0, 0, W, H);
+    cx.textAlign = 'center'; cx.textBaseline = 'middle';
+    const codeLines = [];
+    if (meta.code) { const gs = String(meta.code).split('-'); for (let k = 0; k < gs.length; k += 3) codeLines.push(gs.slice(k, k + 3).join('-')); }
+    const total = fs * 1.6 + fs * 3.6 + (codeLines.length ? fs * 1.3 + codeLines.length * fs * 1.5 : 0) + fs * 1.4;
+    let y = (H - total) / 2;
+    let nameFs = fs * 0.75; const name = String(meta.chat || '');
+    cx.font = nameFs + 'px sans-serif';
+    while (nameFs > 8 && cx.measureText(name).width > W * 0.9) { nameFs -= 1; cx.font = nameFs + 'px sans-serif'; }
+    cx.fillStyle = '#8fa3b8'; cx.fillText(name, W / 2, y + fs * 0.8); y += fs * 1.6;
+    cx.fillStyle = '#ffffff'; cx.font = 'bold ' + (fs * 3.2) + 'px sans-serif'; cx.fillText('#' + meta.no, W / 2, y + fs * 1.8); y += fs * 3.6;
+    if (codeLines.length) {
+      cx.fillStyle = '#8fa3b8'; cx.font = (fs * 0.65) + 'px sans-serif'; cx.fillText(T('PDF kodi', 'Код PDF'), W / 2, y + fs * 0.65); y += fs * 1.3;
+      cx.fillStyle = '#ffffff'; cx.font = fs + 'px monospace';
+      codeLines.forEach(function (ln) { cx.fillText(ln, W / 2, y + fs * 0.75); y += fs * 1.5; });
+    }
+    const bw = W * 0.6, bx = (W - bw) / 2, by = y + fs * 0.7;
+    cx.fillStyle = '#243246'; cx.fillRect(bx, by, bw, Math.max(3, fs * 0.15));
+    cx.fillStyle = '#2AABEE'; cx.fillRect(bx, by, bw * Math.min(1, prog), Math.max(3, fs * 0.15));
+  }
+  async function saveVideoFile(blob, name) {
+    if (window.PldnSave && typeof PldnSave.beginVideo !== 'undefined' && PldnSave.beginVideo(name, blob.type || 'video/webm')) {
+      const S = 524288;
+      for (let o = 0; o < blob.size; o += S) {
+        if (!PldnSave.chunk(await b64(blob.slice(o, o + S)))) throw new Error(T("Faylga yozib bo'lmadi", 'Не удалось записать файл'));
+      }
+      PldnSave.end();
+      return true;
+    }
+    const u = URL.createObjectURL(blob), a = document.createElement('a'); a.href = u; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+    return false;
+  }
+  async function exportVideo(srcBlob, meta) {
+    if (expBusy) { toast(T('Boshqa video tayyorlanmoqda…', 'Другое видео готовится…')); return; }
+    if (typeof MediaRecorder === 'undefined') { alert(T('Bu qurilmada video yozish ishlamaydi', 'Запись видео не поддерживается')); return; }
+    expBusy = true;
+    const url = URL.createObjectURL(srcBlob), v = document.createElement('video');
+    v.src = url; v.playsInline = true; v.preload = 'auto';
+    let ac = null, iv = null, guard = null, tt = null;
+    try {
+      await new Promise(function (res, rej) { v.onloadeddata = res; v.onerror = function () { rej(new Error(T('Video ochilmadi', 'Не удалось открыть видео'))); }; });
+      const total = (isFinite(v.duration) && v.duration > 0) ? v.duration : (meta.dur || 60);
+      const k = Math.min(1, 640 / Math.max(v.videoWidth || 640, v.videoHeight || 360));
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(2, Math.round((v.videoWidth || 640) * k / 2) * 2); cv.height = Math.max(2, Math.round((v.videoHeight || 360) * k / 2) * 2);
+      const cx = cv.getContext('2d'), stream = cv.captureStream(24);
+      try {
+        ac = new (window.AudioContext || window.webkitAudioContext)();
+        const dst = ac.createMediaStreamDestination();
+        ac.createMediaElementSource(v).connect(dst);
+        dst.stream.getAudioTracks().forEach(function (t) { stream.addTrack(t); });
+        if (ac.state === 'suspended') await ac.resume();
+      } catch (_) {}
+      const mt = ['video/webm;codecs=vp8,opus', 'video/webm'].find(function (t) { return MediaRecorder.isTypeSupported(t); }) || '';
+      const rc = new MediaRecorder(stream, mt ? { mimeType: mt, videoBitsPerSecond: 600000, audioBitsPerSecond: 48000 } : { videoBitsPerSecond: 600000 });
+      const parts = [];
+      rc.ondataavailable = function (e) { if (e.data && e.data.size) parts.push(e.data); };
+      const done = new Promise(function (res) { rc.onstop = res; });
+      const INTRO = 3000;
+      let started = false;
+      const t0 = performance.now();
+      tt = toast('', 900000);
+      drawIntro(cx, cv.width, cv.height, meta, 0);
+      rc.start(1000);
+      v.onended = function () { if (rc.state !== 'inactive') rc.stop(); };
+      guard = setTimeout(function () { if (rc.state !== 'inactive') rc.stop(); }, (total + 30) * 1000);
+      iv = setInterval(function () {
+        const el0 = performance.now() - t0;
+        if (el0 < INTRO) { drawIntro(cx, cv.width, cv.height, meta, el0 / INTRO); tt.textContent = T('Video tayyorlanmoqda (ilovani yopmang)…', 'Подготовка видео (не закрывайте приложение)…'); return; }
+        if (!started) { started = true; v.play().catch(function () { v.muted = true; v.play().catch(function () {}); }); }
+        cx.drawImage(v, 0, 0, cv.width, cv.height);
+        tt.textContent = T('Video tayyorlanmoqda (ilovani yopmang): ', 'Подготовка видео (не закрывайте приложение): ') + mm(v.currentTime) + ' / ' + mm(total);
+      }, 42);
+      await done;
+      const out = new Blob(parts, { type: 'video/webm' });
+      if (out.size < 1000) throw new Error(T('Video tayyorlanmadi', 'Видео не подготовлено'));
+      const safe = String(meta.chat || '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 24);
+      const name = 'PLDN_' + (safe ? safe + '_' : '') + 'v' + meta.no + '_' + Date.now() + '.webm';
+      const inGallery = await saveVideoFile(out, name);
+      toast('✅ ' + (inGallery ? T('Galereyaga saqlandi (Movies/PLDN)', 'Сохранено в галерею (Movies/PLDN)') : T('Yuklab olindi', 'Скачано')), 4000);
+    } catch (e) {
+      console.error(e);
+      alert(T('Yuklab bo‘lmadi: ', 'Не удалось скачать: ') + String((e && (e.message || e.code)) || e));
+    } finally {
+      clearInterval(iv); clearTimeout(guard); if (tt) tt.remove();
+      try { v.pause(); } catch (_) {}
+      if (ac) { try { ac.close(); } catch (_) {} }
+      URL.revokeObjectURL(url); expBusy = false;
+    }
+  }
   // ---------- chatdagi video pufagi ----------
   window.pldnVideoBubble = function (m, dir, md, id) {
     const b = document.createElement('div'); b.className = 'message-bubble image-bubble ' + dir; b.dataset.kind = 'video';
@@ -11763,16 +11862,19 @@
       const c = el('div', 'background:#fff;border-radius:14px;padding:10px;margin-bottom:8px;display:flex;gap:12px;align-items:center');
       const th = el('div', 'width:92px;height:92px;flex:none;border-radius:10px;background:#223 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px', '▶');
       if (r.thumb) th.style.backgroundImage = 'url(' + r.thumb + ')';
-      th.addEventListener('click', function () {
+      const mk = function () {
         const lp = pdfs.filter(function (p) { return p.chatId === r.chatId; }).sort(function (a, b) { return b.ms - a.ms; })[0];
-        play(r.blob, { no: r.no, chat: r.chat, code: r.pdfCode || (lp && lp.code) || '' });
-      });
+        return { no: r.no, chat: r.chat, code: r.pdfCode || (lp && lp.code) || '', dur: r.dur };
+      };
+      th.addEventListener('click', function () { play(r.blob, mk()); });
       const mid = el('div', 'flex:1;min-width:0');
       mid.appendChild(el('div', 'font-weight:800;font-size:18px;color:#2a7fc0', '#' + r.no));
       mid.appendChild(el('div', 'font-size:13px;color:#667;margin-top:2px', fdt(r.ms) + ' · 🎥 ' + mm(r.dur) + ' · ' + fmt(r.size || 0)));
       const del = el('button', 'border:0;background:none;color:#d33;font-size:13px;margin-top:4px;padding:4px 0', '🗑 ' + T("O'chirish", 'Удалить'));
       del.addEventListener('click', async function () { if (await pldnConfirm(T("Video qurilmadan o'chirilsinmi?", 'Удалить видео с устройства?'))) { await vDel(r.code); all = all.filter(function (x) { return x.code !== r.code; }); openVideos(chatId); paint(); } });
-      mid.appendChild(del); c.append(th, mid); vlB.appendChild(c);
+      const dl = el('button', 'border:0;background:none;color:#2a7fc0;font-size:13px;margin-top:4px;margin-right:16px;padding:4px 0', '⬇ ' + T('Yuklab olish', 'Скачать'));
+      dl.addEventListener('click', function () { exportVideo(r.blob, mk()); });
+      mid.appendChild(dl); mid.appendChild(del); c.append(th, mid); vlB.appendChild(c);
     });
     vl.style.display = 'flex';
   }
