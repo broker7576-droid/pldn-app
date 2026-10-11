@@ -1,4 +1,4 @@
-<!-- VERSION: reactions-pdf-v50 (2026-10-11) -->
+<!-- VERSION: back-all-v51 (2026-10-11) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -12185,6 +12185,115 @@
       return r;
     };
   }
+})();
+</script>
+<script>
+// ===== ANDROID "ORQAGA" TUGMASI: BIR QADAM ORQAGA ===== VERSION: back-all-v1
+// Tartib: dialog -> menyu/oyna -> ko'rish oynalari (rasm, video, PDF, hikoya) -> chat ichi -> ekran -> (asosiy chatlar) ilovadan chiqish
+(function () {
+  const prevBack = window.pldnBack; // hikoya (story) ko'rish oynalari uchun avvalgi ishlovchi
+  const q = function (s, r) { return (r || document).querySelector(s); };
+  const qa = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  const click = function (el) { try { if (el) el.click(); } catch (_) {} };
+  const shown = function (el) { if (!el) return false; const cs = getComputedStyle(el); return cs.display !== 'none' && cs.visibility !== 'hidden'; };
+  const zi = function (el) { return parseInt(getComputedStyle(el).zIndex, 10) || 0; };
+  const alpha = function (c) { if (!c || c === 'transparent') return 0; const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return 1; const p = m[1].split(',').map(parseFloat); return p.length > 3 ? p[3] : 1; };
+  const isNum = function (x) { return typeof x === 'number'; };
+
+  // Ekranni qoplaydigan, ko'rinib turgan oyna/panel (toast va kichik tugmalar hisobga olinmaydi)
+  function topOverlay() {
+    const kids = [];
+    [document.body, q('.phone-frame')].forEach(function (r) { if (r) kids.push.apply(kids, Array.prototype.slice.call(r.children)); });
+    const list = kids.filter(function (c, idx) {
+      if (c.id === 'splashScreen' || c.classList.contains('screen') || c.classList.contains('pgx-sv') || c.classList.contains('pldn-call-ov')) return false;
+      const cs = getComputedStyle(c);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.pointerEvents === 'none' || parseFloat(cs.opacity) === 0) return false;
+      if (cs.position !== 'fixed' && cs.position !== 'absolute') return false;
+      if (zi(c) < 1000) return false;
+      const r = c.getBoundingClientRect();
+      return r.width >= innerWidth * 0.9 && r.height >= innerHeight * 0.9;
+    });
+    list.sort(function (a, b) { return zi(b) - zi(a) || (kids.indexOf(b) - kids.indexOf(a)); });
+    return list[0] || null;
+  }
+  const CLOSE_TXT = /^(✕|×|✖|‹|←|<)$/;
+  const CANCEL_TXT = /bekor|отмена|cancel|yopish|закрыть/i;
+  function closeOverlay(c) {
+    if (alpha(getComputedStyle(c).backgroundColor) < 0.9) {
+      // yarim shaffof fon (pastdan chiqadigan panel / dialog): fonni bosish = yopish
+      click(c);
+      if (shown(c)) { const cb = qa('button', c).find(function (b) { return CANCEL_TXT.test(b.textContent); }); if (cb) click(cb); }
+    } else {
+      // to'liq ekranli oyna (video, PDF, ro'yxat, muharrir): yopish/orqaga tugmasi
+      const b = qa('button', c).find(function (x) { return CLOSE_TXT.test(x.textContent.trim()) || /close|back/i.test((x.id || '') + ' ' + (x.className || '')); });
+      if (b) click(b);
+    }
+  }
+
+  function handle() {
+    // 1) alert / tasdiqlash oynalari
+    const al = qa('.pldn-al-ov');
+    if (al.length) { click(al[al.length - 1]); return true; }
+    // 2) qo'ng'iroq: tasodifan chiqib ketmaslik uchun e'tiborsiz (tugma bilan tugatiladi)
+    if (q('#pldnCallOv.open')) return true;
+    // 3) hikoya: pop-menyu, emotsiya, ko'rganlar, hikoya ko'rish oynasi
+    if (typeof prevBack === 'function' && prevBack()) return true;
+    // 4) sozlamalardagi kichik oynalar (til, chiqish, parol, o'chirish)
+    const lm = qa('.lang-modal-overlay.open');
+    if (lm.length) { const o = lm[lm.length - 1]; click(o); if (o.classList.contains('open')) o.classList.remove('open'); return true; }
+    // 5) xabar menyusi va emotsiya tanlash paneli
+    const mm = qa('.msg-action-menu.open, .reaction-picker.open');
+    if (mm.length) {
+      try { if (typeof closeMsgMenu === 'function') closeMsgMenu(); } catch (_) {}
+      try { if (typeof closeReactionPicker === 'function') closeReactionPicker(); } catch (_) {}
+      mm.forEach(function (m) { m.classList.remove('open'); });
+      return true;
+    }
+    // 6) bildirishnomalar paneli, rasm ko'rish, hikoya/yozish oynalari
+    const np = q('#pldnNpOv.open'); if (np) { np.classList.remove('open'); return true; }
+    const iv = q('#imageViewer.open');
+    if (iv) { const m = q('#ivMenu'); if (m && m.style.display !== 'none') { m.style.display = 'none'; return true; } click(q('#ivClose')); if (iv.classList.contains('open')) iv.classList.remove('open'); return true; }
+    const rec = q('.pgx-rec.open'); if (rec) { click(q('#pgxRecClose')); return true; }
+    const po = qa('.pgx-ov.open'); if (po.length) { po[po.length - 1].classList.remove('open'); return true; }
+    // 7) boshqa to'liq ekranli oynalar: video, PDF, videolar ro'yxati, stiker muharriri, hisoblar, PDF paneli
+    const ov = topOverlay();
+    if (ov) { closeOverlay(ov); return true; }
+
+    // 8) ekranlar
+    const act = q('.screen.active'); const id = act ? act.id : '';
+    if (!act) return false;
+    if (id === 'chatDetailScreen') {
+      // chat ichida: javob paneli -> tahrirlash -> asosiy chatlar ro'yxati
+      if (q('#replyBar.show')) { click(q('#replyBarClose')); return true; }
+      try { if (typeof editingBubble !== 'undefined' && editingBubble && typeof resetMessageInput === 'function') { resetMessageInput(); return true; } } catch (_) {}
+      click(q('#chatBackBtn')); return true;
+    }
+    if (id === 'screen4') {
+      // asosiy chatlar: tanlash rejimi / qidiruv bo'lsa avval shuni bekor qiladi, aks holda ilovadan chiqadi
+      try { if (typeof selectionMode !== 'undefined' && selectionMode && typeof exitSelectionMode === 'function') { exitSelectionMode(); return true; } } catch (_) {}
+      const si = q('#chatSearchInput');
+      if (si && si.value) { si.value = ''; si.dispatchEvent(new Event('input', { bubbles: true })); try { si.blur(); } catch (_) {} return true; }
+      return false;
+    }
+    if (id === 'contactsScreen' || id === 'settingsScreen' || id === 'profileScreen') {
+      const cs = q('#contactsSearchInput');
+      if (id === 'contactsScreen' && cs && cs.value) { cs.value = ''; cs.dispatchEvent(new Event('input', { bubbles: true })); try { cs.blur(); } catch (_) {} return true; }
+      const nav = q('.nav-item[data-tab="chats"]');
+      if (nav) { click(nav); return true; }
+      try { goToScreen('screen4'); setActiveNav('chats'); return true; } catch (_) { return false; }
+    }
+    if (id === 'screen1' || id === 'splashScreen') return false;
+    if (id === 'screen3') return true; // ro'yxatdan o'tish yakunlanmoqda
+    // qolgan ekranlar (guruh/kanal yaratish, kontakt qo'shish, PLDN sozlamalari, maxfiylik, parollar, bloklanganlar,
+    // ulangan qurilmalar, bildirishnomalar, kod tarixi, kirish va h.k.): o'zining orqaga tugmasi
+    const bb = q('.back-btn, .chat-back-btn, #storyViewerClose', act);
+    if (bb) { click(bb); return true; }
+    return false;
+  }
+
+  window.pldnBack = function () {
+    try { return !!handle(); } catch (e) { console.error('orqaga', e); return false; }
+  };
 })();
 </script>
 </body>
