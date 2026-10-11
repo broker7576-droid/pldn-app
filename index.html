@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-back-v47 (2026-10-11) -->
+<!-- VERSION: firebase-selfupdate-v48 (2026-10-11) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -791,6 +791,9 @@
   .pldn-np-card.upd .upd-st.ok { color: #34C759; }
   .pldn-np-card.upd .upd-st.no { color: #FF3B30; }
   .pldn-np-card.upd .pldn-np-btns { margin-top: 12px; }
+  .pldn-np-card.upd .upd-bar { height: 6px; border-radius: 3px; background: rgba(128,128,128,.25); margin-top: 10px; overflow: hidden; }
+  .pldn-np-card.upd .upd-bar > div { height: 100%; width: 0; background: #34C759; transition: width .25s; }
+  .pldn-np-card.upd .upd-act { margin-top: 10px; }
   .pldn-np-card.sec { position: relative; margin-bottom: 12px; }
   .pldn-np-card.sec h4 { padding-right: 30px; }
   .pldn-np-card.sec p { margin: 0 0 10px; }
@@ -8045,6 +8048,89 @@
     if (tab) tab.classList.toggle('has-new', unseen);
     if (tabO) tabO.classList.toggle('has-new', offers);
   }
+  // ILOVANING O'ZIDAN YANGILASH: APK ni ilova yuklaydi (progress bilan) va Android o'rnatish oynasini ochadi
+  // VERSION: firebase-selfupdate-v48
+  let pldnUpdBusy = false;
+  function pldnSelfUpdate(it, url, card, row) {
+    if (!url) { alert(fbT("Yangilanish havolasi topilmadi. Keyinroq qayta urinib ko'ring.", 'Ссылка на обновление не найдена. Повторите позже.')); return; }
+    if (!(window.PldnUpd && PldnUpd.download)) {
+      // eski APK: Chrome orqali yuklash (bir marta qo'lda o'rnatiladi)
+      pldnUpdHistMark(it.v, 'downloaded'); pldnNpClose(); window.location.href = url; return;
+    }
+    if (pldnUpdBusy) return;
+    pldnUpdBusy = true;
+    row.style.display = 'none';
+    const st = document.createElement('p');
+    st.className = 'upd-st';
+    const barW = document.createElement('div');
+    barW.className = 'upd-bar';
+    const bar = document.createElement('div');
+    barW.appendChild(bar);
+    const act = document.createElement('div');
+    act.className = 'pldn-np-btns upd-act';
+    card.append(st, barW, act);
+    let timer = null;
+    function stop() { if (timer) { clearInterval(timer); timer = null; } pldnUpdBusy = false; }
+    function fail(msg) {
+      stop();
+      st.className = 'upd-st no';
+      st.textContent = msg;
+      act.innerHTML = '';
+      const retry = document.createElement('button');
+      retry.className = 'np-yes';
+      retry.textContent = fbT('Qayta urinish', 'Повторить');
+      retry.onclick = function () { card.removeChild(st); card.removeChild(barW); card.removeChild(act); pldnSelfUpdate(it, url, card, row); };
+      act.appendChild(retry);
+    }
+    function startDownload() {
+      st.className = 'upd-st';
+      st.textContent = fbT('Yuklanmoqda… 0%', 'Загрузка… 0%');
+      act.innerHTML = '';
+      try { PldnUpd.download(url); } catch (e) { fail(String(e)); return; }
+      timer = setInterval(function () {
+        let a;
+        try { a = String(PldnUpd.status()).split('|'); } catch (e) { fail(String(e)); return; }
+        const state = a[0], pct = parseInt(a[1], 10) || 0, mb = ((parseInt(a[2], 10) || 0) / 1048576).toFixed(1);
+        if (state === 'downloading') {
+          bar.style.width = pct + '%';
+          st.textContent = fbT('Yuklanmoqda… ', 'Загрузка… ') + (pct > 0 ? pct + '%' : mb + ' MB');
+        } else if (state === 'done') {
+          bar.style.width = '100%';
+          stop();
+          st.className = 'upd-st ok';
+          st.textContent = fbT("O'rnatish oynasi ochilmoqda…", 'Открывается окно установки…');
+          const r = String(PldnUpd.install());
+          if (r === 'ok') {
+            pldnUpdHistMark(it.v, 'downloaded');
+            setTimeout(function () { if (document.getElementById('pldnNpBody')) pldnNpRender('update'); }, 1500);
+          } else {
+            fail(fbT("O'rnatib bo'lmadi: ", 'Не удалось установить: ') + r);
+          }
+        } else if (state === 'error') {
+          fail(fbT("Yuklab bo'lmadi: ", 'Не удалось скачать: ') + (a.slice(3).join('|') || ''));
+        }
+      }, 300);
+    }
+    // "Noma'lum ilovalarni o'rnatish" ruxsati
+    let allowed = true;
+    try { allowed = !!PldnUpd.canInstall(); } catch (_) {}
+    if (allowed) { startDownload(); return; }
+    st.className = 'upd-st';
+    st.textContent = fbT("O'rnatish uchun PLDN'ga ruxsat bering: ochilgan sahifada yoqing va orqaga qayting.", 'Разрешите PLDN устанавливать приложения: включите на открывшейся странице и вернитесь.');
+    const give = document.createElement('button');
+    give.className = 'np-yes';
+    give.textContent = fbT('Ruxsat berish', 'Разрешить');
+    give.onclick = function () {
+      try { PldnUpd.openSettings(); } catch (_) {}
+      if (timer) return;
+      timer = setInterval(function () {
+        let ok = false;
+        try { ok = !!PldnUpd.canInstall(); } catch (_) {}
+        if (ok) { clearInterval(timer); timer = null; startDownload(); }
+      }, 700);
+    };
+    act.appendChild(give);
+  }
   function pldnNpRender(tab) {
     const body = document.getElementById('pldnNpBody');
     document.querySelectorAll('.pldn-np-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
@@ -8165,9 +8251,7 @@
           yes.textContent = fbT('Ha', 'Да');
           yes.onclick = function () {
             const u = pldnUpdateInfo && pldnUpdateInfo.latest === it.v ? pldnUpdateInfo.url : (pldnUpdateInfo && pldnUpdateInfo.url);
-            pldnUpdHistMark(it.v, 'downloaded');
-            pldnNpClose();
-            if (u) window.location.href = u;
+            pldnSelfUpdate(it, u, card, row);
           };
           row.append(no, yes);
           card.appendChild(row);
