@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-storymenu-v45 (2026-10-11) -->
+<!-- VERSION: firebase-back-v47 (2026-10-11) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -7971,6 +7971,26 @@
     a.forEach(x => { if (x.st === 'pending' && x.v <= cur) { x.st = 'downloaded'; ch = true; } });
     if (ch) pldnUpdHistSet(a);
   }
+  // Ilova ochilmagan paytda chiqqan oraliq versiyalarni GitHub'dan olib to'ldiradi ("yuklab olmadingiz")
+  async function pldnUpdHistBackfill(cur, latest) {
+    try {
+      const r = await fetch('https://api.github.com/repos/' + PLDN_REPO + '/releases?per_page=50', { headers: { Accept: 'application/vnd.github+json' } });
+      if (!r.ok) return;
+      const list = await r.json();
+      if (!Array.isArray(list)) return;
+      const a = pldnUpdHistGet();
+      let ch = false;
+      list.forEach(function (rel) {
+        if (!rel || rel.draft || rel.prerelease) return;
+        const v = parseInt(String(rel.tag_name || '').replace(/\D/g, ''), 10);
+        const hasApk = (rel.assets || []).some(x => /\.apk$/i.test(x.name));
+        if (!v || !hasApk || v <= cur || v >= latest || a.some(x => x.v === v)) return;
+        a.push({ v: v, st: 'skipped', ts: Date.parse(rel.published_at) || Date.now() });
+        ch = true;
+      });
+      if (ch) pldnUpdHistSet(a);
+    } catch (_) {}
+  }
   function pldnUpdHistDel(v) { pldnUpdHistSet(pldnUpdHistGet().filter(x => x.v !== v)); }
   async function pldnCheckUpdate(manual) {
     const cur = parseInt(PLDN_BUILD, 10);
@@ -7989,6 +8009,7 @@
       if (val) val.textContent = 'v' + cur;
       if (latest > cur && asset) {
         pldnUpdateInfo = { latest: latest, url: asset.browser_download_url };
+        await pldnUpdHistBackfill(cur, latest);
         pldnUpdHistAdd(latest);
         pldnRefreshBell();
         if (!manual) return;
@@ -10776,6 +10797,15 @@
     } catch (e) { alert(fbErrMsg(e)); }
     if (V) show();
   }
+  // Android "orqaga" tugmasi (MainActivity shuni chaqiradi): true = ilova o'zi hal qildi
+  window.pldnBack = function () {
+    const pop = document.getElementById('pldnPopOv');
+    if (pop) { pop.remove(); if (V) show(); return true; }
+    if (rxo.classList.contains('open')) { rxo.classList.remove('open'); if (V) show(); return true; }
+    if (vw.classList.contains('open')) { vw.classList.remove('open'); if (V) show(); return true; }
+    if (V) { closeViewer(); return true; }
+    return false;
+  };
   $('pgxSvClose').addEventListener('click', function () {
     if (!V) return;
     pauseNow();
