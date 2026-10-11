@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-block-v42 (2026-10-11) -->
+<!-- VERSION: firebase-popmenu-v44 (2026-10-11) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -698,6 +698,7 @@
   #notificationsScreen,
   #privacyScreen,
   #myPasswordsScreen,
+  #blockedUsersScreen,
   #connectedDevicesScreen {
     padding: 0;
     align-items: stretch;
@@ -3435,9 +3436,27 @@
       <div class="chat-detail-info">
         <div class="chat-detail-name" id="myPasswordsTitle">Parollarim</div>
       </div>
+      <button class="pgx-ct-more" id="myPasswordsMore">⋮</button>
     </div>
     <div class="settings-body">
       <div id="myPasswordsList" style="padding: 16px;"></div>
+    </div>
+  </div>
+
+  <!-- ============ BLOKLANGAN FOYDALANUVCHILAR EKRANI ============ -->
+  <div class="screen" id="blockedUsersScreen">
+    <div class="chat-detail-header">
+      <button class="chat-back-btn" id="blockedUsersBackBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+      </button>
+      <div class="chat-detail-info">
+        <div class="chat-detail-name" id="blockedUsersTitle">Bloklangan foydalanuvchilar</div>
+      </div>
+    </div>
+    <div class="settings-body">
+      <div id="blockedUsersList" style="padding: 8px 16px;"></div>
     </div>
   </div>
 
@@ -3479,7 +3498,7 @@
       </div>
 
       <div class="settings-group">
-        <div class="settings-item" id="changePasswordRow">
+        <div class="settings-item" id="changePasswordRow" style="display:none">
           <span class="settings-icon">🔑</span>
           <span class="settings-label" id="changePasswordLabel">Parolni almashtirish</span>
           <span class="settings-arrow">›</span>
@@ -7838,6 +7857,8 @@
     const a = pldnPwGet();
     a.push({ pw: pw || '', ts: Date.now() }); // pw bo'sh bo'lsa: foydalanuvchi o'zi tanlagan parol, saqlanmaydi
     try { localStorage.setItem('pldn_pw_list', JSON.stringify(a.slice(-200))); } catch (_) {}
+    const sc = document.getElementById('myPasswordsScreen');
+    if (sc && sc.classList.contains('active')) pldnPwRender();
   }
   function pldnPwLatestPlain() { const a = pldnPwGet(); const l = a[a.length - 1]; return l && l.pw ? l.pw : ''; }
   function pldnFullDate(d) {
@@ -7846,6 +7867,34 @@
     return currentLang === 'ru' ? d.getDate() + ' ' + ru[d.getMonth()] + ' ' + d.getFullYear() : d.getDate() + '-' + uz[d.getMonth()] + ' ' + d.getFullYear();
   }
   function pldnHM(d) { const pad = n => String(n).padStart(2, '0'); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  // Umumiy qalqib chiquvchi menyu (Telegram uslubida). items: [{icon,label,fn}], pos: {el} yoki {x,y}
+  function pldnPopMenu(items, pos) {
+    const old = document.getElementById('pldnPopOv'); if (old) old.remove();
+    const ov = document.createElement('div');
+    ov.id = 'pldnPopOv';
+    ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:100001;background:transparent';
+    const m = document.createElement('div');
+    m.style.cssText = 'position:absolute;min-width:250px;max-width:88%;background:var(--bg-elevated,#fff);border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.22);padding:6px 0;overflow:hidden';
+    items.forEach(function (it) {
+      const r = document.createElement('div');
+      r.style.cssText = 'display:flex;align-items:center;gap:16px;padding:14px 20px;font-size:17px;color:var(--text-primary,#000);cursor:pointer';
+      const ic = document.createElement('span'); ic.textContent = it.icon; ic.style.cssText = 'font-size:22px;width:26px;text-align:center';
+      const lb = document.createElement('span'); lb.textContent = it.label;
+      r.append(ic, lb);
+      r.addEventListener('click', function (e) { e.stopPropagation(); ov.remove(); it.fn(); });
+      m.appendChild(r);
+    });
+    ov.appendChild(m);
+    ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
+    const vw = window.innerWidth, mw = m.offsetWidth, mh = m.offsetHeight;
+    let left, top;
+    if (pos && pos.el) { const r = pos.el.getBoundingClientRect(); left = vw - mw - 12; top = r.bottom + 4; }
+    else { left = Math.min((pos && pos.x || 0) - 20, vw - mw - 8); top = Math.min((pos && pos.y) || 0, window.innerHeight - mh - 8); }
+    m.style.left = Math.max(8, left) + 'px';
+    m.style.top = Math.max(8, top) + 'px';
+  }
+  window.pldnPopMenu = pldnPopMenu;
   function pldnPwRender() {
     const box = document.getElementById('myPasswordsList');
     box.innerHTML = '';
@@ -7890,6 +7939,9 @@
   document.getElementById('myPasswordsTitle').textContent = fbT('Parollarim', 'Мои пароли');
   document.getElementById('myPasswordsRow').addEventListener('click', () => { pldnPwRender(); goToScreen('myPasswordsScreen'); });
   document.getElementById('myPasswordsBackBtn').addEventListener('click', () => goToScreen('privacyScreen'));
+  document.getElementById('myPasswordsMore').addEventListener('click', function () {
+    pldnPopMenu([{ icon: '🔑', label: fbT('Parolni almashtirish', 'Сменить пароль'), fn: function () { fbOpenChangePassword('manual'); } }], { el: this });
+  });
 
   // ===== ILOVANI YANGILASH (GitHub Releases) =====
   // VERSION: firebase-update-v7
@@ -9784,6 +9836,7 @@
   let aliasUid = null;
   let aliasUnsub = null;
   let ctUid = null;
+  let ctBack = 'chatDetailScreen';
   let editing = false;
   let expanded = false;
 
@@ -9920,6 +9973,7 @@
     const c = fbCurrentChat;
     if (!c || c.type !== 'dm' || !c.otherUid) return;
     ctUid = c.otherUid;
+    ctBack = 'chatDetailScreen';
     setExpanded(false);
     const u = await fbGetUser(ctUid);
     if (!fbCurrentChat || fbCurrentChat.otherUid !== ctUid) return;
@@ -9928,8 +9982,25 @@
     $('pgxCtBody').scrollTop = 0;
   }
   window.pldnOpenContact = openContact;
+  // Chatsiz ham profilni ochish (masalan, bloklanganlar ro'yxatidan)
+  window.pldnOpenContactFor = async function (uid, backScreen) {
+    if (!uid) return;
+    ctUid = uid;
+    ctBack = backScreen || 'chatDetailScreen';
+    setExpanded(false);
+    const u = await fbGetUser(uid);
+    if (ctUid !== uid) return;
+    render(u);
+    goToScreen('pgxContactScreen');
+    $('pgxCtBody').scrollTop = 0;
+  };
+  window.pldnContactRefresh = async function () {
+    if (!ctUid) return;
+    const u = await fbGetUser(ctUid);
+    render(u);
+  };
 
-  $('pgxCtBack').addEventListener('click', function () { setExpanded(false); goToScreen('chatDetailScreen'); });
+  $('pgxCtBack').addEventListener('click', function () { setExpanded(false); goToScreen(ctBack); });
   $('pgxCtMore').addEventListener('click', function () {
     if (ctUid && typeof pldnStoryMenu === 'function') pldnStoryMenu(ctUid);
   });
@@ -10113,7 +10184,11 @@
       items = [['➕', T('+Hikoya (ulashish taklifi)', '+История (предложить обмен)'), function () { sendOffer(uid); }]];
     }
     if (window.pldnBlockMenu) items = window.pldnBlockMenu(uid, items, name);
-    openSheet(name, items);
+    // Holat yozuvlari (amalsiz qatorlar) olib tashlanadi; menyu ⋮ tugmasi ostida qalqib chiqadi
+    const pop = items.filter(function (it) { return it[2]; }).map(function (it) { return { icon: it[0], label: it[1], fn: it[2] }; });
+    const anchor = $('pgxCtMore');
+    if (window.pldnPopMenu && anchor && pop.length) window.pldnPopMenu(pop, { el: anchor });
+    else openSheet(name, items);
   };
 
   // ---------- "Takliflar" bo'limi (🔔) ----------
@@ -11641,7 +11716,9 @@
     paintUi();
     try { if (myUid && typeof fbStartChatsListener === 'function') fbStartChatsListener(myUid); } catch (_) {}
     const cs = $('pgxContactScreen');
-    if (cs && cs.classList.contains('active') && window.pldnOpenContact) { try { window.pldnOpenContact(); } catch (_) {} }
+    if (cs && cs.classList.contains('active') && window.pldnContactRefresh) { try { window.pldnContactRefresh(); } catch (_) {} }
+    const bs = $('blockedUsersScreen');
+    if (bs && bs.classList.contains('active')) renderBlocked();
   }
 
   function stop() {
@@ -11685,6 +11762,73 @@
     toast('✅ ' + T('Blokdan chiqarildi', 'Пользователь разблокирован'));
   }
   ub.addEventListener('click', function () { const p = peerUid(); if (p) doUnblock(p); });
+
+  // ----- Bloklangan foydalanuvchilar ro'yxati -----
+  const bcss = document.createElement('style');
+  bcss.textContent =
+    '.pldn-bl-row{display:flex;align-items:center;gap:14px;padding:12px 4px;border-bottom:1px solid var(--border-color,#e5e5ea);user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:pointer}' +
+    '.pldn-bl-av{width:48px;height:48px;border-radius:50%;background:#999;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;background-size:cover;background-position:center;flex:none}' +
+    '.pldn-bl-nm{font-size:17px;font-weight:600;color:var(--text-primary,#000)}' +
+    '.pldn-bl-un{font-size:14px;color:var(--text-secondary,#8e8e93);margin-top:2px}' +
+    '.pldn-bl-hint{font-size:13px;color:var(--text-secondary,#8e8e93);padding:12px 4px}';
+  document.head.appendChild(bcss);
+  function renderBlocked() {
+    const box = $('blockedUsersList'); if (!box) return;
+    box.innerHTML = '';
+    const ids = Array.from(byMe);
+    if (!ids.length) {
+      const e = document.createElement('div');
+      e.className = 'pldn-np-empty';
+      e.textContent = T("Bloklangan foydalanuvchilar yo'q.", 'Заблокированных пользователей нет.');
+      box.appendChild(e);
+      return;
+    }
+    ids.forEach(function (uid) {
+      const row = document.createElement('div');
+      row.className = 'pldn-bl-row';
+      const av = document.createElement('div'); av.className = 'pldn-bl-av';
+      const info = document.createElement('div');
+      const nm = document.createElement('div'); nm.className = 'pldn-bl-nm';
+      const un = document.createElement('div'); un.className = 'pldn-bl-un';
+      info.append(nm, un); row.append(av, info);
+      box.appendChild(row);
+      fbGetUser(uid).then(function (u) {
+        const name = u.name || ('PLDN/-' + (u.username || ''));
+        nm.textContent = name;
+        un.textContent = u.username ? 'PLDN/-' + u.username : '';
+        if (u.avatar) { av.textContent = ''; av.style.backgroundImage = 'url(' + u.avatar + ')'; }
+        else { av.textContent = u.locked ? '🔒' : initials(name); if (u.color) av.style.background = u.color; }
+      }).catch(function () {});
+      // Bosib turish: "Blokdan chiqarish"; bitta bosish: profilga o'tish
+      let timer = null, fired = false, sx = 0, sy = 0;
+      row.addEventListener('pointerdown', function (e) {
+        fired = false; sx = e.clientX; sy = e.clientY; clearTimeout(timer);
+        timer = setTimeout(function () {
+          fired = true;
+          try { if (navigator.vibrate) navigator.vibrate(15); } catch (_) {}
+          window.pldnPopMenu([{ icon: '✅', label: T('Blokdan chiqarish', 'Разблокировать'), fn: function () { doUnblock(uid); } }], { x: sx, y: sy });
+        }, 500);
+      });
+      row.addEventListener('pointermove', function (e) { if (Math.abs(e.clientX - sx) > 10 || Math.abs(e.clientY - sy) > 10) clearTimeout(timer); });
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) { row.addEventListener(ev, function () { clearTimeout(timer); }); });
+      row.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+      row.addEventListener('click', function () {
+        if (fired) { fired = false; return; }
+        if (window.pldnOpenContactFor) window.pldnOpenContactFor(uid, 'blockedUsersScreen');
+      });
+    });
+    const h = document.createElement('div');
+    h.className = 'pldn-bl-hint';
+    h.textContent = T("Profilga o'tish uchun bosing, blokdan chiqarish uchun bosib turing.", 'Нажмите, чтобы открыть профиль; удерживайте, чтобы разблокировать.');
+    box.appendChild(h);
+  }
+  const blRow = document.querySelector('#privacyScreen .settings-label[data-i18n="k102"]');
+  const blItem = blRow ? blRow.closest('.settings-item') : null;
+  if (blItem) blItem.addEventListener('click', function () { renderBlocked(); goToScreen('blockedUsersScreen'); });
+  const blBack = $('blockedUsersBackBtn');
+  if (blBack) blBack.addEventListener('click', function () { goToScreen('privacyScreen'); });
+  const blTitle = $('blockedUsersTitle');
+  if (blTitle) blTitle.textContent = T('Bloklangan foydalanuvchilar', 'Заблокированные пользователи');
 
   // Profil ⋮ menyusi
   window.pldnBlockMenu = function (uid, items, name) {
