@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-passwords-v40 (2026-10-10) -->
+<!-- VERSION: firebase-block-v42 (2026-10-11) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -5276,7 +5276,7 @@
     item.dataset.chatMsg = chat.msg.toLowerCase();
     const avatarStyle = chat.avatar ? ('url(' + chat.avatar + ') center/cover') : chat.color;
     item.innerHTML = `
-      <div class="chat-avatar" style="background:${avatarStyle}">${chat.avatar ? '' : fbEsc(initials(chat.name))}</div>
+      <div class="chat-avatar" style="background:${avatarStyle}">${chat.avatar ? '' : fbEsc(chat.locked ? '🔒' : initials(chat.name))}</div>
       <div class="chat-info">
         <div class="chat-top-row">
           <span class="chat-name">${fbEsc(chat.name)}</span>
@@ -8236,6 +8236,7 @@
     const v = snap.exists ? snap.data() : {};
     const u = { uid: uid, name: fbDisplayName(v), realName: fbDisplayName(v), first: v.firstName || '', last: v.lastName || '', username: v.username || '', avatar: (v.privacy && v.privacy.avatar === 'none') ? null : fbSafeAvatar(v.avatar), color: fbColorFor(uid) };
     if (typeof pldnApplyAlias === 'function') pldnApplyAlias(u);
+    if (window.pldnBlockMask) window.pldnBlockMask(u);
     fbUserCache[uid] = u;
     return u;
   }
@@ -8289,7 +8290,7 @@
         unread = 0;
       }
       rows.push({
-        id: d.id, otherUid: other, name: u.name, color: u.color, avatar: u.avatar,
+        id: d.id, otherUid: other, name: u.name, color: u.color, avatar: u.avatar, locked: !!u.locked,
         type: isGrp ? v.type : 'dm', members: v.members || [], owner: v.owner || '', admins: v.admins || [], username: v.username || '',
         msg: (v.lastFrom === me ? fbT('Siz: ', 'Вы: ') : '') + v.lastText,
         time: fbTimeLabel(ts), ms: ts ? ts.getTime() : 0, unread: unread, real: true
@@ -9878,7 +9879,7 @@
   function paintBig(u) {
     const big = $('pgxCtBig');
     if (u.avatar) { big.textContent = ''; big.style.background = 'url(' + u.avatar + ') center/cover'; }
-    else { big.textContent = initials(u.name); big.style.background = u.color; }
+    else { big.textContent = u.locked ? '🔒' : initials(u.name); big.style.background = u.color; }
   }
   function render(u) {
     const a = aliases[u.uid];
@@ -9887,7 +9888,7 @@
     $('pgxCtTitle').textContent = T('Profil', 'Профиль');
     const av = $('pgxCtAv');
     if (u.avatar) { av.innerHTML = ''; const im = document.createElement('img'); im.src = u.avatar; im.alt = 'avatar'; av.appendChild(im); av.style.background = ''; }
-    else { av.textContent = initials(u.name); av.style.background = u.color; }
+    else { av.textContent = u.locked ? '🔒' : initials(u.name); av.style.background = u.color; }
     paintBig(u);
     $('pgxCtName').textContent = u.name;
     $('pgxCtUser').textContent = 'PLDN/-' + (u.username || '');
@@ -10039,7 +10040,7 @@
   }
   function setAv(el, u) {
     if (u.avatar) { el.textContent = ''; el.style.background = 'url(' + u.avatar + ') center/cover'; }
-    else { el.textContent = initials(u.name); el.style.background = u.color; }
+    else { el.textContent = u.locked ? '🔒' : initials(u.name); el.style.background = u.color; }
   }
   function toast(msg, ms) {
     const t = $('pgxUp'); if (!msg) { t.style.display = 'none'; return; }
@@ -10111,6 +10112,7 @@
     } else {
       items = [['➕', T('+Hikoya (ulashish taklifi)', '+История (предложить обмен)'), function () { sendOffer(uid); }]];
     }
+    if (window.pldnBlockMenu) items = window.pldnBlockMenu(uid, items, name);
     openSheet(name, items);
   };
 
@@ -11262,8 +11264,10 @@
       }
       sh.appendChild(r);
       if (x.uid) fbGetUser(x.uid).then(function (u) {
-        if (u.name) n.textContent = u.name;
-        if (u.avatar) { av.textContent = ''; av.style.background = 'url(' + u.avatar + ') center/cover'; } else if (u.name) { av.textContent = u.name[0].toUpperCase(); if (u.color) av.style.background = u.color; }
+        // Hisoblar ro'yxatida kontaktga qo'yilgan taxallus emas, hisobning haqiqiy ism-familiyasi ko'rinadi
+        const nm = u.realName || u.name;
+        if (nm) n.textContent = nm;
+        if (u.avatar) { av.textContent = ''; av.style.background = 'url(' + u.avatar + ') center/cover'; } else if (nm) { av.textContent = nm[0].toUpperCase(); if (u.color) av.style.background = u.color; }
       }).catch(function () {});
     });
     if (a.length < MAX) { btn('＋ ' + T('Yangi hisob ochish', 'Создать новый аккаунт'), addNew, '#2AABEE'); btn('🔗 ' + T('Mavjud hisobni ulash', 'Подключить существующий'), addExisting, '#2AABEE'); }
@@ -11556,6 +11560,164 @@
     const row = el('div'); row.className = 'settings-item'; row.innerHTML = '<span class="settings-icon">🎬</span><span class="settings-label">' + T('Videolar va PDF fayllar', 'Видео и PDF-файлы') + '</span><span class="settings-arrow">›</span>';
     row.addEventListener('click', async function () { q.value = ''; all = await vAll(); pdfs = await pAll(); await fixNumbers(); paint(); ov.style.display = 'flex'; });
     g.appendChild(row); body.appendChild(g);
+  }
+})();
+</script>
+
+<script>
+/* ===== FOYDALANUVCHINI BLOKLASH ===== VERSION: firebase-block-v42 */
+(function () {
+  'use strict';
+  if (typeof fbAuth === 'undefined' || !fbAuth || typeof fbDb === 'undefined' || !fbDb) return;
+  const T = function (uz, ru) { return fbT(uz, ru); };
+  const $ = function (id) { return document.getElementById(id); };
+  let myUid = null, byMe = new Set(), byThem = new Set(), unsubs = [];
+  let sig = JSON.stringify([[], []]);
+  function st(uid) { return byThem.has(uid) ? 'them' : (byMe.has(uid) ? 'me' : ''); }
+  window.pldnBlockState = st;
+
+  const css = document.createElement('style');
+  css.textContent =
+    '#chatDetailScreen.pldn-blocked .chat-input-bar, #chatDetailScreen.pldn-blocked #replyBar { display: none !important; }' +
+    '.pldn-blockbar { display: none; flex-direction: column; align-items: center; gap: 10px; padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); background: var(--bg-elevated, #fff); border-top: 1px solid var(--border-color, #e5e5ea); color: var(--text-secondary, #8e8e93); font-size: 15px; text-align: center; }' +
+    '.pldn-blockbar button { border: 0; border-radius: 12px; padding: 10px 18px; font-size: 15px; font-weight: 600; background: #2AABEE; color: #fff; }';
+  document.head.appendChild(css);
+
+  const inputBar = document.querySelector('#chatDetailScreen .chat-input-bar');
+  const bar = document.createElement('div');
+  bar.className = 'pldn-blockbar';
+  const msg = document.createElement('div');
+  const ub = document.createElement('button');
+  bar.append(msg, ub);
+  if (inputBar && inputBar.parentNode) inputBar.parentNode.insertBefore(bar, inputBar.nextSibling);
+
+  function toast(text) {
+    let t = $('pldnBlockToast');
+    if (!t) {
+      t = document.createElement('div'); t.id = 'pldnBlockToast';
+      t.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(0,0,0,.82);color:#fff;padding:10px 16px;border-radius:14px;font-size:15px;z-index:100000;max-width:86%;text-align:center;display:none';
+      document.body.appendChild(t);
+    }
+    t.textContent = text; t.style.display = 'block';
+    clearTimeout(t._h); t._h = setTimeout(function () { t.style.display = 'none'; }, 2600);
+  }
+  function peerUid() { const c = (typeof fbCurrentChat !== 'undefined') ? fbCurrentChat : null; return c && c.type === 'dm' ? c.otherUid : null; }
+  function blockedMsg(s) { return s === 'them' ? T('Bu foydalanuvchi sizni bloklagan', 'Этот пользователь заблокировал вас') : T('Siz bu foydalanuvchini bloklagansiz', 'Вы заблокировали этого пользователя'); }
+
+  function paintUi() {
+    const scr = $('chatDetailScreen'); if (!scr) return;
+    const p = peerUid();
+    const s = p ? st(p) : '';
+    scr.classList.toggle('pldn-blocked', !!s);
+    bar.style.display = s ? 'flex' : 'none';
+    if (s) {
+      msg.textContent = '🚫 ' + blockedMsg(s);
+      ub.style.display = s === 'me' ? '' : 'none';
+      ub.textContent = T('Blokdan chiqarish', 'Разблокировать');
+    }
+    const av = $('chatDetailAvatar'), c = (typeof fbCurrentChat !== 'undefined') ? fbCurrentChat : null;
+    if (!av || !c) return;
+    const u = p ? fbUserCache[p] : null;
+    if (s === 'them') { av.textContent = '🔒'; av.style.background = (u && u.color) || c.color; av.dataset.lock = '1'; }
+    else if (av.dataset.lock === '1') {
+      av.dataset.lock = '';
+      const pic = u && u.avatar;
+      if (pic) { av.textContent = ''; av.style.background = 'url(' + pic + ') center/cover'; }
+      else { av.textContent = initials(c.name); av.style.background = (u && u.color) || c.color; }
+    }
+  }
+
+  window.pldnBlockMask = function (u) {
+    if (!u || !u.uid) return;
+    if (byThem.has(u.uid)) { if (!u.locked) { u._av = u.avatar; u.avatar = null; u.locked = true; } }
+    else if (u.locked) { u.avatar = u._av || null; delete u._av; u.locked = false; }
+  };
+
+  function changed() {
+    const s = JSON.stringify([Array.from(byMe).sort(), Array.from(byThem).sort()]);
+    if (s === sig) return;
+    sig = s;
+    Object.keys(fbUserCache).forEach(function (k) { window.pldnBlockMask(fbUserCache[k]); });
+    paintUi();
+    try { if (myUid && typeof fbStartChatsListener === 'function') fbStartChatsListener(myUid); } catch (_) {}
+    const cs = $('pgxContactScreen');
+    if (cs && cs.classList.contains('active') && window.pldnOpenContact) { try { window.pldnOpenContact(); } catch (_) {} }
+  }
+
+  function stop() {
+    unsubs.forEach(function (f) { try { f(); } catch (_) {} }); unsubs = [];
+    myUid = null; byMe = new Set(); byThem = new Set();
+    changed();
+  }
+  function start(uid) {
+    if (myUid === uid) return;
+    stop(); myUid = uid;
+    unsubs.push(fbDb.collection('blocks').where('by', '==', uid).onSnapshot(function (q) {
+      const n = new Set(); q.forEach(function (d) { const v = d.data() || {}; if (v.to) n.add(v.to); }); byMe = n; changed();
+    }, function () {}));
+    unsubs.push(fbDb.collection('blocks').where('to', '==', uid).onSnapshot(function (q) {
+      const n = new Set(); q.forEach(function (d) { const v = d.data() || {}; if (v.by) n.add(v.by); }); byThem = n; changed();
+    }, function () {}));
+  }
+  fbAuth.onAuthStateChanged(function (user) { if (user) start(user.uid); else stop(); });
+
+  function linkId(a, b) { return a < b ? a + '_' + b : b + '_' + a; }
+  async function doBlock(uid) {
+    if (!myUid) return;
+    try {
+      const ref = fbDb.collection('storyLinks').doc(linkId(myUid, uid));
+      const sn = await ref.get();
+      if (sn.exists) {
+        const d = sn.data() || {}; let ns = null;
+        if (d.status === 'accepted') ns = 'cancelled';
+        else if (d.status === 'pending') ns = d.by === myUid ? 'cancelled' : 'declined';
+        if (ns) await ref.update({ status: ns, updatedAt: fbSrvTs() });
+      }
+    } catch (_) {}
+    try { await fbDb.collection('blocks').doc(myUid + '_' + uid).set({ by: myUid, to: uid, ts: fbSrvTs() }); }
+    catch (e) { alert(fbErrMsg(e)); return; }
+    toast('🚫 ' + T('Foydalanuvchi bloklandi', 'Пользователь заблокирован'));
+  }
+  async function doUnblock(uid) {
+    if (!myUid || !uid) return;
+    try { await fbDb.collection('blocks').doc(myUid + '_' + uid).delete(); }
+    catch (e) { alert(fbErrMsg(e)); return; }
+    toast('✅ ' + T('Blokdan chiqarildi', 'Пользователь разблокирован'));
+  }
+  ub.addEventListener('click', function () { const p = peerUid(); if (p) doUnblock(p); });
+
+  // Profil ⋮ menyusi
+  window.pldnBlockMenu = function (uid, items, name) {
+    const s = st(uid);
+    const blockItem = ['🚫', T('Foydalanuvchini bloklash', 'Заблокировать пользователя'), async function () {
+      const ok = await pldnConfirm(T('«' + name + '» bloklansinmi? U sizga yoza olmaydi, qo\'ng\'iroq qila olmaydi, hikoyalar ulashishi to\'xtaydi.', 'Заблокировать «' + name + '»? Он не сможет писать, звонить, обмен историями прекратится.'));
+      if (ok) doBlock(uid);
+    }];
+    const unblockItem = ['✅', T('Blokdan chiqarish', 'Разблокировать'), function () { doUnblock(uid); }];
+    if (s === 'them' && s !== 'me') return byMe.has(uid) ? [unblockItem] : [blockItem];
+    if (s === 'me') return [unblockItem];
+    return items.concat([blockItem]);
+  };
+
+  // Qo'ng'iroq (audio/video) va PDF tugmalari
+  const cds = $('chatDetailScreen');
+  if (cds) cds.addEventListener('click', function (e) {
+    const b = e.target && e.target.closest ? e.target.closest('.call-hdr-btn') : null;
+    if (!b) return;
+    const p = peerUid(); const s = p ? st(p) : '';
+    if (!s) return;
+    e.stopImmediatePropagation(); e.preventDefault();
+    toast('🚫 ' + blockedMsg(s));
+  }, true);
+
+  // Chat ochilganda holatni qo'llash
+  if (typeof fbOpenChat === 'function') {
+    const orig = fbOpenChat;
+    fbOpenChat = function () {
+      const r = orig.apply(this, arguments);
+      try { paintUi(); } catch (_) {}
+      return r;
+    };
   }
 })();
 </script>
