@@ -1,4 +1,4 @@
-<!-- VERSION: video-download-intro-v49 (2026-10-11) -->
+<!-- VERSION: reactions-pdf-v50 (2026-10-11) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -1519,6 +1519,12 @@
 
   .message-bubble.outgoing .msg-reaction-badge { right: -4px; }
   .message-bubble.incoming .msg-reaction-badge { left: -4px; }
+  /* Reaksiyali xabar: pastda reaksiya uchun alohida qator ochiladi, vaqt yopilmaydi */
+  .message-bubble.has-rx { padding-bottom: 32px; }
+  .message-bubble.image-bubble.has-rx { padding-bottom: 30px; }
+  .message-bubble.image-bubble.has-rx .msg-time { bottom: 34px; }
+  .message-bubble.has-rx.outgoing .msg-reaction-badge,
+  .message-bubble.has-rx.incoming .msg-reaction-badge { bottom: 7px; left: 10px; right: auto; }
 
   @keyframes pldnReactionPop {
     0% { transform: scale(0); }
@@ -6267,6 +6273,7 @@
     let badge = bubble.querySelector('.msg-reaction-badge');
     if (badge && badge.textContent === emoji) {
       badge.remove();
+      bubble.classList.remove('has-rx');
       return;
     }
     if (!badge) {
@@ -6274,6 +6281,7 @@
       badge.className = 'msg-reaction-badge';
       bubble.appendChild(badge);
     }
+    bubble.classList.add('has-rx');
     badge.textContent = emoji;
   }
 
@@ -8615,6 +8623,7 @@
   function fbApplyReactions(bubble, reactions, myUid) {
     const old = bubble.querySelector('.msg-reaction-badge');
     if (old) old.remove();
+    bubble.classList.remove('has-rx');
     bubble.dataset.myReaction = '';
     if (!reactions || typeof reactions !== 'object') return;
     bubble.dataset.myReaction = (typeof reactions[myUid] === 'string') ? reactions[myUid] : '';
@@ -8635,6 +8644,7 @@
     badge.className = 'msg-reaction-badge';
     badge.style.animation = 'none';
     badge.textContent = list.slice(0, 3).map(k => shown[k] + (counts[k] > 1 ? ' ' + counts[k] : '')).join(' ');
+    bubble.classList.add('has-rx');
     bubble.appendChild(badge);
   }
 
@@ -11178,7 +11188,8 @@
   const dbPut = function (k, v) { return kv('readwrite', function (s) { return s.put(v, k); }); };
   const dbClear = function () { return kv('readwrite', function (s) { return s.clear(); }); };
 
-  let job = null, running = false, cancelReq = false, L = null, cx = null, err = '';
+  let job = null, running = false, cancelReq = false, L = null, cx = null, err = '', curRx = '';
+  const RXH = 34; // reaksiya qatori balandligi (xabar ichida)
   const mmss = function (s) { s = Math.max(0, Math.round(s || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
   const names = {};
   async function nameOf(uid) { if (!names[uid]) { try { names[uid] = (await fbGetUser(uid)).name || '?'; } catch (_) { names[uid] = '?'; } } return names[uid]; }
@@ -11220,6 +11231,20 @@
     });
     return out;
   }
+  // Xabarning reaksiyalarini matnga aylantiradi (masalan: "❤️ 😘 2")
+  function rxOf(m) {
+    const r = m && m.reactions; if (!r || typeof r !== 'object') return '';
+    const key = function (e) { return String(e).replace(/[\uFE0E\uFE0F]/g, ''); };
+    const counts = {}, shown = {};
+    Object.keys(r).forEach(function (u) { const e = r[u]; if (typeof e === 'string' && e) { const k = key(e); counts[k] = (counts[k] || 0) + 1; if (!shown[k]) shown[k] = e; } });
+    return Object.keys(counts).slice(0, 4).map(function (k) { return shown[k] + (counts[k] > 1 ? ' ' + counts[k] : ''); }).join('  ');
+  }
+  function rxWidth() { cx.font = '22px sans-serif'; return cx.measureText(curRx).width + 20; }
+  function drawRx(x, y, mine) {
+    const cw = rxWidth();
+    cx.fillStyle = mine ? '#ffffff' : '#e8eff6'; rr(x, y, cw, 28, 14); cx.fill();
+    cx.font = '22px sans-serif'; cx.fillStyle = '#111'; cx.textAlign = 'left'; cx.fillText(curRx, x + 10, y + 22);
+  }
   async function bubble(lines, mine, head, foot) {
     let i = 0;
     for (;;) {
@@ -11229,12 +11254,14 @@
       cx.font = F; let tw = 0; part.forEach(function (l) { tw = Math.max(tw, cx.measureText(l).width); });
       cx.font = '20px sans-serif'; const fw = cx.measureText(foot).width + 8; let hw = 0;
       if (head) { cx.font = 'bold 22px sans-serif'; hw = cx.measureText(head).width; }
-      const w = Math.min(MAXW, Math.max(tw, hw, last ? fw : 0)) + 2 * PAD, h = part.length * LH + 2 * PAD + hh + (last ? 26 : 0), x = mine ? W - M - w : M;
+      const rx = last && curRx ? RXH : 0, rw = rx ? rxWidth() : 0;
+      const w = Math.min(MAXW, Math.max(tw, hw, last ? fw : 0, rw)) + 2 * PAD, h = part.length * LH + 2 * PAD + hh + (last ? 26 : 0) + rx, x = mine ? W - M - w : M;
       cx.fillStyle = mine ? '#d4ecff' : '#ffffff'; rr(x, L.y, w, h, 18); cx.fill();
       let ty = L.y + PAD;
       if (head) { cx.font = 'bold 22px sans-serif'; cx.fillStyle = '#2a7fc0'; cx.fillText(head, x + PAD, ty + 22); ty += hh; }
       cx.font = F; cx.fillStyle = '#111'; part.forEach(function (l) { cx.fillText(l, x + PAD, ty + 25); ty += LH; });
-      if (last) { cx.font = '20px sans-serif'; cx.fillStyle = '#8a97a3'; cx.textAlign = 'right'; cx.fillText(foot, x + w - PAD, L.y + h - 10); cx.textAlign = 'left'; }
+      if (last) { cx.font = '20px sans-serif'; cx.fillStyle = '#8a97a3'; cx.textAlign = 'right'; cx.fillText(foot, x + w - PAD, L.y + h - 10 - rx); cx.textAlign = 'left'; }
+      if (rx) drawRx(x + PAD - 4, L.y + h - rx - 2, mine);
       L.y += h + 10; i += k; if (last) break;
     }
   }
@@ -11244,14 +11271,16 @@
     if (!im) return bubble([T('[rasm ochilmadi]', '[изображение недоступно]')], mine, head, foot);
     let w = sticker ? 220 : Math.min(460, im.width), h = im.height * w / im.width;
     if (h > 640) { h = 640; w = im.width * h / im.height; }
-    const hh = head ? 30 : 0, pad = sticker ? 0 : 8, total = h + 2 * pad + hh + (sticker ? 0 : 30);
+    const rxh = curRx ? RXH : 0;
+    const hh = head ? 30 : 0, pad = sticker ? 0 : 8, total = h + 2 * pad + hh + (sticker ? 0 : 30) + rxh;
     if (L.y + total > BOT) await newPage();
     const bw = w + 2 * pad, x = mine ? W - M - bw : M;
     if (!sticker) { cx.fillStyle = mine ? '#d4ecff' : '#ffffff'; rr(x, L.y, bw, total, 16); cx.fill(); }
     let ty = L.y + pad;
     if (head) { cx.font = 'bold 22px sans-serif'; cx.fillStyle = '#2a7fc0'; cx.fillText(head, x + pad + 6, ty + 22); ty += hh; }
     cx.drawImage(im, x + pad, ty, w, h);
-    if (!sticker) { cx.font = '20px sans-serif'; cx.fillStyle = '#8a97a3'; cx.textAlign = 'right'; cx.fillText(foot, x + bw - 12, L.y + total - 9); cx.textAlign = 'left'; }
+    if (!sticker) { cx.font = '20px sans-serif'; cx.fillStyle = '#8a97a3'; cx.textAlign = 'right'; cx.fillText(foot, x + bw - 12, L.y + total - 9 - rxh); cx.textAlign = 'left'; }
+    if (rxh) drawRx(sticker ? x : x + 8, L.y + total - rxh + 2, mine);
     L.y += total + 10;
   }
   async function drawMsg(m, ms, id) {
@@ -11264,12 +11293,13 @@
       cx.fillStyle = '#fff'; cx.textAlign = 'center'; cx.fillText(day, W / 2, L.y + 26); cx.textAlign = 'left'; L.y += 50; L.day = day;
     }
     const head = (job.type === 'group' || job.type === 'channel') && !mine ? await nameOf(m.from) : '';
+    curRx = rxOf(m);
     if (m.type === 'image' && m.image) await imgBubble(m.image, mine, !!m.sticker, head, foot);
     else if (m.type === 'voice') await bubble(['🎤 ' + T('Ovozli xabar', 'Голосовое') + ' ' + mmss(m.duration)], mine, head, foot);
     else if (m.type === 'video') {
       let vr = null;
       try { vr = await window.pldnVideoSave(job.chatId, job.name, job.type, id, m, ms, job.code); } catch (e) { console.error(e); }
-      if (m.thumb) await imgBubble(m.thumb, mine, false, head, foot);
+      if (m.thumb) { const keepRx = curRx; curRx = ''; await imgBubble(m.thumb, mine, false, head, foot); curRx = keepRx; }
       const lines = ['🎥 ' + T('Video', 'Видео') + ' ' + mmss(m.dur) + (vr && vr.no ? ' · #' + vr.no : '')];
       if (!vr || !vr.no) lines.push(T('(video saqlanmadi)', '(видео не сохранено)'));
       await bubble(lines, mine, m.thumb ? '' : head, foot);
@@ -11282,6 +11312,7 @@
       if (m.reply && m.reply.text) lines = wrap('↪ ' + String(m.reply.text).slice(0, 80), MAXW).slice(0, 1).concat(lines);
       await bubble(lines, mine, head, foot);
     }
+    curRx = '';
     L.ms = ms;
   }
 
