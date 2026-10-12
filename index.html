@@ -1,4 +1,4 @@
-<!-- VERSION: profile-layout-v56 (2026-10-12) -->
+<!-- VERSION: story-quality-v57 (2026-10-12) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -11126,18 +11126,21 @@
       v.src = url;
     });
   }
-  // Videoni 640px / ~400kbps ga siqadi (video oxirigacha ijro etib qayta yozadi)
-  async function transcode(file, total) {
+  // Videoni siqadi (video oxirigacha ijro etib qayta yozadi).
+  // Oddiy (chat): 640px, ~400 kbps. hq (hikoyalar): 960px, 30 kadr/s, bitreyt video uzunligiga qarab 0.9-2.8 Mbps (~14 MB gacha)
+  async function transcode(file, total, hq) {
     const url = URL.createObjectURL(file), v = document.createElement('video');
     v.src = url; v.playsInline = true; v.preload = 'auto';
     let ac = null, iv = null, guard = null;
     try {
       await new Promise(function (res, rej) { v.onloadeddata = res; v.onerror = function () { rej(new Error(T('Video ochilmadi', 'Не удалось открыть видео'))); }; });
-      const k = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight));
+      const k = Math.min(1, (hq ? 960 : 640) / Math.max(v.videoWidth, v.videoHeight));
+      const fps = hq ? 30 : 24;
+      const vbr = hq ? Math.round(Math.max(900000, Math.min(2800000, 14 * 8e6 / Math.max(total, 1)))) : 400000;
       const cv = document.createElement('canvas');
       cv.width = Math.max(2, Math.round(v.videoWidth * k / 2) * 2); cv.height = Math.max(2, Math.round(v.videoHeight * k / 2) * 2);
       const cx = cv.getContext('2d');
-      const stream = cv.captureStream(24);
+      const stream = cv.captureStream(fps);
       try {
         ac = new (window.AudioContext || window.webkitAudioContext)();
         const dst = ac.createMediaStreamDestination();
@@ -11146,7 +11149,7 @@
         if (ac.state === 'suspended') await ac.resume();
       } catch (_) {}
       const mt = ['video/webm;codecs=vp8,opus', 'video/webm'].find(function (t) { return MediaRecorder.isTypeSupported(t); }) || '';
-      const rc = new MediaRecorder(stream, mt ? { mimeType: mt, videoBitsPerSecond: 400000, audioBitsPerSecond: 32000 } : { videoBitsPerSecond: 400000 });
+      const rc = new MediaRecorder(stream, mt ? { mimeType: mt, videoBitsPerSecond: vbr, audioBitsPerSecond: hq ? 64000 : 32000 } : { videoBitsPerSecond: vbr });
       const parts = [];
       rc.ondataavailable = function (e) { if (e.data && e.data.size) parts.push(e.data); };
       const done = new Promise(function (res) { rc.onstop = res; });
@@ -11156,7 +11159,7 @@
       iv = setInterval(function () {
         cx.drawImage(v, 0, 0, cv.width, cv.height);
         toast(T('Video tayyorlanmoqda (ilovani yopmang): ', 'Подготовка видео (не закрывайте приложение): ') + mmss(v.currentTime) + ' / ' + mmss(total), 3000);
-      }, 42);
+      }, hq ? 33 : 42);
       try { await v.play(); } catch (_) { v.muted = true; await v.play(); }
       await done;
       return new Blob(parts, { type: 'video/webm' });
@@ -11193,7 +11196,7 @@
       if (meta.dur > MAX_VIDEO_SEC + 1) { alert(T('Video 3 daqiqadan uzun. Qisqaroq video tanlang.', 'Видео длиннее 3 минут. Выберите короче.')); return; }
       const dur = Math.max(1, Math.round(meta.dur));
       if (f.size <= 6 * 1024 * 1024 && /^video\/(mp4|webm)$/.test(f.type)) { await publishVideo(f, dur); return; }
-      const blob = await transcode(f, meta.dur);
+      const blob = await transcode(f, meta.dur, true); // hikoya: yuqori sifat
       if (!blob || blob.size < 1000) throw new Error(T("Video tayyorlanmadi", 'Видео не подготовлено'));
       toast('');
       await publishVideo(blob, dur);
@@ -11240,7 +11243,7 @@
       const P = (window.Capacitor && window.Capacitor.Plugins) || {};
       try { if (P.VoiceRecorder) { const h = await P.VoiceRecorder.hasAudioRecordingPermission(); if (!h || h.value === false) await P.VoiceRecorder.requestAudioRecordingPermission(); } } catch (_) {}
       try { if (P.Camera && P.Camera.requestPermissions) await P.Camera.requestPermissions({ permissions: ['camera'] }); } catch (_) {}
-      rs.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 640 }, frameRate: { ideal: 24 } } });
+      rs.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 }, frameRate: { ideal: 30 } } });
       const v = $('pgxRecV'); v.srcObject = rs.stream; v.muted = true; v.controls = false; v.loop = false; v.play().catch(function () {});
     } catch (e) { closeRecorder(); alert(T('Kamera ochilmadi: ', 'Камера не открылась: ') + ((e && (e.name || e.message)) || e)); }
   }
@@ -11256,7 +11259,7 @@
     if (!rs || !rs.stream) return;
     if (rs.rec && rs.rec.state === 'recording') { stopRecording(); return; }
     const mt = ['video/webm;codecs=vp8,opus', 'video/webm'].find(function (t) { return MediaRecorder.isTypeSupported(t); }) || '';
-    try { rs.rec = new MediaRecorder(rs.stream, mt ? { mimeType: mt, videoBitsPerSecond: 400000, audioBitsPerSecond: 32000 } : { videoBitsPerSecond: 400000 }); }
+    try { rs.rec = new MediaRecorder(rs.stream, mt ? { mimeType: mt, videoBitsPerSecond: 1200000, audioBitsPerSecond: 64000 } : { videoBitsPerSecond: 1200000 }); }
     catch (e) { alert(String(e)); return; }
     rs.chunks = []; rs.sec = 0;
     rs.rec.ondataavailable = function (e) { if (e.data && e.data.size) rs.chunks.push(e.data); };
