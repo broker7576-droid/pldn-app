@@ -200,41 +200,70 @@ jobs:
                           startActivity(i);
                       } catch (Exception e) { }
                   }
+                  void fetchApk(String url, java.io.File f, java.io.File marker) throws Exception {
+                      long have = 0;
+                      String prev = "";
+                      try {
+                          if (marker.exists()) {
+                              java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(marker));
+                              prev = br.readLine();
+                              br.close();
+                          }
+                      } catch (Exception e) { prev = ""; }
+                      if (f.exists() && url.equals(prev)) { have = f.length(); } else if (f.exists()) { f.delete(); }
+                      java.io.FileWriter fw = new java.io.FileWriter(marker);
+                      fw.write(url);
+                      fw.close();
+                      java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+                      c.setConnectTimeout(15000);
+                      c.setReadTimeout(30000);
+                      c.setInstanceFollowRedirects(true);
+                      if (have > 0) { c.setRequestProperty("Range", "bytes=" + have + "-"); }
+                      int code = c.getResponseCode();
+                      if (code == 416) { f.delete(); throw new Exception("HTTP 416"); }
+                      if (code != 200 && code != 206) { throw new Exception("HTTP " + code); }
+                      boolean resumed = (code == 206 && have > 0);
+                      long got = resumed ? have : 0;
+                      long total = c.getContentLengthLong();
+                      if (total > 0) { total = total + got; }
+                      java.io.InputStream in = c.getInputStream();
+                      java.io.FileOutputStream out = new java.io.FileOutputStream(f, resumed);
+                      byte[] buf = new byte[65536];
+                      int n;
+                      try {
+                          while ((n = in.read(buf)) > 0) {
+                              out.write(buf, 0, n);
+                              got += n;
+                              bytes = got;
+                              if (total > 0) { pct = (int) (got * 100 / total); }
+                          }
+                      } finally {
+                          try { out.close(); } catch (Exception e) { }
+                          try { in.close(); } catch (Exception e) { }
+                      }
+                      if (total > 0 && got < total) { throw new Exception("uzilib qoldi"); }
+                      if (got < 1000000) { f.delete(); throw new Exception("fayl kichik: " + got); }
+                  }
                   @android.webkit.JavascriptInterface
                   public void download(final String url) {
                       if ("downloading".equals(state)) { return; }
                       state = "downloading"; pct = 0; bytes = 0; err = "";
                       new Thread(new Runnable() {
                           public void run() {
-                              try {
-                                  java.io.File f = new java.io.File(getCacheDir(), "pldn-update.apk");
-                                  if (f.exists()) { f.delete(); }
-                                  java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
-                                  c.setConnectTimeout(15000);
-                                  c.setReadTimeout(30000);
-                                  c.setInstanceFollowRedirects(true);
-                                  int code = c.getResponseCode();
-                                  if (code != 200) { throw new Exception("HTTP " + code); }
-                                  long total = c.getContentLengthLong();
-                                  java.io.InputStream in = c.getInputStream();
-                                  java.io.FileOutputStream out = new java.io.FileOutputStream(f);
-                                  byte[] buf = new byte[65536];
-                                  long got = 0;
-                                  int n;
-                                  while ((n = in.read(buf)) > 0) {
-                                      out.write(buf, 0, n);
-                                      got += n;
-                                      bytes = got;
-                                      if (total > 0) { pct = (int) (got * 100 / total); }
+                              java.io.File f = new java.io.File(getCacheDir(), "pldn-update.apk");
+                              java.io.File marker = new java.io.File(getCacheDir(), "pldn-update.url");
+                              int tries = 0;
+                              while (true) {
+                                  try {
+                                      fetchApk(url, f, marker);
+                                      pct = 100;
+                                      state = "done";
+                                      break;
+                                  } catch (Exception e) {
+                                      tries++;
+                                      if (tries >= 4) { err = String.valueOf(e); state = "error"; break; }
+                                      try { Thread.sleep(1500); } catch (Exception x) { }
                                   }
-                                  out.close();
-                                  in.close();
-                                  if (got < 1000000) { throw new Exception("fayl kichik: " + got); }
-                                  pct = 100;
-                                  state = "done";
-                              } catch (Exception e) {
-                                  err = String.valueOf(e);
-                                  state = "error";
                               }
                           }
                       }).start();
