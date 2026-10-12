@@ -1,4 +1,4 @@
-<!-- VERSION: scroll-keep-v54 (2026-10-12) -->
+<!-- VERSION: bio-scrollmem-v55 (2026-10-12) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -2764,6 +2764,8 @@
         <span class="prefix">PLDN/-</span>
         <input type="text" id="editUsernameInput" data-i18n-placeholder="k136" placeholder="Foydalanuvchi nomi" maxlength="12" autocomplete="off">
       </div>
+      <textarea class="name-input" id="editBioInput" maxlength="200" placeholder="O'zingiz haqingizda yozing…" style="height:92px;padding:12px 14px;resize:none;margin-bottom:4px;font-family:inherit;line-height:1.35"></textarea>
+      <div id="editBioCount" style="text-align:right;font-size:12px;color:var(--text-secondary);margin-bottom:12px">0/200</div>
       <div class="slide-track" id="nameSlideTrack">
         <span class="slide-track-label" id="nameSlideTrackLabel"></span>
         <div class="slide-thumb pldn-thumb-text" id="nameSlideThumb">PLDN/-</div>
@@ -3122,6 +3124,10 @@
         <div class="profile-info-row">
           <span class="profile-info-label" data-i18n="k56">Foydalanuvchi nomi</span>
           <span class="profile-info-value" id="profileInfoUsername">—</span>
+        </div>
+        <div class="profile-info-row" id="profileBioRow">
+          <span class="profile-info-label" id="profileBioLabel">Haqida</span>
+          <span class="profile-info-value" id="profileInfoBio" style="white-space:pre-wrap;word-break:break-word;">—</span>
         </div>
         <div class="profile-info-actions">
           <div class="profile-action-box"></div>
@@ -4119,6 +4125,7 @@
     username: '',
     firstName: '',
     lastName: '',
+    bio: '',
     avatarSrc: null
   };
 
@@ -4818,6 +4825,8 @@
       userData.lastName = lastName;
 
       if (editing) {
+        const bioEl = document.getElementById('editBioInput');
+        if (bioEl) userData.bio = bioEl.value.replace(/\n{3,}/g, '\n\n').trim().slice(0, 200);
         const newUsername = document.getElementById('editUsernameInput').value.trim();
         if (newUsername.length >= 4) {
           userData.username = newUsername;
@@ -6691,6 +6700,10 @@
     document.getElementById('profileInfoFirstName').textContent = userData.firstName || '—';
     document.getElementById('profileInfoLastName').textContent = userData.lastName || '—';
     document.getElementById('profileInfoUsername').textContent = 'PLDN/-' + (userData.username || '—');
+    const bioTxt = document.getElementById('profileInfoBio');
+    if (bioTxt) bioTxt.textContent = userData.bio || '—';
+    const bioLab = document.getElementById('profileBioLabel');
+    if (bioLab) bioLab.textContent = typeof fbT === 'function' ? fbT('Haqida', 'О себе') : 'Haqida';
 
     const profileAvatarBig = document.getElementById('profileAvatarBig');
     const profileAvatarInitial = document.getElementById('profileAvatarInitial');
@@ -6705,6 +6718,10 @@
   }
 
   // ===== PROFIL EKRANI TUGMALARI =====
+  (function () {
+    const b = document.getElementById('editBioInput'), n = document.getElementById('editBioCount');
+    if (b && n) b.addEventListener('input', function () { n.textContent = b.value.length + '/200'; });
+  })();
   document.getElementById('editProfileBtn').addEventListener('click', () => {
     isEditMode = true;
 
@@ -6722,6 +6739,12 @@
 
     // Username maydonini ko'rsatamiz va to'ldiramiz
     document.getElementById('editUsernameInput').value = userData.username;
+    const bioIn = document.getElementById('editBioInput');
+    if (bioIn) {
+      bioIn.value = userData.bio || '';
+      bioIn.placeholder = typeof fbT === 'function' ? fbT("O'zingiz haqingizda yozing…", 'Расскажите о себе…') : bioIn.placeholder;
+      document.getElementById('editBioCount').textContent = bioIn.value.length + '/200';
+    }
 
     // Avvalgi rasmni ko'rsatamiz (agar mavjud bo'lsa)
     if (userData.avatarSrc) {
@@ -7412,6 +7435,7 @@
       userData.username = v.username || '';
       userData.firstName = v.firstName || '';
       userData.lastName = v.lastName || '';
+      userData.bio = typeof v.bio === 'string' ? v.bio : '';
       userData.avatarSrc = v.avatar || null;
     }
     updateProfileScreen();
@@ -7425,6 +7449,7 @@
     await fbDb.collection('users').doc(user.uid).set({
       firstName: userData.firstName,
       lastName: userData.lastName,
+      bio: String(userData.bio || '').slice(0, 200),
       avatar: avatar || null
     }, { merge: true });
   }
@@ -8554,7 +8579,54 @@
   // Ovozli xabar pufakchalari keshi: chat yangilanganda ijro to'xtab qolmasligi uchun
   const fbVoiceCache = new Map();
 
+  // ===== CHAT JOYINI ESLAB QOLISH: chatdan chiqib qaytsangiz, qolgan joyingizdan davom etadi =====
+  let fbScrollMem = {};
+  try { fbScrollMem = JSON.parse(localStorage.getItem('pldn_scroll_mem') || '{}') || {}; } catch (_) { fbScrollMem = {}; }
+  let fbScrReady = false, fbUserTouched = false;
+  function fbScrollSave() {
+    const c = fbCurrentChat;
+    if (!c || !fbScrReady || !messagesArea.clientHeight) return;
+    if (messagesArea.scrollHeight - messagesArea.scrollTop - messagesArea.clientHeight < 120) {
+      delete fbScrollMem[c.id]; // pastda edi: keyingi safar ham pastdan ochiladi
+    } else {
+      const top = messagesArea.getBoundingClientRect().top, kids = messagesArea.children;
+      for (let i = 0; i < kids.length; i++) {
+        const k = kids[i];
+        if (!k.dataset || !k.dataset.msgId) continue;
+        const r = k.getBoundingClientRect();
+        if (r.bottom > top + 4) { fbScrollMem[c.id] = { id: k.dataset.msgId, off: Math.round(r.top - top), t: Date.now() }; break; }
+      }
+    }
+    try {
+      const keys = Object.keys(fbScrollMem);
+      if (keys.length > 80) keys.sort(function (a, b) { return (fbScrollMem[a].t || 0) - (fbScrollMem[b].t || 0); }).slice(0, keys.length - 80).forEach(function (k) { delete fbScrollMem[k]; });
+      localStorage.setItem('pldn_scroll_mem', JSON.stringify(fbScrollMem));
+    } catch (_) {}
+  }
+  function fbPlaceAnchor(id, off) {
+    const el = messagesArea.querySelector('[data-msg-id="' + String(id).replace(/[^A-Za-z0-9_-]/g, '') + '"]');
+    if (!el) return false;
+    const y = el.getBoundingClientRect().top - messagesArea.getBoundingClientRect().top + messagesArea.scrollTop;
+    messagesArea.scrollTop = Math.max(0, y - (off || 0));
+    return true;
+  }
+  function fbReapplyAnchor(st, chat) {
+    // rasm/video yuklangach balandlik o'zgarishi mumkin: foydalanuvchi tegmaguncha joyni to'g'rilab turamiz
+    fbUserTouched = false;
+    [200, 600, 1400].forEach(function (ms) {
+      setTimeout(function () { if (fbCurrentChat === chat && !fbUserTouched) fbPlaceAnchor(st.id, st.off); }, ms);
+    });
+  }
+  (function () {
+    let tm = null;
+    messagesArea.addEventListener('scroll', function () { clearTimeout(tm); tm = setTimeout(fbScrollSave, 350); }, { passive: true });
+    messagesArea.addEventListener('touchstart', function () { fbUserTouched = true; }, { passive: true });
+    messagesArea.addEventListener('wheel', function () { fbUserTouched = true; }, { passive: true });
+  })();
+
   function fbLeaveChat() {
+    try { fbScrollSave(); } catch (_) {}
+    fbScrReady = false;
     if (fbMsgUnsub) { fbMsgUnsub(); fbMsgUnsub = null; }
     fbVoiceCache.forEach(b => { if (b._audio) b._audio.pause(); });
     fbVoiceCache.clear();
@@ -8603,6 +8675,7 @@
 
     // Ro'yxat har yangilanganda (emotsiya, tahrirlash, o'qildi...) qayta chiziladi: foydalanuvchi turgan joyi saqlanadi
     let fbScrLoaded = false, fbScrSize = 0, fbScrLast = '';
+    let fbRestore = fbScrollMem[chatId] || null; // oxirgi marta qolgan joy
     fbMsgUnsub = fbDb.collection('chats').doc(chatId).collection('messages').orderBy('createdAt')
       .onSnapshot(snap => {
         if (fbCurrentChat !== myChat) return;
@@ -8666,9 +8739,16 @@
         let lastMine = false;
         try { lastMine = !!lastDoc && lastDoc.data().from === me.uid; } catch (_) {}
         const isNewMsg = fbScrLoaded && (snap.size > fbScrSize || (lastId && lastId !== fbScrLast));
-        if (!fbScrLoaded || wasBottom || (isNewMsg && lastMine)) messagesArea.scrollTop = messagesArea.scrollHeight;
+        let restored = false;
+        if (fbRestore) {
+          if (fbPlaceAnchor(fbRestore.id, fbRestore.off)) { restored = true; fbReapplyAnchor(fbRestore, myChat); fbRestore = null; }
+          else if (!snap.metadata.fromCache) fbRestore = null; // xabar o'chirilgan: pastdan ochamiz
+        }
+        if (restored) { /* eslab qolingan joyga qaytarildi */ }
+        else if (!fbScrLoaded || wasBottom || (isNewMsg && lastMine)) messagesArea.scrollTop = messagesArea.scrollHeight;
         else messagesArea.scrollTop = keepTop;
         fbScrLoaded = true; fbScrSize = snap.size; fbScrLast = lastId;
+        fbScrReady = !fbRestore;
       }, err => console.error('Xabarlar xatosi', err));
   }
 
@@ -12663,6 +12743,48 @@
       return r;
     };
   }
+})();
+</script>
+<script>
+// ===== BOSHQA FOYDALANUVCHI PROFILI: chat sarlavhasi (rasm/ism) bosilganda ochiladi ===== VERSION: user-profile-v1
+(function () {
+  const T = function (uz, ru) { return fbT(uz, ru); };
+  let opened = false;
+  function mk(tag, css, txt) { const e = document.createElement(tag); if (css) e.style.cssText = css; if (txt != null) e.textContent = txt; return e; }
+  async function show() {
+    const c = fbCurrentChat;
+    if (!c || c.type !== 'dm' || !c.otherUid || opened) return;
+    opened = true;
+    const ov = mk('div', 'position:fixed;inset:0;z-index:99990;background:var(--bg-page,#fff);color:var(--text-primary,#000);display:flex;flex-direction:column;overflow:auto');
+    const bar = mk('div', 'display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 10px;border-bottom:1px solid rgba(128,128,128,.2)');
+    const back = mk('button', 'border:0;background:rgba(128,128,128,.15);width:42px;height:42px;border-radius:21px;font-size:26px;line-height:1;color:var(--text-primary,#000)', '‹');
+    bar.append(back, mk('div', 'font-size:20px;font-weight:700', T('Profil', 'Профиль')));
+    const body = mk('div', 'padding:28px 18px 40px;display:flex;flex-direction:column;align-items:center');
+    ov.append(bar, body);
+    back.onclick = function () { ov.remove(); opened = false; };
+    document.body.appendChild(ov);
+
+    let u = null, v = {};
+    try { u = await fbGetUser(c.otherUid); } catch (_) {}
+    try { const sn = await fbDb.collection('users').doc(c.otherUid).get(); v = sn.exists ? (sn.data() || {}) : {}; } catch (_) {}
+    const name = (u && u.name) || c.name || '';
+    const av = mk('div', 'width:120px;height:120px;border-radius:60px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#fff;font-size:44px;font-weight:600;background:' + (c.color || '#2AABEE'));
+    if (u && u.avatar) { const im = document.createElement('img'); im.src = u.avatar; im.style.cssText = 'width:100%;height:100%;object-fit:cover'; av.appendChild(im); }
+    else av.textContent = (typeof initials === 'function' ? initials(name) : name.slice(0, 1)) || '?';
+    body.appendChild(av);
+    body.appendChild(mk('div', 'font-size:24px;font-weight:700;margin-top:16px;text-align:center;word-break:break-word', name));
+    const un = (u && u.username) || v.username || '';
+    if (un) body.appendChild(mk('div', 'color:#2AABEE;font-size:16px;margin-top:4px', 'PLDN/-' + un));
+    const card = mk('div', 'width:100%;max-width:520px;margin-top:26px;background:var(--bg-card,#f2f2f7);border-radius:14px;padding:14px 16px');
+    card.appendChild(mk('div', 'font-size:13px;color:var(--text-secondary,#8e8e93);margin-bottom:4px', T('Haqida', 'О себе')));
+    const bio = typeof v.bio === 'string' ? v.bio.trim() : '';
+    card.appendChild(mk('div', 'font-size:16px;white-space:pre-wrap;word-break:break-word;line-height:1.4' + (bio ? '' : ';color:var(--text-secondary,#8e8e93)'), bio || T("Ma'lumot kiritilmagan", 'Информация не указана')));
+    body.appendChild(card);
+  }
+  const av = document.getElementById('chatDetailAvatar');
+  const info = document.querySelector('#chatDetailScreen .chat-detail-info');
+  if (av) { av.style.cursor = 'pointer'; av.addEventListener('click', show); }
+  if (info) { info.style.cursor = 'pointer'; info.addEventListener('click', show); }
 })();
 </script>
 <script>
