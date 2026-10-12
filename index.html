@@ -1,4 +1,4 @@
-<!-- VERSION: bio-scrollmem-v55 (2026-10-12) -->
+<!-- VERSION: profile-layout-v56 (2026-10-12) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -1865,6 +1865,11 @@
     margin-bottom: 30px;
   }
 
+  /* Ichidagi bloklar qisqarib kesilmasin: sig'masa ekran o'zi aylantiriladi */
+  .profile-body > * { flex-shrink: 0; }
+  /* "Tahrirlash" tugmasi pastga qadalgan, qolgani aylantiriladi */
+  .profile-edit-bar { flex-shrink: 0; width: 100%; padding: 10px 24px calc(12px + env(safe-area-inset-bottom, 0px)); background: var(--bg-page); }
+  .profile-edit-bar .edit-profile-btn { margin-top: 0; }
   .profile-info-box {
     width: 100%;
     background: var(--bg-card-alt);
@@ -3136,6 +3141,8 @@
         </div>
       </div>
 
+    </div>
+    <div class="profile-edit-bar">
       <button class="edit-profile-btn" id="editProfileBtn" data-i18n="k57">Profilni tahrirlash</button>
     </div>
 
@@ -8500,7 +8507,7 @@
     if (fbUserCache[uid]) return fbUserCache[uid];
     const snap = await fbDb.collection('users').doc(uid).get();
     const v = snap.exists ? snap.data() : {};
-    const u = { uid: uid, name: fbDisplayName(v), realName: fbDisplayName(v), first: v.firstName || '', last: v.lastName || '', username: v.username || '', avatar: (v.privacy && v.privacy.avatar === 'none') ? null : fbSafeAvatar(v.avatar), color: fbColorFor(uid) };
+    const u = { uid: uid, name: fbDisplayName(v), realName: fbDisplayName(v), first: v.firstName || '', last: v.lastName || '', username: v.username || '', bio: typeof v.bio === 'string' ? v.bio : '', avatar: (v.privacy && v.privacy.avatar === 'none') ? null : fbSafeAvatar(v.avatar), color: fbColorFor(uid) };
     if (typeof pldnApplyAlias === 'function') pldnApplyAlias(u);
     if (window.pldnBlockMask) window.pldnBlockMask(u);
     fbUserCache[uid] = u;
@@ -10548,8 +10555,11 @@
         '<div class="profile-info-row"><span class="profile-info-label" id="pgxCtL1"></span><span class="profile-info-value" id="pgxCtV1"></span><input class="pgx-ct-input" id="pgxCtI1" maxlength="30" style="display:none;" autocomplete="off"></div>' +
         '<div class="profile-info-row"><span class="profile-info-label" id="pgxCtL2"></span><span class="profile-info-value" id="pgxCtV2"></span><input class="pgx-ct-input" id="pgxCtI2" maxlength="30" style="display:none;" autocomplete="off"></div>' +
         '<div class="profile-info-row"><span class="profile-info-label" id="pgxCtL3"></span><span class="profile-info-value" id="pgxCtV3"></span></div>' +
+        '<div class="profile-info-row"><span class="profile-info-label" id="pgxCtL4"></span><span class="profile-info-value" id="pgxCtV4" style="white-space:pre-wrap;word-break:break-word;"></span></div>' +
         '<div class="profile-info-actions"><div class="profile-action-box"></div><div class="profile-action-box"></div><div class="profile-action-box"></div></div>' +
       '</div>' +
+    '</div>' +
+    '<div class="profile-edit-bar" id="pgxCtBar">' +
       '<div class="pgx-ct-note" id="pgxCtNote" style="display:none;"></div>' +
       '<button class="edit-profile-btn" id="pgxCtEdit"></button>' +
       '<div class="pgx-ct-btns" id="pgxCtBtns" style="display:none;"><button class="edit-profile-btn pgx-ct-cancel" id="pgxCtCancel"></button><button class="edit-profile-btn" id="pgxCtSave"></button></div>' +
@@ -10624,6 +10634,8 @@
     $('pgxCtV1').textContent = first || '—';
     $('pgxCtV2').textContent = last || '—';
     $('pgxCtV3').textContent = 'PLDN/-' + (u.username || '');
+    $('pgxCtL4').textContent = T('Haqida', 'О себе');
+    $('pgxCtV4').textContent = (!u.locked && u.bio) ? u.bio : '—';
     $('pgxCtI1').value = first; $('pgxCtI2').value = last;
     $('pgxCtEdit').textContent = T("O'zgartirish", 'Изменить');
     $('pgxCtCancel').textContent = T('Bekor qilish', 'Отмена');
@@ -10642,6 +10654,15 @@
     $('pgxCtNote').style.display = on ? '' : 'none';
     if (on) { setExpanded(false); setTimeout(function () { $('pgxCtI1').focus(); $('pgxCtI1').scrollIntoView({ block: 'center' }); }, 150); }
   }
+  function freshBio(uid, u) {
+    // Haqida matni o'zgargan bo'lishi mumkin: serverdan yangisini olamiz
+    fbDb.collection('users').doc(uid).get().then(function (sn) {
+      const v = sn.exists ? (sn.data() || {}) : {};
+      const b = typeof v.bio === 'string' ? v.bio : '';
+      if (u) u.bio = b;
+      if (ctUid === uid && $('pgxCtV4')) $('pgxCtV4').textContent = (u && u.locked) ? '—' : (b || '—');
+    }).catch(function () {});
+  }
   async function openContact() {
     const c = fbCurrentChat;
     if (!c || c.type !== 'dm' || !c.otherUid) return;
@@ -10653,6 +10674,7 @@
     render(u);
     goToScreen('pgxContactScreen');
     $('pgxCtBody').scrollTop = 0;
+    freshBio(ctUid, u);
   }
   window.pldnOpenContact = openContact;
   // Chatsiz ham profilni ochish (masalan, bloklanganlar ro'yxatidan)
@@ -10666,6 +10688,7 @@
     render(u);
     goToScreen('pgxContactScreen');
     $('pgxCtBody').scrollTop = 0;
+    freshBio(uid, u);
   };
   window.pldnContactRefresh = async function () {
     if (!ctUid) return;
@@ -12743,48 +12766,6 @@
       return r;
     };
   }
-})();
-</script>
-<script>
-// ===== BOSHQA FOYDALANUVCHI PROFILI: chat sarlavhasi (rasm/ism) bosilganda ochiladi ===== VERSION: user-profile-v1
-(function () {
-  const T = function (uz, ru) { return fbT(uz, ru); };
-  let opened = false;
-  function mk(tag, css, txt) { const e = document.createElement(tag); if (css) e.style.cssText = css; if (txt != null) e.textContent = txt; return e; }
-  async function show() {
-    const c = fbCurrentChat;
-    if (!c || c.type !== 'dm' || !c.otherUid || opened) return;
-    opened = true;
-    const ov = mk('div', 'position:fixed;inset:0;z-index:99990;background:var(--bg-page,#fff);color:var(--text-primary,#000);display:flex;flex-direction:column;overflow:auto');
-    const bar = mk('div', 'display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 10px;border-bottom:1px solid rgba(128,128,128,.2)');
-    const back = mk('button', 'border:0;background:rgba(128,128,128,.15);width:42px;height:42px;border-radius:21px;font-size:26px;line-height:1;color:var(--text-primary,#000)', '‹');
-    bar.append(back, mk('div', 'font-size:20px;font-weight:700', T('Profil', 'Профиль')));
-    const body = mk('div', 'padding:28px 18px 40px;display:flex;flex-direction:column;align-items:center');
-    ov.append(bar, body);
-    back.onclick = function () { ov.remove(); opened = false; };
-    document.body.appendChild(ov);
-
-    let u = null, v = {};
-    try { u = await fbGetUser(c.otherUid); } catch (_) {}
-    try { const sn = await fbDb.collection('users').doc(c.otherUid).get(); v = sn.exists ? (sn.data() || {}) : {}; } catch (_) {}
-    const name = (u && u.name) || c.name || '';
-    const av = mk('div', 'width:120px;height:120px;border-radius:60px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#fff;font-size:44px;font-weight:600;background:' + (c.color || '#2AABEE'));
-    if (u && u.avatar) { const im = document.createElement('img'); im.src = u.avatar; im.style.cssText = 'width:100%;height:100%;object-fit:cover'; av.appendChild(im); }
-    else av.textContent = (typeof initials === 'function' ? initials(name) : name.slice(0, 1)) || '?';
-    body.appendChild(av);
-    body.appendChild(mk('div', 'font-size:24px;font-weight:700;margin-top:16px;text-align:center;word-break:break-word', name));
-    const un = (u && u.username) || v.username || '';
-    if (un) body.appendChild(mk('div', 'color:#2AABEE;font-size:16px;margin-top:4px', 'PLDN/-' + un));
-    const card = mk('div', 'width:100%;max-width:520px;margin-top:26px;background:var(--bg-card,#f2f2f7);border-radius:14px;padding:14px 16px');
-    card.appendChild(mk('div', 'font-size:13px;color:var(--text-secondary,#8e8e93);margin-bottom:4px', T('Haqida', 'О себе')));
-    const bio = typeof v.bio === 'string' ? v.bio.trim() : '';
-    card.appendChild(mk('div', 'font-size:16px;white-space:pre-wrap;word-break:break-word;line-height:1.4' + (bio ? '' : ';color:var(--text-secondary,#8e8e93)'), bio || T("Ma'lumot kiritilmagan", 'Информация не указана')));
-    body.appendChild(card);
-  }
-  const av = document.getElementById('chatDetailAvatar');
-  const info = document.querySelector('#chatDetailScreen .chat-detail-info');
-  if (av) { av.style.cursor = 'pointer'; av.addEventListener('click', show); }
-  if (info) { info.style.cursor = 'pointer'; info.addEventListener('click', show); }
 })();
 </script>
 <script>
