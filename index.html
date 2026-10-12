@@ -1,4 +1,4 @@
-<!-- VERSION: back-all-v51 (2026-10-11) -->
+<!-- VERSION: call-record-v52 (2026-10-12) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -759,6 +759,22 @@
   .pldn-call-ov.mode-in .cb-red.cb-decline, .pldn-call-ov.mode-in .cb-green { display: flex; }
   .pldn-call-ov.mode-out .cb-end, .pldn-call-ov.mode-active .cb-end, .pldn-call-ov.mode-out .cb-ctl.cb-mute, .pldn-call-ov.mode-active .cb-ctl.cb-mute { display: flex; }
   .pldn-call-ov.is-video.mode-out .cb-cam, .pldn-call-ov.is-video.mode-active .cb-cam { display: flex; }
+  /* Qo'ng'iroqni yozib olish */
+  .pldn-call-more { position: absolute; top: calc(16px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 4; width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255,255,255,.18); color: #fff; font-size: 24px; display: none; align-items: center; justify-content: center; }
+  .pldn-call-ov.connected .pldn-call-more { display: flex; }
+  .pldn-call-ov.is-video .pldn-call-more { right: 122px; }
+  .pldn-rec-menu { position: absolute; top: calc(66px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 5; display: none; background: #fff; color: #111; border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.4); overflow: hidden; min-width: 210px; }
+  .pldn-call-ov.is-video .pldn-rec-menu { right: 122px; }
+  .pldn-rec-menu.open { display: block; }
+  .pldn-rec-menu div { padding: 14px 18px; font-size: 16px; }
+  .pldn-rec-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; display: none; background: #fff; color: #111; border-radius: 18px 18px 0 0; padding: 16px 16px calc(18px + env(safe-area-inset-bottom, 0px)); }
+  .pldn-rec-sheet.open { display: block; }
+  .pldn-rec-sheet h4 { margin: 0 0 4px; font-size: 17px; }
+  .pldn-rec-sheet p { margin: 0 0 12px; font-size: 13px; color: #6b7782; }
+  .pldn-rec-sheet button { display: flex; width: 100%; justify-content: space-between; align-items: center; border: 0; background: #eef3f8; border-radius: 12px; padding: 13px 16px; margin-bottom: 8px; font-size: 16px; color: #111; }
+  .pldn-rec-sheet button small { color: #6b7782; font-size: 13px; }
+  .pldn-rec-badge { position: absolute; top: calc(92px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 4; display: none; padding: 4px 12px; border-radius: 14px; background: rgba(200,30,30,.88); color: #fff; font-size: 13px; white-space: nowrap; text-align: center; }
+  .pldn-rec-badge.show { display: block; }
 
   /* ===== BILDIRISHNOMALAR PANELI ===== */
   .header-bell { position: relative; background: none; border: 0; font-size: 22px; line-height: 1; padding: 6px 8px; cursor: pointer; }
@@ -3266,6 +3282,11 @@
           <span class="settings-label" id="createChannelLabel">Kanal yaratish</span>
           <span class="settings-arrow">›</span>
         </div>
+        <div class="settings-item" id="pldnSavedVideosRow">
+          <span class="settings-icon">🎞</span>
+          <span class="settings-label" id="pldnSavedVideosLabel">Saqlangan videolar</span>
+          <span class="settings-arrow">›</span>
+        </div>
       </div>
 
       <div class="pldn-code-title-row">
@@ -3329,6 +3350,24 @@
     </div>
 
     <div class="settings-body" id="pldnCodeHistoryList"></div>
+
+  </div>
+
+  <!-- ============ SAQLANGAN VIDEOLAR (qo'ng'iroq yozuvlari) ============ -->
+  <div class="screen" id="pldnSavedVideosScreen">
+
+    <div class="chat-detail-header">
+      <button class="chat-back-btn" id="pldnSavedVideosBackBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+      </button>
+      <div class="chat-detail-info">
+        <div class="chat-detail-name" id="pldnSavedVideosTitle">Saqlangan videolar</div>
+      </div>
+    </div>
+
+    <div class="settings-body" id="pldnSavedVideosList"></div>
 
   </div>
 
@@ -3672,6 +3711,10 @@
     <button class="cb cb-green" id="pldnCallAccept">📞</button>
     <button class="cb cb-red cb-end" id="pldnCallEnd">📵</button>
   </div>
+  <button class="pldn-call-more" id="pldnCallMore">⋮</button>
+  <div class="pldn-rec-menu" id="pldnRecMenu"><div id="pldnRecMenuItem">🔴 Zapis</div></div>
+  <div class="pldn-rec-badge" id="pldnRecBadge"></div>
+  <div class="pldn-rec-sheet" id="pldnRecSheet"></div>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -9100,8 +9143,84 @@
 </script>
 
 <script>
+// ===== QO'NG'IROQ YOZUVLARI OMBORI (IndexedDB, bo'lak-bo'lak) ===== VERSION: rec-store-v1
+(function () {
+  let dbp = null;
+  function open() {
+    if (dbp) return dbp;
+    dbp = new Promise(function (res, rej) {
+      const r = indexedDB.open('pldn-rec', 1);
+      r.onupgradeneeded = function () {
+        const d = r.result;
+        d.createObjectStore('meta', { keyPath: 'id' });
+        d.createObjectStore('chunks', { keyPath: 'k' }).createIndex('rec', 'rec');
+      };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error); };
+    });
+    return dbp;
+  }
+  const reqP = function (r) { return new Promise(function (res, rej) { r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); };
+  const txDone = function (t) { return new Promise(function (res, rej) { t.oncomplete = res; t.onerror = t.onabort = function () { rej(t.error); }; }); };
+  const S = {
+    async begin(meta) { const d = await open(); const t = d.transaction('meta', 'readwrite'); t.objectStore('meta').put(meta); await txDone(t); },
+    async chunk(id, n, blob) {
+      const d = await open(); const t = d.transaction('chunks', 'readwrite');
+      t.objectStore('chunks').put({ k: id + ':' + String(n).padStart(7, '0'), rec: id, n: n, b: blob });
+      await txDone(t);
+    },
+    async finish(id, patch) {
+      const d = await open();
+      const meta = await reqP(d.transaction('meta').objectStore('meta').get(id));
+      if (!meta) return null;
+      const chunks = await reqP(d.transaction('chunks').objectStore('chunks').index('rec').getAll(id));
+      let size = 0; chunks.forEach(function (x) { size += x.b.size; });
+      Object.assign(meta, patch || {}, { status: 'done', size: size, parts: chunks.length });
+      const t = d.transaction('meta', 'readwrite'); t.objectStore('meta').put(meta); await txDone(t);
+      return meta;
+    },
+    async list() {
+      const d = await open();
+      const all = await reqP(d.transaction('meta').objectStore('meta').getAll());
+      return all.filter(function (m) { return m.status === 'done'; }).sort(function (a, b) { return b.startedAt - a.startedAt; });
+    },
+    // Hamma bo'laklar bitta Blob bo'lib birlashadi (xotiraga nusxalanmaydi)
+    async blob(id) {
+      const d = await open();
+      const meta = await reqP(d.transaction('meta').objectStore('meta').get(id));
+      if (!meta) return null;
+      const chunks = await reqP(d.transaction('chunks').objectStore('chunks').index('rec').getAll(id));
+      chunks.sort(function (a, b) { return a.n - b.n; });
+      return new Blob(chunks.map(function (x) { return x.b; }), { type: meta.mime || 'video/webm' });
+    },
+    async drop(id) {
+      const d = await open();
+      const keys = await reqP(d.transaction('chunks').objectStore('chunks').index('rec').getAllKeys(IDBKeyRange.only(id)));
+      const t = d.transaction(['meta', 'chunks'], 'readwrite');
+      t.objectStore('meta').delete(id);
+      keys.forEach(function (k) { t.objectStore('chunks').delete(k); });
+      await txDone(t);
+    },
+    // Ilova zapis paytida yopilib qolgan bo'lsa: yozilgan qismini saqlab qo'yadi
+    async recover() {
+      const d = await open();
+      const all = await reqP(d.transaction('meta').objectStore('meta').getAll());
+      for (let i = 0; i < all.length; i++) {
+        const m = all[i];
+        if (m.status !== 'recording') continue;
+        const n = await reqP(d.transaction('chunks').objectStore('chunks').index('rec').count(IDBKeyRange.only(m.id)));
+        if (!n) { await S.drop(m.id); continue; }
+        await S.finish(m.id, { dur: n, recovered: true });
+      }
+    }
+  };
+  window.PldnRecStore = S;
+  setTimeout(function () { S.recover().catch(function () {}); }, 2500);
+})();
+</script>
+<script>
 // ===== QO'NG'IROQLAR (WebRTC + Firestore signal) =====
-// VERSION: firebase-calls-v15
+// VERSION: firebase-calls-v16 (zapis bilan)
 (function () {
   const ICE = { iceServers: [
     { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
@@ -9159,6 +9278,7 @@
   function hideUi() {
     const ov = $('pldnCallOv');
     ov.classList.remove('open', 'connected', 'is-video');
+    ['pldnRecBadge', 'pldnRecMenu', 'pldnRecSheet'].forEach(function (id) { $(id).classList.remove('show', 'open'); });
     setMode(null);
     $('pldnCallRemote').srcObject = null;
     $('pldnCallLocal').srcObject = null;
@@ -9182,7 +9302,7 @@
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('getUserMedia mavjud emas');
     return navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true },
-      video: video ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } : false
+      video: video ? { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24, max: 30 } } : false
     });
   }
   function errText(e) {
@@ -9268,6 +9388,7 @@
   function finish(c, msg, writeEnd) {
     if (!c || c.ended) return;
     c.ended = true;
+    if (c.rec) { try { recStop(c); } catch (e) { console.error('zapis', e); } }
     if (c.role === 'caller') { try { logCall(c); } catch (e) { console.error('logCall', e); } }
     if (writeEnd && c.ref) c.ref.update({ status: 'ended' }).catch(function () {});
     if (c.timeout) clearTimeout(c.timeout);
@@ -9285,6 +9406,8 @@
 
   function onCallDoc(c, d) {
     if (c.ended) return;
+    const pr = !!(d.rec && d.rec[c.peer]);
+    if (pr !== !!c.peerRec) { c.peerRec = pr; recUi(); }
     if (c.role === 'caller' && d.answer && c.pc && !c.pc.currentRemoteDescription && !c.settingRemote) {
       c.settingRemote = true;
       c.pc.setRemoteDescription(new RTCSessionDescription(d.answer)).then(function () { flushCands(c); }).catch(function (e) { console.error(e); });
@@ -9396,6 +9519,172 @@
     finish(c, null, false);
   }
 
+  // ----- QO'NG'IROQNI YOZIB OLISH (qo'lda): ⋮ -> Zapis ----- VERSION: rec-v1
+  const RQ = {
+    '360': { s: 360, vb: 600000, fps: 24, gb: '0.3' },
+    '480': { s: 480, vb: 1000000, fps: 24, gb: '0.5' },
+    '720': { s: 720, vb: 2000000, fps: 30, gb: '0.9' }
+  };
+  const ABR = 64000;
+  function recToast(msg, ms) {
+    const t = document.createElement('div');
+    t.style.cssText = 'position:fixed;left:50%;bottom:120px;transform:translateX(-50%);max-width:86%;text-align:center;background:rgba(0,0,0,.85);color:#fff;padding:10px 18px;border-radius:18px;z-index:99999;font-size:15px';
+    t.textContent = msg; document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, ms || 3000);
+  }
+  function mmss(sec) { return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); }
+  async function freeMB() {
+    try { const e = await navigator.storage.estimate(); return Math.round((e.quota - e.usage) / 1048576); } catch (_) { return null; }
+  }
+  function recUi() {
+    const c = call, r = c && c.rec, parts = [];
+    if (r) parts.push('🔴 ' + T('Zapis ', 'Запись ') + mmss(Math.floor((Date.now() - r.t0) / 1000)));
+    if (c && c.peerRec) parts.push('🔴 ' + T('Suhbatdosh zapis qilmoqda', 'Собеседник записывает'));
+    const b = $('pldnRecBadge');
+    b.textContent = parts.join('  ');
+    b.classList.toggle('show', parts.length > 0);
+    $('pldnRecMenuItem').textContent = r ? '⏹ ' + T("Zapisni to'xtatish", 'Остановить запись') : '🔴 ' + T('Zapis', 'Запись');
+  }
+  async function recAsk() {
+    const c = call;
+    if (!c || !c.connected || c.rec) return;
+    if (c.type !== 'video') { recStart(c, null); return; }
+    const free = await freeMB();
+    const sh = $('pldnRecSheet');
+    sh.innerHTML = '';
+    const h = document.createElement('h4'); h.textContent = T('Zapis sifati', 'Качество записи');
+    const p = document.createElement('p');
+    p.textContent = T('Suhbatdosh ham zapis boshlanganini ko\'radi.', 'Собеседник увидит, что запись идёт.') +
+      (free != null ? ' ' + T("Bo'sh joy: ", 'Свободно: ') + (free >= 1024 ? (free / 1024).toFixed(1) + ' GB' : free + ' MB') : '');
+    sh.appendChild(h); sh.appendChild(p);
+    Object.keys(RQ).forEach(function (k) {
+      const o = RQ[k], b = document.createElement('button');
+      const a = document.createElement('span'); a.textContent = k + 'p' + (k === '720' ? ' HD' : '');
+      const sm = document.createElement('small'); sm.textContent = '≈ ' + o.gb + ' GB / ' + T('soat', 'час');
+      b.appendChild(a); b.appendChild(sm);
+      b.onclick = function () { sh.classList.remove('open'); recStart(c, k); };
+      sh.appendChild(b);
+    });
+    sh.classList.add('open');
+  }
+  async function recStart(c, qk) {
+    if (!c || c.rec || c.ended || !c.connected) return;
+    const S = window.PldnRecStore;
+    if (!S || typeof MediaRecorder === 'undefined') { alert(T("Bu qurilmada zapis ishlamaydi", 'Запись не поддерживается на этом устройстве')); return; }
+    const video = c.type === 'video', q = video ? RQ[qk] : null;
+    const free = await freeMB();
+    if (free != null && free < 150) { alert(T("Xotirada joy yetarli emas (" + free + ' MB)', 'Недостаточно места (' + free + ' MB)')); return; }
+    const r = c.rec = { t0: Date.now(), n: 0, chain: Promise.resolve(), id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5) };
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      r.ac = new AC();
+      if (r.ac.state === 'suspended') await r.ac.resume();
+      const dst = r.ac.createMediaStreamDestination();
+      const mix = function (stream) {
+        const tr = stream && stream.getAudioTracks ? stream.getAudioTracks() : [];
+        if (tr.length) r.ac.createMediaStreamSource(new MediaStream(tr)).connect(dst);
+      };
+      mix(c.stream); mix(c.remote);
+      let rs, mt;
+      if (video) {
+        const W = q.s, H = Math.round(q.s * 16 / 9 / 2) * 2;
+        const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+        const cx = cv.getContext('2d');
+        const rv = $('pldnCallRemote'), lv = $('pldnCallLocal');
+        const cover = function (v, x, y, w, h) {
+          const vw = v.videoWidth, vh = v.videoHeight;
+          if (!vw || !vh) return;
+          const sr = vw / vh, dr = w / h;
+          let sw = vw, sh = vh, sx = 0, sy = 0;
+          if (sr > dr) { sw = vh * dr; sx = (vw - sw) / 2; } else { sh = vw / dr; sy = (vh - sh) / 2; }
+          cx.drawImage(v, sx, sy, sw, sh, x, y, w, h);
+        };
+        r.pump = setInterval(function () {
+          cx.fillStyle = '#0f1822'; cx.fillRect(0, 0, W, H);
+          cover(rv, 0, 0, W, H);
+          const lt = c.stream && c.stream.getVideoTracks()[0];
+          if (lv.videoWidth && lt && lt.enabled) {
+            const m = Math.round(W * 0.03), pw = Math.round(W * 0.28), ph = Math.round(pw * 1.42);
+            cx.save(); cx.beginPath();
+            if (cx.roundRect) cx.roundRect(W - pw - m, m, pw, ph, 10); else cx.rect(W - pw - m, m, pw, ph);
+            cx.clip(); cover(lv, W - pw - m, m, pw, ph); cx.restore();
+          }
+        }, Math.round(1000 / q.fps));
+        rs = cv.captureStream(q.fps);
+        dst.stream.getAudioTracks().forEach(function (t) { rs.addTrack(t); });
+        mt = ['video/webm;codecs=vp8,opus', 'video/webm'].find(function (t) { return MediaRecorder.isTypeSupported(t); }) || '';
+      } else {
+        rs = dst.stream;
+        mt = ['audio/webm;codecs=opus', 'audio/webm'].find(function (t) { return MediaRecorder.isTypeSupported(t); }) || '';
+      }
+      r.rs = rs;
+      const opt = video ? { videoBitsPerSecond: q.vb, audioBitsPerSecond: ABR } : { audioBitsPerSecond: ABR };
+      if (mt) opt.mimeType = mt;
+      r.rc = new MediaRecorder(rs, opt);
+      await S.begin({ id: r.id, status: 'recording', kind: video ? 'video' : 'audio', q: video ? qk : '', peer: $('pldnCallName').textContent || '', chatId: c.chatId || '', startedAt: r.t0, mime: mt || (video ? 'video/webm' : 'audio/webm'), dur: 0, size: 0 });
+      r.rc.ondataavailable = function (e) {
+        if (!e.data || !e.data.size) return;
+        const n = r.n++;
+        r.chain = r.chain.then(function () { return S.chunk(r.id, n, e.data); }).catch(function (err) {
+          console.error('zapis bo\'lagi', err);
+          if (!r.warned) { r.warned = true; recToast(T("Saqlashda xato (xotira to'lgan bo'lishi mumkin). Zapis to'xtatildi.", 'Ошибка сохранения (возможно, нет места). Запись остановлена.'), 5000); try { recStop(c); } catch (_) {} }
+        });
+      };
+      r.rc.start(1000);
+      r.tick = setInterval(recUi, 1000);
+      r.space = setInterval(function () {
+        freeMB().then(function (f) { if (f != null && f < 60 && c.rec === r) { recToast(T("Xotira to'lyapti: zapis to'xtatildi", 'Заканчивается место: запись остановлена'), 5000); recStop(c); } });
+      }, 30000);
+      if (c.ref) c.ref.update({ ['rec.' + c.me]: true }).catch(function () {});
+      recUi();
+      recToast('🔴 ' + T('Zapis boshlandi', 'Запись началась'), 2200);
+    } catch (e) {
+      console.error('Zapis boshlanmadi', e);
+      c.rec = null;
+      try { clearInterval(r.pump); clearInterval(r.tick); clearInterval(r.space); } catch (_) {}
+      try { if (r.ac) r.ac.close(); } catch (_) {}
+      try { S.drop(r.id).catch(function () {}); } catch (_) {}
+      recUi();
+      alert(T("Zapis boshlanmadi: ", 'Не удалось начать запись: ') + errText(e));
+    }
+  }
+  async function recStop(c) {
+    const r = c && c.rec;
+    if (!r) return;
+    c.rec = null;
+    clearInterval(r.pump); clearInterval(r.tick); clearInterval(r.space);
+    await new Promise(function (res) {
+      if (!r.rc || r.rc.state === 'inactive') { res(); return; }
+      r.rc.onstop = res;
+      try { r.rc.stop(); } catch (_) { res(); }
+    });
+    try { await r.chain; } catch (_) {}
+    try { r.ac.close(); } catch (_) {}
+    try { r.rs.getVideoTracks().forEach(function (t) { t.stop(); }); } catch (_) {}
+    const dur = Math.max(1, Math.round((Date.now() - r.t0) / 1000));
+    try {
+      await window.PldnRecStore.finish(r.id, { dur: dur });
+      recToast('✅ ' + T('Zapis saqlandi: PLDN sozlamalari → Saqlangan videolar', 'Запись сохранена: Настройки PLDN → Сохранённые видео'), 4500);
+    } catch (e) { console.error('Zapis saqlanmadi', e); recToast(T("Zapisni saqlab bo'lmadi", 'Не удалось сохранить запись'), 4000); }
+    try { if (c.ref) c.ref.update({ ['rec.' + c.me]: false }).catch(function () {}); } catch (_) {}
+    recUi();
+  }
+  $('pldnCallMore').addEventListener('click', function (e) {
+    e.stopPropagation(); recUi();
+    $('pldnRecSheet').classList.remove('open');
+    $('pldnRecMenu').classList.toggle('open');
+  });
+  $('pldnRecMenuItem').addEventListener('click', function (e) {
+    e.stopPropagation();
+    $('pldnRecMenu').classList.remove('open');
+    const c = call; if (!c) return;
+    if (c.rec) recStop(c); else recAsk();
+  });
+  $('pldnCallOv').addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('#pldnRecMenu, #pldnRecSheet, #pldnCallMore')) return;
+    $('pldnRecMenu').classList.remove('open'); $('pldnRecSheet').classList.remove('open');
+  });
+
   // ----- boshqaruv tugmalari -----
   $('pldnCallAccept').addEventListener('click', accept);
   $('pldnCallDecline').addEventListener('click', decline);
@@ -9437,6 +9726,149 @@
       });
     }, function (e) { console.error("Qo'ng'iroq tinglash xatosi", e); });
   };
+})();
+</script>
+<script>
+// ===== SAQLANGAN VIDEOLAR (qo'ng'iroq yozuvlari): ro'yxat, ijro, galereyaga yuklab olish, o'chirish ===== VERSION: rec-ui-v1
+(function () {
+  const $ = function (id) { return document.getElementById(id); };
+  const T = function (uz, ru) { return fbT(uz, ru); };
+  const S = function () { return window.PldnRecStore; };
+  let busy = false;
+  function mb(n) { return n >= 1073741824 ? (n / 1073741824).toFixed(2) + ' GB' : (n / 1048576).toFixed(1) + ' MB'; }
+  function mmss(sec) { sec = sec || 0; const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0'); }
+  function dstr(ms) { const d = new Date(ms), p = function (x) { return String(x).padStart(2, '0'); }; return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }
+  function toast(msg, ms) {
+    const t = document.createElement('div');
+    t.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);max-width:86%;text-align:center;background:rgba(0,0,0,.85);color:#fff;padding:10px 18px;border-radius:18px;z-index:99999;font-size:15px';
+    t.textContent = msg; document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, ms || 2600);
+    return t;
+  }
+  function btn(txt, bg) {
+    const b = document.createElement('button');
+    b.textContent = txt;
+    b.style.cssText = 'border:0;border-radius:10px;padding:9px 14px;font-size:14px;color:' + (bg ? '#fff' : 'inherit') + ';background:' + (bg || 'rgba(128,128,128,.18)');
+    return b;
+  }
+  function b64(blob) {
+    return new Promise(function (res, rej) { const r = new FileReader(); r.onload = function () { res(String(r.result).split(',')[1]); }; r.onerror = function () { rej(r.error); }; r.readAsDataURL(blob); });
+  }
+
+  // ----- ijro -----
+  function play(m, blob) {
+    const url = URL.createObjectURL(blob);
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99994;background:#000;display:flex;align-items:center;justify-content:center;flex-direction:column';
+    const x = document.createElement('button');
+    x.textContent = '✕';
+    x.style.cssText = 'position:absolute;top:calc(12px + env(safe-area-inset-top,0px));left:12px;z-index:2;width:42px;height:42px;border:0;border-radius:21px;background:rgba(255,255,255,.2);color:#fff;font-size:20px';
+    const v = document.createElement(m.kind === 'audio' ? 'audio' : 'video');
+    v.src = url; v.controls = true; v.playsInline = true; v.autoplay = true;
+    v.style.cssText = m.kind === 'audio' ? 'width:92%' : 'max-width:100%;max-height:100%';
+    // MediaRecorder fayllarida davomiylik yozilmagan bo'ladi: brauzerga hisoblatib olamiz
+    v.addEventListener('loadedmetadata', function fix() {
+      v.removeEventListener('loadedmetadata', fix);
+      if (v.duration === Infinity || isNaN(v.duration)) {
+        v.currentTime = 1e101;
+        v.addEventListener('timeupdate', function back() { v.removeEventListener('timeupdate', back); v.currentTime = 0; v.play().catch(function () {}); });
+      }
+    });
+    x.onclick = function () { try { v.pause(); } catch (_) {} ov.remove(); URL.revokeObjectURL(url); };
+    if (m.kind === 'audio') { const ic = document.createElement('div'); ic.textContent = '🎙'; ic.style.cssText = 'font-size:72px;margin-bottom:24px'; ov.appendChild(ic); }
+    ov.appendChild(x); ov.appendChild(v); document.body.appendChild(ov);
+  }
+
+  // ----- galereyaga yuklab olish -----
+  async function save(m, b) {
+    if (busy) { toast(T('Boshqa fayl saqlanmoqda…', 'Сохраняется другой файл…')); return; }
+    busy = true;
+    const old = b.textContent;
+    try {
+      const blob = await S().blob(m.id);
+      if (!blob || !blob.size) throw new Error(T('Fayl topilmadi', 'Файл не найден'));
+      const safe = String(m.peer || '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 24);
+      const d = new Date(m.startedAt), p = function (x) { return String(x).padStart(2, '0'); };
+      const name = 'PLDN_' + (m.kind === 'audio' ? 'audio' : 'video') + '_' + (safe ? safe + '_' : '') + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + '.webm';
+      const mime = m.kind === 'audio' ? 'audio/webm' : 'video/webm';
+      const P = window.PldnSave;
+      let ok = false, where = '';
+      if (P) {
+        let began = false;
+        if (m.kind === 'audio' && typeof P.beginAudio !== 'undefined') { began = P.beginAudio(name, mime); where = 'Music/PLDN'; }
+        else { began = P.beginVideo(name, 'video/webm'); where = 'Movies/PLDN'; }
+        if (began) {
+          const SZ = 524288;
+          for (let o = 0; o < blob.size; o += SZ) {
+            if (!P.chunk(await b64(blob.slice(o, o + SZ)))) { P.end(); throw new Error(T("Faylga yozib bo'lmadi", 'Не удалось записать файл')); }
+            b.textContent = '⬇ ' + Math.min(100, Math.round((o + SZ) * 100 / blob.size)) + '%';
+          }
+          P.end(); ok = true;
+        }
+      }
+      if (!ok) {
+        const u = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+        toast(T('Yuklab olindi', 'Скачано'), 3000);
+      } else toast('✅ ' + T('Saqlandi: ', 'Сохранено: ') + where, 3500);
+    } catch (e) { console.error(e); alert(T("Saqlab bo'lmadi: ", 'Не удалось сохранить: ') + String((e && e.message) || e)); }
+    finally { b.textContent = old; busy = false; }
+  }
+
+  // ----- ro'yxat -----
+  async function render() {
+    const box = $('pldnSavedVideosList');
+    if (!box) return;
+    $('pldnSavedVideosTitle').textContent = T('Saqlangan videolar', 'Сохранённые видео');
+    box.innerHTML = '';
+    let items = [];
+    try { items = await S().list(); } catch (e) { console.error(e); }
+    const info = document.createElement('p');
+    info.className = 'logout-modal-text';
+    info.style.cssText = 'text-align:left;padding:0 6px;margin:6px 0 10px';
+    if (!items.length) {
+      info.textContent = T("Hozircha zapis yo'q. Qo'ng'iroq paytida tepadagi ⋮ → Zapis tugmasini bosing.", 'Записей пока нет. Во время звонка нажмите ⋮ → Запись.');
+      box.appendChild(info); return;
+    }
+    const total = items.reduce(function (a, m) { return a + (m.size || 0); }, 0);
+    info.textContent = items.length + ' · ' + mb(total);
+    box.appendChild(info);
+    items.forEach(function (m) {
+      const card = document.createElement('div');
+      card.className = 'settings-group';
+      card.style.cssText = 'padding:12px 14px;margin-bottom:10px';
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px';
+      const ic = document.createElement('span'); ic.style.fontSize = '28px'; ic.textContent = m.kind === 'audio' ? '🎙' : '🎥';
+      const mid = document.createElement('div'); mid.style.cssText = 'flex:1;min-width:0';
+      const nm = document.createElement('div'); nm.style.cssText = 'font-weight:600;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      nm.textContent = m.peer || T("Qo'ng'iroq", 'Звонок');
+      const sub = document.createElement('div'); sub.style.cssText = 'font-size:13px;opacity:.65;margin-top:2px';
+      sub.textContent = dstr(m.startedAt) + ' · ' + mmss(m.dur) + (m.q ? ' · ' + m.q + 'p' : '') + ' · ' + mb(m.size || 0) + (m.recovered ? ' · ' + T('tiklangan', 'восстановлено') : '');
+      mid.appendChild(nm); mid.appendChild(sub); row.appendChild(ic); row.appendChild(mid);
+      const acts = document.createElement('div'); acts.style.cssText = 'display:flex;gap:8px;margin-top:10px;flex-wrap:wrap';
+      const bp = btn('▶ ' + T('Ijro', 'Смотреть'), '#2AABEE');
+      const bd = btn('⬇ ' + T('Yuklab olish', 'Скачать'));
+      const bx = btn('🗑');
+      bp.onclick = async function () { try { const bl = await S().blob(m.id); if (bl) play(m, bl); } catch (e) { alert(String(e)); } };
+      bd.onclick = function () { save(m, bd); };
+      bx.onclick = async function () {
+        if (!(await pldnConfirm(T("Bu zapis o'chirilsinmi?", 'Удалить эту запись?')))) return;
+        try { await S().drop(m.id); } catch (e) { console.error(e); }
+        render();
+      };
+      acts.appendChild(bp); acts.appendChild(bd); acts.appendChild(bx);
+      card.appendChild(row); card.appendChild(acts); box.appendChild(card);
+    });
+  }
+
+  function init() {
+    const lab = $('pldnSavedVideosLabel'); if (lab) lab.textContent = T('Saqlangan videolar', 'Сохранённые видео');
+    $('pldnSavedVideosRow').addEventListener('click', function () { render(); goToScreen('pldnSavedVideosScreen'); });
+    $('pldnSavedVideosBackBtn').addEventListener('click', function () { goToScreen('pldnSettingsScreen'); });
+  }
+  init();
 })();
 </script>
 <script>
@@ -12234,7 +12666,9 @@
     // 1) alert / tasdiqlash oynalari
     const al = qa('.pldn-al-ov');
     if (al.length) { click(al[al.length - 1]); return true; }
-    // 2) qo'ng'iroq: tasodifan chiqib ketmaslik uchun e'tiborsiz (tugma bilan tugatiladi)
+    // 2) qo'ng'iroq: zapis menyusi/sifat tanlash yopiladi; boshqa holda tasodifan chiqib ketmaslik uchun e'tiborsiz
+    const rm = qa('#pldnRecMenu.open, #pldnRecSheet.open');
+    if (rm.length) { rm.forEach(function (x) { x.classList.remove('open'); }); return true; }
     if (q('#pldnCallOv.open')) return true;
     // 3) hikoya: pop-menyu, emotsiya, ko'rganlar, hikoya ko'rish oynasi
     if (typeof prevBack === 'function' && prevBack()) return true;
