@@ -1,4 +1,4 @@
-<!-- VERSION: update-retry-v53 (2026-10-12) -->
+<!-- VERSION: scroll-keep-v54 (2026-10-12) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -8601,9 +8601,13 @@
     if (fbCurrentChat !== myChat) return; // foydalanuvchi orqaga qaytib ketgan
     fbMarkRead(chatId);
 
+    // Ro'yxat har yangilanganda (emotsiya, tahrirlash, o'qildi...) qayta chiziladi: foydalanuvchi turgan joyi saqlanadi
+    let fbScrLoaded = false, fbScrSize = 0, fbScrLast = '';
     fbMsgUnsub = fbDb.collection('chats').doc(chatId).collection('messages').orderBy('createdAt')
       .onSnapshot(snap => {
         if (fbCurrentChat !== myChat) return;
+        const keepTop = messagesArea.scrollTop;
+        const wasBottom = !fbScrLoaded || (messagesArea.scrollHeight - messagesArea.scrollTop - messagesArea.clientHeight) < 120;
         messagesArea.innerHTML = '';
         let lastDayKey = '';
         snap.forEach(doc => {
@@ -8655,7 +8659,16 @@
         fbVoiceCache.forEach((vb, id) => {
           if (!liveIds.has(id)) { if (vb._audio) vb._audio.pause(); fbVoiceCache.delete(id); }
         });
-        messagesArea.scrollTop = messagesArea.scrollHeight;
+        // Pastga tushirish: birinchi ochilganda, foydalanuvchi allaqachon pastda bo'lsa, yoki o'zi yangi xabar yuborganda.
+        // Emotsiya, tahrirlash va boshqa o'zgarishlarda esa turgan joyida qoladi.
+        const lastDoc = snap.docs.length ? snap.docs[snap.docs.length - 1] : null;
+        const lastId = lastDoc ? lastDoc.id : '';
+        let lastMine = false;
+        try { lastMine = !!lastDoc && lastDoc.data().from === me.uid; } catch (_) {}
+        const isNewMsg = fbScrLoaded && (snap.size > fbScrSize || (lastId && lastId !== fbScrLast));
+        if (!fbScrLoaded || wasBottom || (isNewMsg && lastMine)) messagesArea.scrollTop = messagesArea.scrollHeight;
+        else messagesArea.scrollTop = keepTop;
+        fbScrLoaded = true; fbScrSize = snap.size; fbScrLast = lastId;
       }, err => console.error('Xabarlar xatosi', err));
   }
 
