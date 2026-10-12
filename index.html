@@ -1,4 +1,4 @@
-<!-- VERSION: story-quality-v57 (2026-10-12) -->
+<!-- VERSION: firebase-stickerpacks-v59 (2026-10-12) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -7663,12 +7663,19 @@
     if (!r) r = await tryFetch('https://ipapi.co/json/', function (j) { return j && !j.error ? join([j.city, j.country_name]) : ''; });
     return r;
   }
-  function pldnSecGet() { try { const a = JSON.parse(localStorage.getItem('pldn_sec_log') || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } }
-  function pldnSecSet(a) { try { localStorage.setItem('pldn_sec_log', JSON.stringify(a.slice(-100))); } catch (_) {} }
-  function pldnSecDelGet() { try { const a = JSON.parse(localStorage.getItem('pldn_sec_del') || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } }
+  // VERSION: security-fix-v58 — xavfsizlik xabarlari va parollar HAR BIR HISOB uchun alohida saqlanadi
+  function pldnUk(base) {
+    const u = (fbAuth && fbAuth.currentUser && fbAuth.currentUser.uid) || fbSelfUid || '';
+    return u ? base + '_' + u : '';
+  }
+  let pldnSecFlagged = []; // mening seansimdan keyin kirgan (xabar berilgan) qurilmalar seans ID'lari
+  function pldnSecGet() { const k = pldnUk('pldn_sec_log'); if (!k) return []; try { const a = JSON.parse(localStorage.getItem(k) || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } }
+  function pldnSecSet(a) { const k = pldnUk('pldn_sec_log'); if (!k) return; try { localStorage.setItem(k, JSON.stringify(a.slice(-100))); } catch (_) {} }
+  function pldnSecDelGet() { const k = pldnUk('pldn_sec_del'); if (!k) return []; try { const a = JSON.parse(localStorage.getItem(k) || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } }
   function pldnSecDel(id) {
     pldnSecSet(pldnSecGet().filter(x => x.id !== id));
-    try { localStorage.setItem('pldn_sec_del', JSON.stringify(pldnSecDelGet().concat(id).slice(-300))); } catch (_) {}
+    const k = pldnUk('pldn_sec_del'); if (!k) return;
+    try { localStorage.setItem(k, JSON.stringify(pldnSecDelGet().concat(id).slice(-300))); } catch (_) {}
   }
   function pldnSecUnseen() { return pldnSecGet().some(x => !x.seen); }
   function pldnSecMarkSeen() {
@@ -7678,6 +7685,7 @@
   // Faqat mening seansim ochilganidan KEYIN kirgan qurilmalar xabar bo'ladi
   function pldnSecIngest(items, ownMs) {
     if (!ownMs) return;
+    pldnSecFlagged = items.filter(function (it) { return it.created && it.created > ownMs; }).map(function (it) { return it.id; });
     const log = pldnSecGet();
     const gone = pldnSecDelGet();
     let ch = false;
@@ -7792,6 +7800,19 @@
     if (!me) return;
     try { await fbDb.collection('users').doc(me.uid).collection('sessions').doc(id).update({ revoked: true }); }
     catch (e) { console.error(e); alert(fbErrMsg(e)); }
+  }
+
+  // Parol almashtirilganda faqat xabar berilgan (gumonli) yangi qurilmalar seansi yakunlanadi
+  async function fbEndFlaggedSessions() {
+    const me = fbAuth && fbAuth.currentUser;
+    if (!me || !pldnSecFlagged.length) return 0;
+    const bt = fbDb.batch();
+    const col = fbDb.collection('users').doc(me.uid).collection('sessions');
+    pldnSecFlagged.forEach(id => bt.update(col.doc(id), { revoked: true }));
+    await bt.commit();
+    const n = pldnSecFlagged.length;
+    pldnSecFlagged = [];
+    return n;
   }
 
   async function fbEndAllOtherSessions() {
@@ -7925,9 +7946,13 @@
         }
       }
       pldnPwAdd(isPldn ? newP : '');
-      try { await fbEndAllOtherSessions(); } catch (_) {}
+      if (window.pldnAccSetPw) { try { window.pldnAccSetPw(me.uid, newP); } catch (_) {} }
+      let endedN = 0;
+      try { endedN = await fbEndFlaggedSessions(); } catch (_) {}
       fbChgOv.classList.remove('open');
-      alert(fbT("Parol almashtirildi. Boshqa qurilmalardagi seanslar yakunlandi.", 'Пароль изменён. Сеансы на других устройствах завершены.'));
+      alert(endedN
+        ? fbT("Parol almashtirildi. Xabar berilgan yangi qurilma(lar) seansi yakunlandi.", 'Пароль изменён. Сеанс(ы) нового устройства, о котором сообщалось, завершён(ы).')
+        : fbT("Parol almashtirildi.", 'Пароль изменён.'));
     } catch (e) {
       const c = (e && e.code) || '';
       if (c === 'auth/wrong-password' || c === 'auth/invalid-credential') fbChgMsg(fbT("Joriy parol noto'g'ri.", 'Текущий пароль неверный.'));
@@ -7938,11 +7963,12 @@
 
   // ===== PAROLLARIM (faqat shu qurilmada saqlanadi) =====
   // VERSION: firebase-passwords-v40
-  function pldnPwGet() { try { const a = JSON.parse(localStorage.getItem('pldn_pw_list') || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } }
+  function pldnPwGet() { const k = pldnUk('pldn_pw_list'); if (!k) return []; try { const a = JSON.parse(localStorage.getItem(k) || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } }
   function pldnPwAdd(pw) {
     const a = pldnPwGet();
     a.push({ pw: pw || '', ts: Date.now() }); // pw bo'sh bo'lsa: foydalanuvchi o'zi tanlagan parol, saqlanmaydi
-    try { localStorage.setItem('pldn_pw_list', JSON.stringify(a.slice(-200))); } catch (_) {}
+    const k = pldnUk('pldn_pw_list');
+    if (k) { try { localStorage.setItem(k, JSON.stringify(a.slice(-200))); } catch (_) {} }
     const sc = document.getElementById('myPasswordsScreen');
     if (sc && sc.classList.contains('active')) pldnPwRender();
   }
@@ -11566,7 +11592,9 @@
     '.message-bubble.sticker-bubble::before,.message-bubble.sticker-bubble::after{display:none!important}' +
     '.message-bubble.sticker-bubble img{width:150px;height:150px;max-height:none;object-fit:contain;border-radius:0;background:none}' +
     '#stkBd{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:99990}' +
-    '#stkPn{position:absolute;left:0;right:0;bottom:0;max-height:55%;overflow:auto;background:#fff;border-radius:18px 18px 0 0;padding:12px}' +
+    '#stkPn{position:absolute;left:0;right:0;bottom:0;height:62%;display:flex;flex-direction:column;overflow:hidden;background:#fff;border-radius:18px 18px 0 0;padding:12px;box-sizing:border-box}' +
+    '.stk-strip{display:flex;gap:8px;overflow-x:auto;flex:none;padding:2px 0 8px}.stk-chip{flex:none;width:46px;height:46px;border-radius:12px;border:2px solid transparent;display:flex;align-items:center;justify-content:center;background:#f6f7fa;box-sizing:border-box}.stk-chip.on{border-color:#2AABEE;background:#e8f5fd}' +
+    '.stk-head{display:flex;align-items:center;gap:10px;flex:none;padding:2px 2px 8px}.stk-body{flex:1;overflow-y:auto;min-height:0}' +
     '.stk-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}' +
     '.stk-cell{aspect-ratio:1;border-radius:12px;background:#f1f2f6;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;color:#2AABEE;-webkit-user-select:none;user-select:none}' +
     '.stk-cell img{width:100%;height:100%;object-fit:contain;pointer-events:none}.stk-add span{font-size:30px;line-height:1}.stk-add small{font-size:12px}' +
@@ -11578,7 +11606,6 @@
     '.stk-tools{width:min(86vw,420px);text-align:center;padding-bottom:20px}.stk-tools input{width:100%}.stk-tools small{color:#aaa;display:block;margin-top:4px}';
   document.head.appendChild(st);
 
-  let list = [], unsub = null, uid = null;
   const bd = el('div'); bd.id = 'stkBd';
   const pn = el('div'); pn.id = 'stkPn'; bd.appendChild(pn); document.body.appendChild(bd);
   bd.addEventListener('click', function (e) { if (e.target === bd) bd.style.display = 'none'; });
@@ -11595,46 +11622,283 @@
     try { await b.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
   }
 
-  function renderPanel() {
-    pn.innerHTML = '';
-    pn.appendChild(el('div', 'font-weight:700;padding:2px 4px 10px;color:#222;', T('Stikerlar', 'Стикеры')));
+  // ---------- papkalar (to'plamlar) ----------
+  // stickerPacks/{id}: {name, username, owner, cover} + stickers/{sid}: {d, at}; stickerNames/{username}: {owner, packId}; users/{uid}/packs/{id}: {at}
+  let legacy = [], libIds = [], packs = {}, cur = null, attached = null, curList = [], preview = null, curUnsub = null, legUnsub = null, libUnsub = null, uid = null;
+  let q = '', results = null, target = null, sTimer = null, libLoaded = false;
+  const lenOf = function (s) { return Array.from(s).length; };
+  const sbox = el('div', 'padding:0 0 8px;flex:none');
+  const sIn = el('input', 'width:100%;box-sizing:border-box;padding:11px 14px;border:0;border-radius:12px;background:#f1f2f6;font-size:16px;color:#222;outline:none');
+  sIn.type = 'text'; sIn.placeholder = '🔍 ' + T('Qidiruv (papka username)', 'Поиск (username папки)'); sIn.autocapitalize = 'none'; sIn.autocomplete = 'off'; sIn.maxLength = 27;
+  sbox.appendChild(sIn);
+  const strip = el('div'); strip.className = 'stk-strip';
+  const head = el('div'); head.className = 'stk-head';
+  const grid = el('div'); grid.className = 'stk-body';
+  pn.append(sbox, strip, head, grid);
+
+  function inLib(id) { return libIds.indexOf(id) >= 0; }
+  function curPack() { return preview || (cur && cur !== 'legacy' ? packs[cur] : null); }
+  function btnSm(t, fn, bg) {
+    const b = el('button', 'background:' + (bg || '#2AABEE') + ';color:' + (bg ? '#222' : '#fff') + ';border:0;border-radius:10px;padding:8px 12px;font-size:14px;flex:none');
+    b.textContent = t; b.addEventListener('click', function (e) { e.stopPropagation(); fn(b); }); return b;
+  }
+  function form(title, fields, okText, onOk) {
+    const o = el('div', 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99996;display:flex;align-items:center;justify-content:center;padding:20px');
+    const c = el('div', 'background:#fff;border-radius:16px;padding:18px;width:100%;max-width:340px;color:#222');
+    c.appendChild(el('div', 'font-weight:700;font-size:17px;margin-bottom:6px', '')).textContent = title;
+    const ins = fields.map(function (f) {
+      const i = el('input', 'width:100%;box-sizing:border-box;padding:12px;border:1px solid #ccd;border-radius:10px;font-size:16px;margin-top:8px');
+      i.type = 'text'; i.placeholder = f.ph; i.value = f.val || ''; i.autocapitalize = 'none'; i.autocomplete = 'off'; if (f.max) i.maxLength = f.max;
+      if (f.filter) i.addEventListener('input', function () { const v = f.filter(i.value); if (v !== i.value) i.value = v; });
+      c.appendChild(i); return i;
+    });
+    const err = el('div', 'color:#e33;font-size:13px;min-height:18px;margin-top:8px');
+    c.appendChild(err);
+    const row = el('div', 'display:flex;gap:8px;margin-top:8px');
+    const cancel = btnSm(T('Bekor', 'Отмена'), function () { o.remove(); }, '#eef0f4'); cancel.style.flex = '1'; cancel.style.padding = '12px';
+    const ok = btnSm(okText, async function () {
+      err.textContent = ''; ok.disabled = true;
+      let r; try { r = await onOk(ins.map(function (i) { return i.value; })); } catch (e) { console.error(e); r = fbErrMsg(e); }
+      ok.disabled = false; if (r) err.textContent = r; else o.remove();
+    });
+    ok.style.flex = '1'; ok.style.padding = '12px';
+    row.append(cancel, ok); c.appendChild(row); o.appendChild(c); document.body.appendChild(o); if (ins[0]) ins[0].focus();
+  }
+
+  function newPackDialog() {
+    const me = fbAuth && fbAuth.currentUser; if (!me) return;
+    form(T('Yangi papka', 'Новая папка'), [
+      { ph: T('Nomi (4–32 belgi)', 'Название (4–32 символа)'), max: 32 },
+      { ph: T('username (5–27, faqat a–z)', 'username (5–27, только a–z)'), max: 27, filter: function (v) { return v.toLowerCase().replace(/[^a-z]/g, ''); } }
+    ], T('Saqlash', 'Сохранить'), async function (v) {
+      const name = v[0].trim(), un = v[1];
+      if (lenOf(name) < 4 || lenOf(name) > 32) return T("Nom 4 dan 32 tagacha belgi bo'lsin.", 'Название — от 4 до 32 символов.');
+      if (!/^[a-z]{5,27}$/.test(un)) return T("Username 5 dan 27 tagacha, faqat lotin harflari bo'lsin.", 'Username — от 5 до 27 символов, только латиница.');
+      const ex = await fbDb.collection('stickerNames').doc(un).get();
+      if (ex.exists) return T('Bu username band. Boshqasini tanlang.', 'Этот username занят. Выберите другой.');
+      const ts = firebase.firestore.FieldValue.serverTimestamp();
+      const ref = fbDb.collection('stickerPacks').doc();
+      const b = fbDb.batch();
+      b.set(ref, { name: name, username: un, owner: me.uid, cover: '', createdAt: ts });
+      b.set(fbDb.collection('stickerNames').doc(un), { owner: me.uid, packId: ref.id });
+      b.set(fbDb.collection('users').doc(me.uid).collection('packs').doc(ref.id), { at: ts });
+      try { await b.commit(); } catch (e) {
+        if (e && e.code === 'permission-denied') return T('Saqlab bo\'lmadi: username band bo\'lishi mumkin.', 'Не удалось сохранить: возможно, username занят.');
+        throw e;
+      }
+      packs[ref.id] = { id: ref.id, name: name, username: un, owner: me.uid, cover: '' };
+      if (libIds.indexOf(ref.id) < 0) libIds.unshift(ref.id);
+      selectFolder(ref.id);
+      return null;
+    });
+  }
+  function renamePack(p) {
+    form(T("Nomini o'zgartirish", 'Изменить название'), [{ ph: T('Nomi (4–32 belgi)', 'Название (4–32 символа)'), max: 32, val: p.name }], T('Saqlash', 'Сохранить'), async function (v) {
+      const name = v[0].trim();
+      if (lenOf(name) < 4 || lenOf(name) > 32) return T("Nom 4 dan 32 tagacha belgi bo'lsin.", 'Название — от 4 до 32 символов.');
+      await fbDb.collection('stickerPacks').doc(p.id).update({ name: name });
+      p.name = name; if (packs[p.id]) packs[p.id].name = name; renderPanel(); return null;
+    });
+  }
+  async function delPack(p) {
+    const ok = await pldnConfirm(T("Papka va undagi hamma stikerlar o'chirilsinmi?", 'Удалить папку и все стикеры в ней?'));
+    if (!ok) return;
+    try {
+      const ref = fbDb.collection('stickerPacks').doc(p.id);
+      const ss = await ref.collection('stickers').get();
+      let b = fbDb.batch(), n = 0;
+      for (let i = 0; i < ss.docs.length; i++) { b.delete(ss.docs[i].ref); if (++n % 400 === 0) { await b.commit(); b = fbDb.batch(); } }
+      await b.commit();
+      const b2 = fbDb.batch();
+      b2.delete(ref); b2.delete(fbDb.collection('stickerNames').doc(p.username)); b2.delete(fbDb.collection('users').doc(uid).collection('packs').doc(p.id));
+      await b2.commit();
+      delete packs[p.id]; libIds = libIds.filter(function (x) { return x !== p.id; }); cur = null; attached = undefined; ensureCur();
+    } catch (e) { console.error(e); alert(fbErrMsg(e)); }
+  }
+  async function addToLib(p) {
+    try {
+      await fbDb.collection('users').doc(uid).collection('packs').doc(p.id).set({ at: firebase.firestore.FieldValue.serverTimestamp() });
+      packs[p.id] = p; if (libIds.indexOf(p.id) < 0) libIds.unshift(p.id); selectFolder(p.id);
+    } catch (e) { console.error(e); alert(fbErrMsg(e)); }
+  }
+  async function removeFromLib(p) {
+    const ok = await pldnConfirm(T('Papka sizning ro\'yxatingizdan olib tashlansinmi?', 'Убрать папку из вашего списка?'));
+    if (!ok) return;
+    try {
+      await fbDb.collection('users').doc(uid).collection('packs').doc(p.id).delete();
+      libIds = libIds.filter(function (x) { return x !== p.id; }); cur = null; attached = undefined; ensureCur();
+    } catch (e) { console.error(e); alert(fbErrMsg(e)); }
+  }
+  function delSticker(s) {
+    const col = cur === 'legacy' ? fbDb.collection('users').doc(uid).collection('stickers') : fbDb.collection('stickerPacks').doc(cur).collection('stickers');
+    col.doc(s.id).delete().catch(function (e) { alert(fbErrMsg(e)); });
+  }
+
+  function selectFolder(key, pv) {
+    if (curUnsub) { curUnsub(); curUnsub = null; }
+    cur = key; preview = pv || null; attached = key; curList = [];
+    if (key === 'legacy') curList = legacy;
+    else if (key) curUnsub = fbDb.collection('stickerPacks').doc(key).collection('stickers').orderBy('at', 'asc').onSnapshot(function (s) {
+      const a = []; s.forEach(function (d) { const v = d.data(); if (typeof v.d === 'string') a.push({ id: d.id, d: v.d }); });
+      curList = a; renderGrid();
+    }, function (e) { console.error('Papka', e); });
+    renderPanel();
+  }
+  function ensureCur() {
+    if (preview) return;
+    if (cur && cur !== 'legacy' && libIds.indexOf(cur) < 0) cur = null;
+    if (cur === 'legacy' && !legacy.length && libIds.length) cur = null;
+    if (!cur) cur = libIds[0] || (legacy.length ? 'legacy' : null);
+    if (cur !== attached) selectFolder(cur); else renderPanel();
+  }
+  async function loadPacks(force) {
+    const gone = [];
+    await Promise.all(libIds.map(async function (id) {
+      if (packs[id] && !force) return;
+      try {
+        const d = await fbDb.collection('stickerPacks').doc(id).get();
+        if (d.exists) packs[id] = Object.assign({ id: id }, d.data()); else { delete packs[id]; gone.push(id); }
+      } catch (_) {}
+    }));
+    gone.forEach(function (id) { fbDb.collection('users').doc(uid).collection('packs').doc(id).delete().catch(function () {}); });
+    if (gone.length) libIds = libIds.filter(function (x) { return gone.indexOf(x) < 0; });
+  }
+
+  async function runSearch() {
+    const s = q; if (!s) return;
+    try {
+      const qs = await fbDb.collection('stickerNames').orderBy(firebase.firestore.FieldPath.documentId()).startAt(s).endAt(s + '\uf8ff').limit(20).get();
+      const arr = await Promise.all(qs.docs.map(async function (d) {
+        try { const p = await fbDb.collection('stickerPacks').doc(d.data().packId).get(); return p.exists ? Object.assign({ id: p.id }, p.data()) : null; } catch (_) { return null; }
+      }));
+      if (q !== s) return;
+      results = arr.filter(Boolean); renderPanel();
+    } catch (e) { console.error(e); if (q === s) { results = []; renderPanel(); } }
+  }
+  sIn.addEventListener('input', function () {
+    const v = sIn.value.toLowerCase().replace(/[^a-z]/g, '');
+    if (v !== sIn.value) sIn.value = v;
+    q = v; clearTimeout(sTimer); results = null;
+    if (!q) { renderPanel(); return; }
+    renderPanel(); sTimer = setTimeout(runSearch, 300);
+  });
+
+  function coverEl(p, size) {
+    const th = el('div', 'width:' + size + 'px;height:' + size + 'px;border-radius:10px;background:#f1f2f6;overflow:hidden;flex:none;display:flex;align-items:center;justify-content:center;color:#2AABEE;font-weight:700');
+    if (p.cover) { const im = new Image(); im.src = p.cover; im.style.cssText = 'width:100%;height:100%;object-fit:contain;pointer-events:none'; th.appendChild(im); }
+    else th.textContent = (p.name || '?')[0].toUpperCase();
+    return th;
+  }
+  function renderStrip() {
+    strip.innerHTML = '';
+    const mk = function (child, active, fn) {
+      const c = el('div'); c.className = 'stk-chip' + (active ? ' on' : '');
+      c.appendChild(child); c.addEventListener('click', fn); strip.appendChild(c); return c;
+    };
+    mk(el('span', 'font-size:26px;color:#2AABEE', '＋'), false, newPackDialog);
+    if (legacy.length) mk(el('span', 'font-size:24px', '🙂'), cur === 'legacy' && !preview, function () { selectFolder('legacy'); });
+    libIds.forEach(function (id) {
+      const p = packs[id]; if (!p) return;
+      const inner = coverEl(p, 40); inner.style.borderRadius = '8px';
+      mk(inner, cur === id && !preview, function () { selectFolder(id); });
+    });
+  }
+  function renderHead() {
+    head.innerHTML = '';
+    const p = curPack();
+    if (!p) { if (cur === 'legacy') head.appendChild(el('b', 'color:#222', T('Papkasiz stikerlar', 'Стикеры без папки'))); return; }
+    const l = el('div', 'flex:1;min-width:0');
+    const n = el('div', 'font-weight:700;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'); n.textContent = p.name;
+    const u = el('div', 'color:#2AABEE;font-size:13px'); u.textContent = '@' + p.username;
+    l.append(n, u); head.appendChild(l);
+    if (!inLib(p.id)) head.appendChild(btnSm(T("Qo'shish", 'Добавить'), function () { addToLib(p); }));
+    else if (p.owner === uid) {
+      head.appendChild(btnSm('⋮', function (b) {
+        pldnPopMenu([
+          { icon: '✏️', label: T("Nomini o'zgartirish", 'Изменить название'), fn: function () { renamePack(p); } },
+          { icon: '🗑', label: T("Papkani o'chirish", 'Удалить папку'), fn: function () { delPack(p); } }
+        ], { el: b });
+      }, '#eef0f4'));
+    } else head.appendChild(btnSm(T('Olib tashlash', 'Убрать'), function () { removeFromLib(p); }, '#eef0f4'));
+  }
+  function renderGrid() {
+    grid.innerHTML = '';
+    if (q) {
+      if (results === null) { grid.appendChild(el('div', 'color:#888;padding:14px 4px', T('Qidirilmoqda...', 'Поиск...'))); return; }
+      if (!results.length) { grid.appendChild(el('div', 'color:#888;padding:14px 4px', T('Hech narsa topilmadi.', 'Ничего не найдено.'))); return; }
+      results.forEach(function (p) {
+        const r = el('div', 'display:flex;align-items:center;gap:12px;padding:8px 4px;border-bottom:1px solid #eee');
+        const mid = el('div', 'flex:1;min-width:0');
+        const n = el('div', 'font-weight:600;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'); n.textContent = p.name;
+        const u = el('div', 'color:#2AABEE;font-size:13px'); u.textContent = '@' + p.username;
+        mid.append(n, u); r.append(coverEl(p, 48), mid);
+        if (inLib(p.id)) r.appendChild(el('span', 'color:#2AABEE;font-size:20px', '✓'));
+        r.addEventListener('click', function () {
+          q = ''; sIn.value = ''; results = null;
+          if (inLib(p.id)) { packs[p.id] = p; selectFolder(p.id); } else selectFolder(p.id, p);
+        });
+        grid.appendChild(r);
+      });
+      return;
+    }
+    if (!cur) { grid.appendChild(el('div', 'color:#888;padding:14px 4px;line-height:1.4', T("Hali papka yo'q. Tepadagi ＋ ni bosib yangi papka tuzing yoki username bilan qidiring.", 'Папок пока нет. Нажмите ＋ вверху, чтобы создать папку, или найдите по username.'))); return; }
+    const p = curPack();
+    const canEdit = cur === 'legacy' || !!(p && p.owner === uid);
     const g = el('div'); g.className = 'stk-grid';
-    const add = el('div'); add.className = 'stk-cell stk-add'; add.innerHTML = '<span>＋</span><small>' + T('Tuzish', 'Создать') + '</small>';
-    add.addEventListener('click', function () { fileIn.click(); });
-    g.appendChild(add);
-    list.forEach(function (s) {
+    if (canEdit) {
+      const add = el('div'); add.className = 'stk-cell stk-add'; add.innerHTML = '<span>＋</span><small>' + T('Stiker', 'Стикер') + '</small>';
+      add.addEventListener('click', function () { target = cur; fileIn.click(); });
+      g.appendChild(add);
+    }
+    curList.forEach(function (s) {
       const c = el('div'); c.className = 'stk-cell';
       const im = new Image(); im.src = s.d; c.appendChild(im);
       let tm = null, lp = false;
-      c.addEventListener('touchstart', function () {
-        lp = false;
-        tm = setTimeout(async function () {
-          lp = true;
-          const ok = await pldnConfirm(T("Stiker o'chirilsinmi?", 'Удалить стикер?'));
-          if (ok) fbDb.collection('users').doc(uid).collection('stickers').doc(s.id).delete().catch(function (e) { alert(fbErrMsg(e)); });
-        }, 550);
-      }, { passive: true });
-      ['touchend', 'touchmove', 'touchcancel'].forEach(function (ev) { c.addEventListener(ev, function () { clearTimeout(tm); }, { passive: true }); });
+      if (canEdit) {
+        c.addEventListener('touchstart', function () {
+          lp = false;
+          tm = setTimeout(async function () {
+            lp = true;
+            const ok = await pldnConfirm(T("Stiker o'chirilsinmi?", 'Удалить стикер?'));
+            if (ok) delSticker(s);
+          }, 550);
+        }, { passive: true });
+        ['touchend', 'touchmove', 'touchcancel'].forEach(function (ev) { c.addEventListener(ev, function () { clearTimeout(tm); }, { passive: true }); });
+      }
       c.addEventListener('contextmenu', function (e) { e.preventDefault(); });
       c.addEventListener('click', function () { if (lp) { lp = false; return; } bd.style.display = 'none'; send(s.d); });
       g.appendChild(c);
     });
-    pn.appendChild(g);
-    if (list.length) pn.appendChild(el('small', 'display:block;color:#888;margin-top:10px;', T("O'chirish uchun stikerni bosib turing.", 'Для удаления удерживайте стикер.')));
+    grid.appendChild(g);
+    if (canEdit && curList.length) grid.appendChild(el('small', 'display:block;color:#888;margin-top:10px;', T("O'chirish uchun stikerni bosib turing.", 'Для удаления удерживайте стикер.')));
+    if (!canEdit && !curList.length) grid.appendChild(el('div', 'color:#888;padding:14px 4px', T("Bu papkada stiker yo'q.", 'В этой папке нет стикеров.')));
+  }
+  function renderPanel() {
+    const s = !!q;
+    strip.style.display = s ? 'none' : ''; head.style.display = s ? 'none' : '';
+    if (!s) { renderStrip(); renderHead(); }
+    renderGrid();
   }
 
   function openPanel() {
     const me = fbAuth && fbAuth.currentUser;
     if (!me || !fbCurrentChat) return;
     if (uid !== me.uid) {
-      if (unsub) unsub();
+      [curUnsub, legUnsub, libUnsub].forEach(function (f) { if (f) f(); });
+      curUnsub = legUnsub = libUnsub = null; cur = null; attached = undefined; preview = null; packs = {}; legacy = []; libIds = []; libLoaded = false; q = ''; sIn.value = ''; results = null;
       uid = me.uid;
-      unsub = fbDb.collection('users').doc(uid).collection('stickers').orderBy('at', 'desc').onSnapshot(function (s) {
-        list = [];
-        s.forEach(function (d) { const v = d.data(); if (typeof v.d === 'string') list.push({ id: d.id, d: v.d }); });
-        renderPanel();
+      legUnsub = fbDb.collection('users').doc(uid).collection('stickers').orderBy('at', 'desc').onSnapshot(function (s) {
+        legacy = []; s.forEach(function (d) { const v = d.data(); if (typeof v.d === 'string') legacy.push({ id: d.id, d: v.d }); });
+        if (cur === 'legacy') curList = legacy;
+        if (libLoaded) ensureCur();
       }, function (e) { console.error('Stikerlar', e); });
-    }
+      libUnsub = fbDb.collection('users').doc(uid).collection('packs').orderBy('at', 'desc').onSnapshot(async function (s) {
+        const ids = []; s.forEach(function (d) { ids.push(d.id); });
+        libIds = ids;
+        await loadPacks(false);
+        libLoaded = true; ensureCur();
+      }, function (e) { console.error('Papkalar', e); });
+    } else if (libLoaded) loadPacks(true).then(function () { renderPanel(); });
     renderPanel();
     bd.style.display = 'block';
   }
@@ -11727,7 +11991,18 @@
     }
     if (data.length > 650000) { alert(T('Stiker juda katta.', 'Стикер слишком большой.')); return; }
     try {
-      await fbDb.collection('users').doc(me.uid).collection('stickers').add({ d: data, at: firebase.firestore.FieldValue.serverTimestamp() });
+      const tg = target, ts = firebase.firestore.FieldValue.serverTimestamp();
+      if (!tg || tg === 'legacy') await fbDb.collection('users').doc(me.uid).collection('stickers').add({ d: data, at: ts });
+      else {
+        await fbDb.collection('stickerPacks').doc(tg).collection('stickers').add({ d: data, at: ts });
+        const pk = packs[tg];
+        if (pk && !pk.cover) {
+          const t = document.createElement('canvas'); t.width = t.height = 96;
+          t.getContext('2d').drawImage(o, 0, 0, 96, 96);
+          let th = t.toDataURL('image/webp', 0.8); if (th.indexOf('data:image/webp') !== 0) th = t.toDataURL('image/png');
+          try { await fbDb.collection('stickerPacks').doc(tg).update({ cover: th }); pk.cover = th; } catch (_) {}
+        }
+      }
       ed.style.display = 'none'; openPanel();
     } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
   }
@@ -12042,6 +12317,11 @@
     if (i >= 0) { a[i].p = p; a[i].uid = uid || a[i].uid; } else if (a.length < MAX) a.push({ u: u, p: p, uid: uid }); else return;
     save(a);
   }
+  // Parol almashtirilganda ro'yxatdagi saqlangan parolni ham yangilaymiz (hisoblar orasida o'tish uchun)
+  window.pldnAccSetPw = function (uid, np) {
+    const a = load(), i = a.findIndex(function (x) { return x.uid === uid; });
+    if (i >= 0) { a[i].p = np; save(a); }
+  };
   ['signInWithEmailAndPassword', 'createUserWithEmailAndPassword'].forEach(function (n) {
     const o = fbAuth[n].bind(fbAuth);
     fbAuth[n] = async function (e, p) { const r = await o(e, p); try { remember(uname(e), p, r.user.uid); } catch (_) {} return r; };
