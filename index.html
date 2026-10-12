@@ -1,4 +1,4 @@
-<!-- VERSION: call-record-v52 (2026-10-12) -->
+<!-- VERSION: update-retry-v53 (2026-10-12) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -8046,6 +8046,25 @@
     } catch (_) {}
   }
   function pldnUpdHistDel(v) { pldnUpdHistSet(pldnUpdHistGet().filter(x => x.v !== v)); }
+  // Ilova yangilanish paytida (masalan, "noma'lum ilovalar" ruxsati berilganda) yopilib qolsa, qayta ochilganda yuklashni o'zi davom ettiradi
+  function pldnUpdMaybeResume(cur) {
+    let r = null;
+    try { r = JSON.parse(localStorage.getItem('pldn_upd_resume') || 'null'); } catch (_) {}
+    if (!r) return;
+    try { localStorage.removeItem('pldn_upd_resume'); } catch (_) {}
+    if (!r.v || Date.now() - (r.ts || 0) > 15 * 60 * 1000) return;
+    if ((r.n || 0) >= 2) return; // cheksiz takrorlanmasin
+    if (!pldnUpdateInfo || pldnUpdateInfo.latest !== r.v || r.v <= cur) return;
+    try { if (window.PldnUpd && !PldnUpd.canInstall()) return; } catch (_) {}
+    window.__pldnUpdAutoN = (r.n || 0) + 1;
+    const bell = document.getElementById('pldnBellBtn');
+    if (!bell) return;
+    bell.click();
+    setTimeout(function () {
+      const yes = document.querySelector('#pldnNpBody .pldn-np-card.upd .np-yes');
+      if (yes) yes.click();
+    }, 700);
+  }
   async function pldnCheckUpdate(manual) {
     const cur = parseInt(PLDN_BUILD, 10);
     const val = document.getElementById('appUpdateVal');
@@ -8066,7 +8085,7 @@
         await pldnUpdHistBackfill(cur, latest);
         pldnUpdHistAdd(latest);
         pldnRefreshBell();
-        if (!manual) return;
+        if (!manual) { pldnUpdMaybeResume(cur); return; }
         const ok = await pldnConfirm(fbT('Yangi versiya mavjud (v' + latest + '). Yuklab olib o\'rnatasizmi?', 'Доступна новая версия (v' + latest + '). Скачать и установить?'));
         if (ok) { pldnUpdHistMark(latest, 'downloaded'); window.location.href = asset.browser_download_url; }
       } else if (manual) {
@@ -8110,6 +8129,8 @@
     }
     if (pldnUpdBusy) return;
     pldnUpdBusy = true;
+    try { localStorage.setItem('pldn_upd_resume', JSON.stringify({ v: it.v, ts: Date.now(), n: window.__pldnUpdAutoN || 0 })); } catch (_) {}
+    window.__pldnUpdAutoN = 0;
     row.style.display = 'none';
     const st = document.createElement('p');
     st.className = 'upd-st';
@@ -8124,6 +8145,7 @@
     function stop() { if (timer) { clearInterval(timer); timer = null; } pldnUpdBusy = false; }
     function fail(msg) {
       stop();
+      try { localStorage.removeItem('pldn_upd_resume'); } catch (_) {}
       st.className = 'upd-st no';
       st.textContent = msg;
       act.innerHTML = '';
@@ -8151,6 +8173,7 @@
           st.className = 'upd-st ok';
           st.textContent = fbT("O'rnatish oynasi ochilmoqda…", 'Открывается окно установки…');
           const r = String(PldnUpd.install());
+          try { localStorage.removeItem('pldn_upd_resume'); } catch (_) {}
           if (r === 'ok') {
             pldnUpdHistMark(it.v, 'downloaded');
             setTimeout(function () { if (document.getElementById('pldnNpBody')) pldnNpRender('update'); }, 1500);
@@ -8186,6 +8209,7 @@
     const body = document.getElementById('pldnNpBody');
     document.querySelectorAll('.pldn-np-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
     body.innerHTML = '';
+    if (tab === 'update' && pldnUpdateInfo) { try { pldnUpdHistAdd(pldnUpdateInfo.latest); } catch (_) {} }
     if (tab === 'offers' && typeof pldnOffersRender === 'function') {
       pldnOffersRender(body);
     } else if (tab === 'security') {
@@ -8271,6 +8295,9 @@
       pldnSecMarkSeen();
       pldnRefreshBell();
     } else if (tab === 'update' && pldnUpdHistGet().length) {
+      // Yangilanish kartalarini o'chirib bo'lmaydi (✕ yo'q). Eng so'nggi o'rnatilmagan versiyada doim yuklab olish tugmasi bor.
+      const cur = parseInt(PLDN_BUILD, 10) || 0;
+      const latestV = pldnUpdateInfo ? pldnUpdateInfo.latest : 0;
       const list = pldnUpdHistGet().slice().sort((x, y) => y.v - x.v);
       list.forEach(function (it) {
         const card = document.createElement('div');
@@ -8280,17 +8307,22 @@
         const ver = document.createElement('p');
         ver.className = 'upd-ver';
         ver.textContent = fbT('versiya: ', 'версия: ') + 'v' + it.v;
-        const del = document.createElement('button');
-        del.className = 'upd-del';
-        del.textContent = '✕';
-        del.onclick = function () { pldnUpdHistDel(it.v); pldnNpRender('update'); };
-        card.append(h, ver, del);
-        if (it.st === 'downloaded' || it.st === 'skipped') {
+        card.append(h, ver);
+        const installed = cur > 0 ? it.v <= cur : it.st === 'downloaded';
+        const actionable = !installed && (latestV ? it.v === latestV : it.st === 'pending');
+        if (installed || !actionable) {
           const st = document.createElement('p');
-          st.className = 'upd-st ' + (it.st === 'downloaded' ? 'ok' : 'no');
-          st.textContent = it.st === 'downloaded' ? fbT('yuklab oldingiz', 'вы скачали') : fbT('yuklab olmadingiz', 'вы не скачали');
+          st.className = 'upd-st ' + (installed ? 'ok' : 'no');
+          st.textContent = installed ? fbT('yuklab oldingiz', 'вы скачали') : fbT('yuklab olmadingiz', 'вы не скачали');
           card.appendChild(st);
         } else {
+          const retry = it.st === 'downloaded';
+          if (retry) {
+            const hint = document.createElement('p');
+            hint.className = 'upd-ver';
+            hint.textContent = fbT("O'rnatish tugallanmagan. Qayta yuklab olishingiz mumkin.", 'Установка не завершена. Можно скачать снова.');
+            card.appendChild(hint);
+          }
           const row = document.createElement('div');
           row.className = 'pldn-np-btns';
           const no = document.createElement('button');
@@ -8299,9 +8331,10 @@
           no.onclick = pldnNpClose;
           const yes = document.createElement('button');
           yes.className = 'np-yes';
-          yes.textContent = fbT('Ha', 'Да');
-          yes.onclick = function () {
-            const u = pldnUpdateInfo && pldnUpdateInfo.latest === it.v ? pldnUpdateInfo.url : (pldnUpdateInfo && pldnUpdateInfo.url);
+          yes.textContent = retry ? fbT('Qayta yuklab olish', 'Скачать снова') : fbT('Yuklab olish', 'Скачать');
+          yes.onclick = async function () {
+            if (!pldnUpdateInfo) { try { await pldnCheckUpdate(false); } catch (_) {} }
+            const u = pldnUpdateInfo ? pldnUpdateInfo.url : null;
             pldnSelfUpdate(it, u, card, row);
           };
           row.append(no, yes);
