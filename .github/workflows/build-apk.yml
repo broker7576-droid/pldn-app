@@ -1,372 +1,360 @@
-package __PKG__;
+name: Build APK
 
-import android.Manifest;
-import android.content.pm.PackageManager;
-import android.webkit.PermissionRequest;
-import android.webkit.WebChromeClient;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-import com.getcapacitor.BridgeActivity;
-import com.getcapacitor.BridgeWebChromeClient;
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
-public class MainActivity extends BridgeActivity {
-    public class PldnSaver {
-        java.io.OutputStream os;
-        String path = "";
-        @android.webkit.JavascriptInterface
-        public boolean begin(String name) {
-            try {
-                if (android.os.Build.VERSION.SDK_INT >= 29) {
-                    android.content.ContentValues v = new android.content.ContentValues();
-                    v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
-                    v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/pdf");
-                    v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/PLDN");
-                    android.net.Uri u = getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
-                    os = getContentResolver().openOutputStream(u);
-                    path = "Download/PLDN/" + name;
-                } else {
-                    java.io.File f = new java.io.File(getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS), name);
-                    os = new java.io.FileOutputStream(f);
-                    path = f.getAbsolutePath();
-                }
-                return true;
-            } catch (Exception e) { return false; }
-        }
-        @android.webkit.JavascriptInterface
-        public boolean chunk(String b64) {
-            try { os.write(android.util.Base64.decode(b64, android.util.Base64.DEFAULT)); return true; } catch (Exception e) { return false; }
-        }
-        @android.webkit.JavascriptInterface
-        public String end() {
-            try { os.close(); } catch (Exception e) { }
-            return path;
-        }
-        @android.webkit.JavascriptInterface
-        public boolean beginVideo(String name, String mime) {
-            try {
-                if (android.os.Build.VERSION.SDK_INT >= 29) {
-                    android.content.ContentValues v = new android.content.ContentValues();
-                    v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
-                    v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime);
-                    v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Movies/PLDN");
-                    android.net.Uri u = getContentResolver().insert(android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI, v);
-                    os = getContentResolver().openOutputStream(u);
-                    path = "Movies/PLDN/" + name;
-                } else {
-                    java.io.File f = new java.io.File(getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES), name);
-                    os = new java.io.FileOutputStream(f);
-                    path = f.getAbsolutePath();
-                }
-                return true;
-            } catch (Exception e) { return false; }
-        }
-        @android.webkit.JavascriptInterface
-        public boolean beginAudio(String name, String mime) {
-            try {
-                if (android.os.Build.VERSION.SDK_INT >= 29) {
-                    android.content.ContentValues v = new android.content.ContentValues();
-                    v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
-                    v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime);
-                    v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Music/PLDN");
-                    android.net.Uri u = getContentResolver().insert(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, v);
-                    os = getContentResolver().openOutputStream(u);
-                    path = "Music/PLDN/" + name;
-                } else {
-                    java.io.File f = new java.io.File(getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC), name);
-                    os = new java.io.FileOutputStream(f);
-                    path = f.getAbsolutePath();
-                }
-                return true;
-            } catch (Exception e) { return false; }
-        }
-        @android.webkit.JavascriptInterface
-        public String saveImage(String name, String mime, String b64) {
-            try {
-                byte[] data = android.util.Base64.decode(b64, android.util.Base64.DEFAULT);
-                java.io.OutputStream o;
-                String p;
-                if (android.os.Build.VERSION.SDK_INT >= 29) {
-                    android.content.ContentValues v = new android.content.ContentValues();
-                    v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
-                    v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime);
-                    v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/PLDN");
-                    android.net.Uri u = getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
-                    o = getContentResolver().openOutputStream(u);
-                    p = "Pictures/PLDN/" + name;
-                } else {
-                    java.io.File f = new java.io.File(getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES), name);
-                    o = new java.io.FileOutputStream(f);
-                    p = f.getAbsolutePath();
-                }
-                o.write(data);
-                o.close();
-                return p;
-            } catch (Exception e) { return ""; }
-        }
-    }
-        public class PldnUpdater {
-        volatile int pct = 0;
-        volatile long bytes = 0;
-        volatile String state = "idle";
-        volatile String err = "";
-        @android.webkit.JavascriptInterface
-        public boolean canInstall() {
-            if (android.os.Build.VERSION.SDK_INT >= 26) { return getPackageManager().canRequestPackageInstalls(); }
-            return true;
-        }
-        @android.webkit.JavascriptInterface
-        public void openSettings() {
-            try {
-                android.content.Intent i = new android.content.Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:" + getPackageName()));
-                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(i);
-            } catch (Exception e) { }
-        }
-        void fetchApk(String url, java.io.File f, java.io.File marker) throws Exception {
-            long have = 0;
-            String prev = "";
-            try {
-                if (marker.exists()) {
-                    java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(marker));
-                    prev = br.readLine();
-                    br.close();
-                }
-            } catch (Exception e) { prev = ""; }
-            if (f.exists() && url.equals(prev)) { have = f.length(); } else if (f.exists()) { f.delete(); }
-            java.io.FileWriter fw = new java.io.FileWriter(marker);
-            fw.write(url);
-            fw.close();
-            java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
-            c.setConnectTimeout(15000);
-            c.setReadTimeout(30000);
-            c.setInstanceFollowRedirects(true);
-            if (have > 0) { c.setRequestProperty("Range", "bytes=" + have + "-"); }
-            int code = c.getResponseCode();
-            if (code == 416) { f.delete(); throw new Exception("HTTP 416"); }
-            if (code != 200 && code != 206) { throw new Exception("HTTP " + code); }
-            boolean resumed = (code == 206 && have > 0);
-            long got = resumed ? have : 0;
-            long total = c.getContentLengthLong();
-            if (total > 0) { total = total + got; }
-            java.io.InputStream in = c.getInputStream();
-            java.io.FileOutputStream out = new java.io.FileOutputStream(f, resumed);
-            byte[] buf = new byte[65536];
-            int n;
-            try {
-                while ((n = in.read(buf)) > 0) {
-                    out.write(buf, 0, n);
-                    got += n;
-                    bytes = got;
-                    if (total > 0) { pct = (int) (got * 100 / total); }
-                }
-            } finally {
-                try { out.close(); } catch (Exception e) { }
-                try { in.close(); } catch (Exception e) { }
-            }
-            if (total > 0 && got < total) { throw new Exception("uzilib qoldi"); }
-            if (got < 1000000) { f.delete(); throw new Exception("fayl kichik: " + got); }
-        }
-        @android.webkit.JavascriptInterface
-        public void download(final String url) {
-            if ("downloading".equals(state)) { return; }
-            state = "downloading"; pct = 0; bytes = 0; err = "";
-            new Thread(new Runnable() {
-                public void run() {
-                    java.io.File f = new java.io.File(getCacheDir(), "pldn-update.apk");
-                    java.io.File marker = new java.io.File(getCacheDir(), "pldn-update.url");
-                    int tries = 0;
-                    while (true) {
-                        try {
-                            fetchApk(url, f, marker);
-                            pct = 100;
-                            state = "done";
-                            break;
-                        } catch (Exception e) {
-                            tries++;
-                            if (tries >= 4) { err = String.valueOf(e); state = "error"; break; }
-                            try { Thread.sleep(1500); } catch (Exception x) { }
-                        }
-                    }
-                }
-            }).start();
-        }
-        @android.webkit.JavascriptInterface
-        public String status() {
-            return state + "|" + pct + "|" + bytes + "|" + err;
-        }
-        @android.webkit.JavascriptInterface
-        public String install() {
-            try {
-                java.io.File f = new java.io.File(getCacheDir(), "pldn-update.apk");
-                android.net.Uri u = androidx.core.content.FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", f);
-                android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_VIEW);
-                i.setDataAndType(u, "application/vnd.android.package-archive");
-                i.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION | android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(i);
-                return "ok";
-            } catch (Exception e) { return "err:" + e; }
-        }
-    }
-        public class PldnVideo {
-        java.io.File vin;
-        java.io.File vout;
-        java.io.OutputStream vos;
-        volatile String state = "idle";
-        volatile int pct = 0;
-        volatile String err = "";
-        @android.webkit.JavascriptInterface
-        public boolean begin() {
-            try {
-                clear();
-                vin = new java.io.File(getCacheDir(), "pldn-vin.bin");
-                vout = new java.io.File(getCacheDir(), "pldn-vout.mp4");
-                vos = new java.io.FileOutputStream(vin);
-                state = "idle"; pct = 0; err = "";
-                return true;
-            } catch (Exception e) { return false; }
-        }
-        @android.webkit.JavascriptInterface
-        public boolean chunk(String b64) {
-            try { vos.write(android.util.Base64.decode(b64, android.util.Base64.DEFAULT)); return true; } catch (Exception e) { return false; }
-        }
-        @android.webkit.JavascriptInterface
-        public boolean endIn() {
-            try { vos.close(); return true; } catch (Exception e) { return false; }
-        }
-        @android.webkit.JavascriptInterface
-        public void trim(final double startSec, final double lenSec) {
-            state = "working"; pct = 0; err = "";
-            new Thread(new Runnable() {
-                public void run() {
-                    android.media.MediaExtractor ex = null;
-                    android.media.MediaMuxer mx = null;
-                    boolean started = false;
-                    try {
-                        if (vout.exists()) { vout.delete(); }
-                        ex = new android.media.MediaExtractor();
-                        ex.setDataSource(vin.getAbsolutePath());
-                        int vt = -1;
-                        for (int i = 0; i < ex.getTrackCount(); i++) {
-                            String m = ex.getTrackFormat(i).getString(android.media.MediaFormat.KEY_MIME);
-                            if (m != null && m.startsWith("video/")) { vt = i; break; }
-                        }
-                        if (vt < 0) { throw new Exception("video trek yoq"); }
-                        ex.selectTrack(vt);
-                        android.media.MediaFormat fmt = ex.getTrackFormat(vt);
-                        int rot = 0;
-                        try {
-                            android.media.MediaMetadataRetriever r = new android.media.MediaMetadataRetriever();
-                            r.setDataSource(vin.getAbsolutePath());
-                            String rs = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
-                            if (rs != null) { rot = Integer.parseInt(rs); }
-                            r.release();
-                        } catch (Exception e) { rot = 0; }
-                        mx = new android.media.MediaMuxer(vout.getAbsolutePath(), android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
-                        mx.setOrientationHint(rot);
-                        int ot = mx.addTrack(fmt);
-                        mx.start();
-                        started = true;
-                        long lenUs = (long) (lenSec * 1000000.0);
-                        ex.seekTo((long) (startSec * 1000000.0), android.media.MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
-                        int cap = 8 * 1024 * 1024;
-                        if (fmt.containsKey(android.media.MediaFormat.KEY_MAX_INPUT_SIZE)) { cap = Math.max(cap, fmt.getInteger(android.media.MediaFormat.KEY_MAX_INPUT_SIZE)); }
-                        java.nio.ByteBuffer buf = java.nio.ByteBuffer.allocate(cap);
-                        android.media.MediaCodec.BufferInfo bi = new android.media.MediaCodec.BufferInfo();
-                        long base = -1;
-                        while (true) {
-                            buf.clear();
-                            int n = ex.readSampleData(buf, 0);
-                            if (n < 0) { break; }
-                            long t = ex.getSampleTime();
-                            if (base < 0) { base = t; }
-                            if (t - base >= lenUs) { break; }
-                            bi.offset = 0;
-                            bi.size = n;
-                            bi.presentationTimeUs = t - base;
-                            bi.flags = ex.getSampleFlags();
-                            mx.writeSampleData(ot, buf, bi);
-                            pct = (int) ((t - base) * 100 / lenUs);
-                            ex.advance();
-                        }
-                        mx.stop();
-                        started = false;
-                        pct = 100;
-                        state = "done";
-                    } catch (Throwable e) {
-                        err = String.valueOf(e);
-                        state = "error";
-                    } finally {
-                        try { if (mx != null) { if (started) { mx.stop(); } mx.release(); } } catch (Throwable e) { }
-                        try { if (ex != null) { ex.release(); } } catch (Throwable e) { }
-                    }
-                }
-            }).start();
-        }
-        @android.webkit.JavascriptInterface
-        public String status() {
-            return state + "|" + pct + "|" + err;
-        }
-        @android.webkit.JavascriptInterface
-        public int outSize() {
-            return (vout != null && vout.exists()) ? (int) vout.length() : 0;
-        }
-        @android.webkit.JavascriptInterface
-        public String readOut(int off, int len) {
-            try {
-                java.io.RandomAccessFile raf = new java.io.RandomAccessFile(vout, "r");
-                raf.seek(off);
-                byte[] b = new byte[len];
-                raf.readFully(b);
-                raf.close();
-                return android.util.Base64.encodeToString(b, android.util.Base64.NO_WRAP);
-            } catch (Exception e) { return ""; }
-        }
-        @android.webkit.JavascriptInterface
-        public void clear() {
-            try { if (vos != null) { vos.close(); } } catch (Exception e) { }
-            try { if (vin != null && vin.exists()) { vin.delete(); } } catch (Exception e) { }
-            try { if (vout != null && vout.exists()) { vout.delete(); } } catch (Exception e) { }
-        }
-    }
-        @Override
-    public void onCreate(android.os.Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
-            @Override
-            public void handleOnBackPressed() {
-                try {
-                    getBridge().getWebView().evaluateJavascript(
-                        "(function(){try{return !!(window.pldnBack&&window.pldnBack());}catch(e){return false;}})()",
-                        value -> {
-                            if (!"true".equals(value)) {
-                                setEnabled(false);
-                                getOnBackPressedDispatcher().onBackPressed();
-                                setEnabled(true);
-                            }
-                        });
-                } catch (Exception e) {
-                    setEnabled(false);
-                    getOnBackPressedDispatcher().onBackPressed();
-                    setEnabled(true);
-                }
-            }
-        });
-    }
-    @Override
-    public void onStart() {
-        super.onStart();
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
-        }
-        getBridge().getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
-        getBridge().getWebView().addJavascriptInterface(new PldnSaver(), "PldnSave");
-        getBridge().getWebView().addJavascriptInterface(new PldnUpdater(), "PldnUpd");
-        getBridge().getWebView().addJavascriptInterface(new PldnVideo(), "PldnVid");
-        getBridge().getWebView().setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
-            @Override
-            public void onPermissionRequest(final PermissionRequest request) {
-                runOnUiThread(() -> request.grant(request.getResources()));
-            }
-        });
-    }
-}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Compute version
+        run: |
+          tr -d '\r' < version.txt > /tmp/version.env
+          source /tmp/version.env
+          CODE=$((versionCode + GITHUB_RUN_NUMBER))
+          NAME="${versionName%.*}.$(printf '%03d' "$GITHUB_RUN_NUMBER")"
+          echo "VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "Version: $NAME ($CODE)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Prepare web folder
+        run: |
+          mkdir -p www
+          cp index.html www/index.html
+          sed -i "s/__PLDN_BUILD__/$VERSION_CODE/" www/index.html
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Fix Gradle version bug
+        run: |
+          sed -i -E 's#gradle-[0-9.]+-all\.zip#gradle-8.9-all.zip#' android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Generate app icon
+        run: npx capacitor-assets generate --android
+
+      - name: Apply version
+        run: |
+          sed -i "s/versionCode 1/versionCode $VERSION_CODE/" android/app/build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"$VERSION_NAME\"/" android/app/build.gradle
+
+      - name: Force fixed debug signing
+        run: |
+          cp debug.keystore android/app/debug.keystore
+          echo 'android.signingConfigs.debug.storeFile = file("debug.keystore")' >> android/app/build.gradle
+          echo 'android.signingConfigs.debug.storePassword = "android"' >> android/app/build.gradle
+          echo 'android.signingConfigs.debug.keyAlias = "androiddebugkey"' >> android/app/build.gradle
+          echo 'android.signingConfigs.debug.keyPassword = "android"' >> android/app/build.gradle
+
+      - name: Add microphone, camera and contacts permission
+        run: |
+          sed -i 's#</manifest>#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n<uses-permission android:name="android.permission.READ_CONTACTS" />\n<uses-permission android:name="android.permission.WRITE_CONTACTS" />\n<uses-permission android:name="android.permission.CAMERA" />\n<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\n<uses-feature android:name="android.hardware.camera" android:required="false" />\n<uses-feature android:name="android.hardware.microphone" android:required="false" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+
+      - name: Fix microphone permission in WebView
+        run: |
+          MAINACT=$(find android/app/src/main/java -name MainActivity.java)
+          PKG=$(grep applicationId android/app/build.gradle | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          cat > "$MAINACT" <<EOF
+          package $PKG;
+
+          import android.Manifest;
+          import android.content.pm.PackageManager;
+          import android.webkit.PermissionRequest;
+          import android.webkit.WebChromeClient;
+          import androidx.core.app.ActivityCompat;
+          import androidx.core.content.ContextCompat;
+          import com.getcapacitor.BridgeActivity;
+          import com.getcapacitor.BridgeWebChromeClient;
+
+          public class MainActivity extends BridgeActivity {
+              public class PldnSaver {
+                  java.io.OutputStream os;
+                  String path = "";
+                  @android.webkit.JavascriptInterface
+                  public boolean begin(String name) {
+                      try {
+                          if (android.os.Build.VERSION.SDK_INT >= 29) {
+                              android.content.ContentValues v = new android.content.ContentValues();
+                              v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
+                              v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/pdf");
+                              v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/PLDN");
+                              android.net.Uri u = getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                              os = getContentResolver().openOutputStream(u);
+                              path = "Download/PLDN/" + name;
+                          } else {
+                              java.io.File f = new java.io.File(getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS), name);
+                              os = new java.io.FileOutputStream(f);
+                              path = f.getAbsolutePath();
+                          }
+                          return true;
+                      } catch (Exception e) { return false; }
+                  }
+                  @android.webkit.JavascriptInterface
+                  public boolean chunk(String b64) {
+                      try { os.write(android.util.Base64.decode(b64, android.util.Base64.DEFAULT)); return true; } catch (Exception e) { return false; }
+                  }
+                  @android.webkit.JavascriptInterface
+                  public String end() {
+                      try { os.close(); } catch (Exception e) { }
+                      return path;
+                  }
+                  @android.webkit.JavascriptInterface
+                  public boolean beginVideo(String name, String mime) {
+                      try {
+                          if (android.os.Build.VERSION.SDK_INT >= 29) {
+                              android.content.ContentValues v = new android.content.ContentValues();
+                              v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
+                              v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime);
+                              v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Movies/PLDN");
+                              android.net.Uri u = getContentResolver().insert(android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI, v);
+                              os = getContentResolver().openOutputStream(u);
+                              path = "Movies/PLDN/" + name;
+                          } else {
+                              java.io.File f = new java.io.File(getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES), name);
+                              os = new java.io.FileOutputStream(f);
+                              path = f.getAbsolutePath();
+                          }
+                          return true;
+                      } catch (Exception e) { return false; }
+                  }
+                  @android.webkit.JavascriptInterface
+                  public boolean beginAudio(String name, String mime) {
+                      try {
+                          if (android.os.Build.VERSION.SDK_INT >= 29) {
+                              android.content.ContentValues v = new android.content.ContentValues();
+                              v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
+                              v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime);
+                              v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Music/PLDN");
+                              android.net.Uri u = getContentResolver().insert(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, v);
+                              os = getContentResolver().openOutputStream(u);
+                              path = "Music/PLDN/" + name;
+                          } else {
+                              java.io.File f = new java.io.File(getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC), name);
+                              os = new java.io.FileOutputStream(f);
+                              path = f.getAbsolutePath();
+                          }
+                          return true;
+                      } catch (Exception e) { return false; }
+                  }
+                  @android.webkit.JavascriptInterface
+                  public String saveImage(String name, String mime, String b64) {
+                      try {
+                          byte[] data = android.util.Base64.decode(b64, android.util.Base64.DEFAULT);
+                          java.io.OutputStream o;
+                          String p;
+                          if (android.os.Build.VERSION.SDK_INT >= 29) {
+                              android.content.ContentValues v = new android.content.ContentValues();
+                              v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
+                              v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime);
+                              v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/PLDN");
+                              android.net.Uri u = getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
+                              o = getContentResolver().openOutputStream(u);
+                              p = "Pictures/PLDN/" + name;
+                          } else {
+                              java.io.File f = new java.io.File(getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES), name);
+                              o = new java.io.FileOutputStream(f);
+                              p = f.getAbsolutePath();
+                          }
+                          o.write(data);
+                          o.close();
+                          return p;
+                      } catch (Exception e) { return ""; }
+                  }
+              }
+              public class PldnUpdater {
+                  volatile int pct = 0;
+                  volatile long bytes = 0;
+                  volatile String state = "idle";
+                  volatile String err = "";
+                  @android.webkit.JavascriptInterface
+                  public boolean canInstall() {
+                      if (android.os.Build.VERSION.SDK_INT >= 26) { return getPackageManager().canRequestPackageInstalls(); }
+                      return true;
+                  }
+                  @android.webkit.JavascriptInterface
+                  public void openSettings() {
+                      try {
+                          android.content.Intent i = new android.content.Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:" + getPackageName()));
+                          i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                          startActivity(i);
+                      } catch (Exception e) { }
+                  }
+                  void fetchApk(String url, java.io.File f, java.io.File marker) throws Exception {
+                      long have = 0;
+                      String prev = "";
+                      try {
+                          if (marker.exists()) {
+                              java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(marker));
+                              prev = br.readLine();
+                              br.close();
+                          }
+                      } catch (Exception e) { prev = ""; }
+                      if (f.exists() && url.equals(prev)) { have = f.length(); } else if (f.exists()) { f.delete(); }
+                      java.io.FileWriter fw = new java.io.FileWriter(marker);
+                      fw.write(url);
+                      fw.close();
+                      java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+                      c.setConnectTimeout(15000);
+                      c.setReadTimeout(30000);
+                      c.setInstanceFollowRedirects(true);
+                      if (have > 0) { c.setRequestProperty("Range", "bytes=" + have + "-"); }
+                      int code = c.getResponseCode();
+                      if (code == 416) { f.delete(); throw new Exception("HTTP 416"); }
+                      if (code != 200 && code != 206) { throw new Exception("HTTP " + code); }
+                      boolean resumed = (code == 206 && have > 0);
+                      long got = resumed ? have : 0;
+                      long total = c.getContentLengthLong();
+                      if (total > 0) { total = total + got; }
+                      java.io.InputStream in = c.getInputStream();
+                      java.io.FileOutputStream out = new java.io.FileOutputStream(f, resumed);
+                      byte[] buf = new byte[65536];
+                      int n;
+                      try {
+                          while ((n = in.read(buf)) > 0) {
+                              out.write(buf, 0, n);
+                              got += n;
+                              bytes = got;
+                              if (total > 0) { pct = (int) (got * 100 / total); }
+                          }
+                      } finally {
+                          try { out.close(); } catch (Exception e) { }
+                          try { in.close(); } catch (Exception e) { }
+                      }
+                      if (total > 0 && got < total) { throw new Exception("uzilib qoldi"); }
+                      if (got < 1000000) { f.delete(); throw new Exception("fayl kichik: " + got); }
+                  }
+                  @android.webkit.JavascriptInterface
+                  public void download(final String url) {
+                      if ("downloading".equals(state)) { return; }
+                      state = "downloading"; pct = 0; bytes = 0; err = "";
+                      new Thread(new Runnable() {
+                          public void run() {
+                              java.io.File f = new java.io.File(getCacheDir(), "pldn-update.apk");
+                              java.io.File marker = new java.io.File(getCacheDir(), "pldn-update.url");
+                              int tries = 0;
+                              while (true) {
+                                  try {
+                                      fetchApk(url, f, marker);
+                                      pct = 100;
+                                      state = "done";
+                                      break;
+                                  } catch (Exception e) {
+                                      tries++;
+                                      if (tries >= 4) { err = String.valueOf(e); state = "error"; break; }
+                                      try { Thread.sleep(1500); } catch (Exception x) { }
+                                  }
+                              }
+                          }
+                      }).start();
+                  }
+                  @android.webkit.JavascriptInterface
+                  public String status() {
+                      return state + "|" + pct + "|" + bytes + "|" + err;
+                  }
+                  @android.webkit.JavascriptInterface
+                  public String install() {
+                      try {
+                          java.io.File f = new java.io.File(getCacheDir(), "pldn-update.apk");
+                          android.net.Uri u = androidx.core.content.FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", f);
+                          android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_VIEW);
+                          i.setDataAndType(u, "application/vnd.android.package-archive");
+                          i.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION | android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                          startActivity(i);
+                          return "ok";
+                      } catch (Exception e) { return "err:" + e; }
+                  }
+              }
+              @Override
+              public void onCreate(android.os.Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
+                      @Override
+                      public void handleOnBackPressed() {
+                          try {
+                              getBridge().getWebView().evaluateJavascript(
+                                  "(function(){try{return !!(window.pldnBack&&window.pldnBack());}catch(e){return false;}})()",
+                                  value -> {
+                                      if (!"true".equals(value)) {
+                                          setEnabled(false);
+                                          getOnBackPressedDispatcher().onBackPressed();
+                                          setEnabled(true);
+                                      }
+                                  });
+                          } catch (Exception e) {
+                              setEnabled(false);
+                              getOnBackPressedDispatcher().onBackPressed();
+                              setEnabled(true);
+                          }
+                      }
+                  });
+              }
+              @Override
+              public void onStart() {
+                  super.onStart();
+                  if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                      ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
+                  }
+                  getBridge().getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
+                  getBridge().getWebView().addJavascriptInterface(new PldnSaver(), "PldnSave");
+                  getBridge().getWebView().addJavascriptInterface(new PldnUpdater(), "PldnUpd");
+                  getBridge().getWebView().setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
+                      @Override
+                      public void onPermissionRequest(final PermissionRequest request) {
+                          runOnUiThread(() -> request.grant(request.getResources()));
+                      }
+                  });
+              }
+          }
+          EOF
+     
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Print APK signing fingerprint
+        run: |
+          keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pldn-app-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk pldn-app.apk
+          gh release create "v$VERSION_CODE" pldn-app.apk --repo "${{ github.repository }}" --title "PLDN $VERSION_NAME" --notes "Build $VERSION_CODE" --latest
+
+
+
+
+          
