@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-stickerpacks-v63 (2026-10-13) -->
+<!-- VERSION: chat-wallpaper-v67 (2026-10-13) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -3280,9 +3280,9 @@
       <p class="logout-modal-text" data-i18n="k70" style="text-align:left; padding: 0 6px;">Yoqilganda, robot ilova ichida ko'rinib turadi va uni istalgan joyga surish mumkin.</p>
 
       <div class="settings-group">
-        <div class="settings-item" id="connectedDevicesRow">
-          <span class="settings-icon">🔗</span>
-          <span class="settings-label" data-i18n="k71">Ulangan qurilmalar</span>
+        <div class="settings-item" id="pldnWallpapersRow">
+          <span class="settings-icon">🖼</span>
+          <span class="settings-label" id="pldnWpLabel">Fonlar</span>
           <span class="settings-arrow">›</span>
         </div>
         <div class="settings-item" id="createGroupRow">
@@ -3598,7 +3598,7 @@
         </svg>
       </button>
       <div class="chat-detail-info">
-        <div class="chat-detail-name" data-i18n="k71">Ulangan qurilmalar</div>
+        <div class="chat-detail-name" data-i18n="k103">Aktiv seanslar</div>
       </div>
     </div>
 
@@ -6876,9 +6876,7 @@
     goToScreen('connectedDevicesScreen');
   }
 
-  document.getElementById('connectedDevicesRow').addEventListener('click', () => {
-    openConnectedDevicesScreen('pldnSettingsScreen');
-  });
+  // (PLDN sozlamalaridagi "Ulangan qurilmalar" qatori "Fonlar" bilan almashtirildi; seanslar Maxfiylik > Aktiv seanslar'da)
 
   document.getElementById('activeSessionsRow').addEventListener('click', () => {
     openConnectedDevicesScreen('privacyScreen');
@@ -10241,6 +10239,7 @@
     const isg = isG(c.type);
     $('callAudioBtn').style.display = isg ? 'none' : '';
     $('callVideoBtn').style.display = isg ? 'none' : '';
+    if (window.pldnPdfBtn) window.pldnPdfBtn.style.display = 'none';
     const post = !isg || canPost(c);
     bar.style.display = post ? '' : 'none';
     ro.style.display = post ? 'none' : 'block';
@@ -10255,6 +10254,7 @@
     if (metaUnsub) { try { metaUnsub(); } catch (_) {} metaUnsub = null; }
     $('callAudioBtn').style.display = '';
     $('callVideoBtn').style.display = '';
+    if (window.pldnPdfBtn) window.pldnPdfBtn.style.display = 'none';
     bar.style.display = '';
     ro.style.display = 'none';
   };
@@ -10271,9 +10271,10 @@
       const v = snap.data();
       if ((v.members || []).indexOf(u.uid) < 0) { fbLeaveChat(); goToScreen('screen4'); return; }
       chat.members = v.members || []; chat.owner = v.owner || ''; chat.admins = v.admins || [];
-      chat.name = v.name || chat.name; chat.avatar = fbSafeAvatar(v.avatar); chat.username = v.username || '';
+      chat.name = v.name || chat.name; chat.avatar = fbSafeAvatar(v.avatar); chat.username = v.username || ''; chat.about = typeof v.about === 'string' ? v.about : '';
       applyChatUi(chat);
       if ($('pgxInfoScreen').classList.contains('active')) renderInfo();
+      if ($('pgxGrpScreen') && $('pgxGrpScreen').classList.contains('active')) renderGrp();
     }, function (e) { console.error('Guruh kuzatuvi', e); });
   };
   window.pldnAddSender = function (b, uid) {
@@ -10290,6 +10291,7 @@
     const c = fbCurrentChat;
     if (c && c.type === 'dm' && c.otherUid) { if (typeof pldnOpenContact === 'function') pldnOpenContact(); return; }
     if (!c || !isG(c.type)) return;
+    openGrp(); return;
     $('pgxMenuTitle').textContent = c.name;
     const box = $('pgxMenuItems'); box.innerHTML = '';
     const add = function (ic, txt, fn) {
@@ -10306,42 +10308,181 @@
   $('chatDetailAvatar').addEventListener('click', openMenu);
   document.querySelector('#chatDetailScreen .chat-detail-info').addEventListener('click', openMenu);
 
-  // ================= A'ZO QO'SHISH (username bilan) =================
+  // ================= A'ZO QO'SHISH (username bo'yicha qidirish va qo'shish) =================
   const addOv = mkOverlay('pgxAddOv',
     '<div class="pgx-modal"><h3 id="pgxAddTitle"></h3><p class="subtitle" id="pgxAddSub" style="margin:0 0 10px;"></p>' +
     '<input type="text" class="name-input" id="pgxAddInput" maxlength="12" autocomplete="off" autocapitalize="none">' +
+    '<div id="pgxAddRes" style="max-height:40vh;overflow-y:auto;margin-top:8px;"></div>' +
     '<p class="subtitle" id="pgxAddMsg" style="min-height:20px;margin-top:8px;"></p>' +
-    '<div class="pgx-row"><button class="pgx-b1" id="pgxAddCancel"></button><button class="pgx-b2" id="pgxAddOk"></button></div></div>');
+    '<div class="pgx-row"><button class="pgx-b1" id="pgxAddCancel"></button></div></div>');
+  let addTok = 0, addTimer = null;
   function openAdd() {
     const c = fbCurrentChat; if (!c || !canAdd(c)) return;
     $('pgxAddTitle').textContent = T("A'zo qo'shish", 'Добавить участника');
-    $('pgxAddSub').textContent = T("Foydalanuvchining username'ini kiriting (PLDN/- dan keyingi qismi)", 'Введите username пользователя (часть после PLDN/-)');
+    $('pgxAddSub').textContent = T("Username yozing (PLDN/- dan keyingi qismi), topilganlardan tanlang", 'Введите username (часть после PLDN/-) и выберите из найденных');
     $('pgxAddInput').placeholder = T('Foydalanuvchi nomi', 'Имя пользователя');
-    $('pgxAddInput').value = ''; $('pgxAddMsg').textContent = '';
+    $('pgxAddInput').value = ''; $('pgxAddMsg').textContent = ''; $('pgxAddRes').innerHTML = '';
     $('pgxAddCancel').textContent = T('Yopish', 'Закрыть');
-    $('pgxAddOk').textContent = T("Qo'shish", 'Добавить');
     addOv.classList.add('open');
   }
   $('pgxAddCancel').addEventListener('click', function () { addOv.classList.remove('open'); });
-  $('pgxAddInput').addEventListener('input', function () { this.value = this.value.toLowerCase().replace(/[^a-z0-9]/g, ''); });
-  $('pgxAddOk').addEventListener('click', async function () {
-    const c = fbCurrentChat; const msg = $('pgxAddMsg'); const btn = this;
-    const u = $('pgxAddInput').value;
-    if (!c || !canAdd(c)) return;
-    if (u.length < 4) { msg.textContent = T('Kamida 4 ta belgi kiriting', 'Введите минимум 4 символа'); return; }
-    btn.disabled = true; msg.textContent = T('Qidirilmoqda...', 'Поиск...');
-    try {
-      const snap = await fbDb.collection('users').where('username', '==', u).limit(1).get();
-      if (snap.empty) { msg.textContent = T('Bunday foydalanuvchi topilmadi', 'Пользователь не найден'); return; }
-      const uid = snap.docs[0].id;
-      if ((c.members || []).indexOf(uid) >= 0) { msg.textContent = T("U allaqachon a'zo", 'Уже участник'); return; }
-      await fbDb.collection('chats').doc(c.id).update({ members: FV().arrayUnion(uid) });
-      const nm = fbDisplayName(snap.docs[0].data());
-      msg.textContent = '✅ ' + T("Qo'shildi: ", 'Добавлен: ') + nm;
-      $('pgxAddInput').value = '';
-    } catch (e) { console.error(e); msg.textContent = fbErrMsg(e); }
-    finally { btn.disabled = false; }
+  $('pgxAddInput').addEventListener('input', function () {
+    this.value = this.value.toLowerCase().replace(/[^a-z0-9]/g, '');
+    clearTimeout(addTimer); const q = this.value, tok = ++addTok;
+    $('pgxAddRes').innerHTML = ''; $('pgxAddMsg').textContent = '';
+    if (q.length < 2) return;
+    addTimer = setTimeout(function () { addSearch(q, tok); }, 300);
   });
+  async function addSearch(q, tok) {
+    const c = fbCurrentChat; if (!c) return;
+    const msg = $('pgxAddMsg'); msg.textContent = T('Qidirilmoqda...', 'Поиск...');
+    try {
+      const snap = await fbDb.collection('users').where('username', '>=', q).where('username', '<=', q + '\uf8ff').limit(10).get();
+      if (tok !== addTok) return;
+      const box = $('pgxAddRes'); box.innerHTML = '';
+      msg.textContent = snap.empty ? T('Bunday foydalanuvchi topilmadi', 'Пользователь не найден') : '';
+      snap.forEach(function (d) {
+        const v = d.data() || {}, uid = d.id;
+        const row = document.createElement('div'); row.className = 'pgx-mem'; row.style.cursor = 'default';
+        const av = document.createElement('div'); av.className = 'pgx-mem-av'; const nm = fbDisplayName(v); setAv(av, fbSafeAvatar(v.avatar), nm, fbColorFor(uid));
+        const mid = document.createElement('div'); mid.className = 'pgx-mem-main';
+        const n = document.createElement('div'); n.className = 'pgx-mem-name'; n.textContent = nm;
+        const s = document.createElement('div'); s.className = 'pgx-mem-sub'; s.textContent = 'PLDN/-' + (v.username || '');
+        mid.append(n, s); row.append(av, mid);
+        const b = document.createElement('button'); b.className = 'pgx-b2'; b.style.cssText = 'border:0;border-radius:10px;padding:8px 14px;font-size:14px;font-weight:600;flex-shrink:0';
+        if ((c.members || []).indexOf(uid) >= 0) { b.textContent = "✓ " + T("a'zo", 'участник'); b.disabled = true; b.style.opacity = '.6'; }
+        else {
+          b.textContent = T("Qo'shish", 'Добавить');
+          b.addEventListener('click', async function () {
+            b.disabled = true;
+            try {
+              await fbDb.collection('chats').doc(c.id).update({ members: FV().arrayUnion(uid) });
+              b.textContent = '✓ ' + T("qo'shildi", 'добавлен'); b.style.opacity = '.6';
+            } catch (e) { console.error(e); msg.textContent = fbErrMsg(e); b.disabled = false; }
+          });
+        }
+        row.appendChild(b); box.appendChild(row);
+      });
+    } catch (e) { console.error(e); if (tok === addTok) msg.textContent = fbErrMsg(e); }
+  }
+
+  // ================= GURUH / KANAL PROFILI (foydalanuvchi profiliga o'xshash) =================
+  const grpSt = document.createElement('style');
+  grpSt.textContent =
+    '#pgxGrpScreen{padding:0;align-items:stretch;overflow:hidden}' +
+    '#pgxGrpScreen.expanded .pgx-ct-big{height:50vh}' +
+    '#pgxGrpScreen .profile-header{gap:10px;position:relative;z-index:5}' +
+    '#pgxGrpScreen.expanded .profile-header{position:absolute;top:0;left:0;right:0;background:transparent;border-bottom:0}' +
+    '#pgxGrpScreen.expanded .profile-header h2{display:none}' +
+    '#pgxGrpScreen.expanded .chat-back-btn{background:rgba(0,0,0,.35);color:#fff}' +
+    '#pgxGrpScreen.expanded .profile-avatar-big{display:none}' +
+    '#pgxGrpScreen.expanded .profile-body{padding-top:16px}' +
+    '#pgxGrpScreen.expanded .pgx-ct-more{color:#fff;background:rgba(0,0,0,.35);border-radius:50%;width:42px;height:42px;padding:0}' +
+    '.pgx-pill{font-size:13px;font-weight:600;padding:3px 10px;border-radius:12px;flex-shrink:0}' +
+    '.pgx-pill.own{background:#efe3fb;color:#9b51e0}.pgx-pill.adm{background:#dff5df;color:#2e9e3a}' +
+    '.pgx-gadd{display:flex;align-items:center;gap:16px;padding:14px 16px;font-size:17px;color:#2481cc;cursor:pointer;border-bottom:1px solid var(--divider-color,#eee)}' +
+    '.pgx-gadd span{font-size:22px;width:26px;text-align:center}';
+  document.head.appendChild(grpSt);
+  const grp = mkScreen('pgxGrpScreen',
+    '<div class="profile-header"><button class="chat-back-btn" id="pgxGrBack">' + BACK + '</button><h2 id="pgxGrTitle"></h2><button class="pgx-ct-more" id="pgxGrMore">⋮</button></div>' +
+    '<div class="pgx-ct-big" id="pgxGrBig"></div>' +
+    '<div class="profile-body" id="pgxGrBody">' +
+      '<div class="profile-avatar-big" id="pgxGrAv"></div>' +
+      '<div class="profile-name" id="pgxGrName"></div>' +
+      '<div class="profile-username" id="pgxGrSub" style="color:var(--text-secondary,#8e8e93);"></div>' +
+      '<div class="profile-info-box">' +
+        '<div class="profile-info-row"><span class="profile-info-label" id="pgxGrL1"></span><span class="profile-info-value" id="pgxGrV1" style="white-space:pre-wrap;word-break:break-word;"></span></div>' +
+        '<div class="profile-info-row" id="pgxGrUrow"><span class="profile-info-label" id="pgxGrL2"></span><span class="profile-info-value" id="pgxGrV2"></span></div>' +
+      '</div>' +
+      '<div class="profile-info-box"><div class="pgx-gadd" id="pgxGrAdd"><span>👤</span><b id="pgxGrAddT" style="font-weight:500"></b></div><div id="pgxGrMem"></div></div>' +
+    '</div>' +
+    '<div class="profile-edit-bar" id="pgxGrBar"><button class="edit-profile-btn" id="pgxGrEdit"></button></div>');
+  let grpTok = 0, grpExp = false;
+  function setGrpExp(on) { grpExp = on; grp.classList.toggle('expanded', on); }
+  function openGrp() {
+    const c = fbCurrentChat; if (!c || !isG(c.type)) return;
+    setGrpExp(false); renderGrp(); goToScreen('pgxGrpScreen'); $('pgxGrBody').scrollTop = 0;
+  }
+  async function renderGrp() {
+    const c = fbCurrentChat; if (!c || !isG(c.type)) return;
+    const token = ++grpTok, ch = c.type === 'channel', mine = me();
+    $('pgxGrTitle').textContent = ch ? T('Kanal', 'Канал') : T('Guruh', 'Группа');
+    setAv($('pgxGrAv'), c.avatar, c.name, c.color);
+    const big = $('pgxGrBig');
+    if (c.avatar) { big.textContent = ''; big.style.background = 'url(' + c.avatar + ') center/cover'; }
+    else { big.textContent = initials(c.name || '?'); big.style.background = c.color; }
+    $('pgxGrName').textContent = c.name;
+    $('pgxGrSub').textContent = cnt(c);
+    $('pgxGrL1').textContent = ch ? T('Kanal haqida', 'О канале') : T('Guruh haqida', 'О группе');
+    $('pgxGrV1').textContent = c.about ? c.about : '—';
+    $('pgxGrL2').textContent = 'Username';
+    $('pgxGrV2').textContent = c.username ? 'PLDN/-' + c.username : '—';
+    $('pgxGrAddT').textContent = ch ? T("Obunachi qo'shish", 'Добавить подписчика') : T("A'zolar qo'shish", 'Добавить участников');
+    $('pgxGrAdd').style.display = canAdd(c) ? '' : 'none';
+    $('pgxGrEdit').textContent = T("O'zgartirish", 'Изменить');
+    $('pgxGrBar').style.display = isOwnerOf(c) ? '' : 'none';
+    const list = $('pgxGrMem');
+    const ids = (c.members || []).slice(0, 300);
+    const users = await Promise.all(ids.map(function (uid) { return fbGetUser(uid).catch(function () { return { uid: uid, name: '?', username: '', avatar: null, color: fbColorFor(uid) }; }); }));
+    if (token !== grpTok) return;
+    list.innerHTML = '';
+    const rank = function (u) { return u.uid === c.owner ? 0 : ((c.admins || []).indexOf(u.uid) >= 0 ? 1 : 2); };
+    users.sort(function (a, b) { return rank(a) - rank(b); });
+    users.forEach(function (u) {
+      const row = document.createElement('div'); row.className = 'pgx-mem';
+      const av = document.createElement('div'); av.className = 'pgx-mem-av'; setAv(av, u.avatar, u.name, u.color);
+      const mid = document.createElement('div'); mid.className = 'pgx-mem-main';
+      const n = document.createElement('div'); n.className = 'pgx-mem-name'; n.textContent = u.name + (mine && u.uid === mine.uid ? ' (' + T('siz', 'вы') + ')' : '');
+      const s = document.createElement('div'); s.className = 'pgx-mem-sub'; s.textContent = u.username ? 'PLDN/-' + u.username : '';
+      mid.append(n, s); row.append(av, mid);
+      const r = rank(u);
+      if (r < 2) { const b = document.createElement('span'); b.className = 'pgx-pill ' + (r === 0 ? 'own' : 'adm'); b.textContent = r === 0 ? T('Ega', 'Владелец') : 'Admin'; row.appendChild(b); }
+      else if (isOwnerOf(c)) {
+        const x = document.createElement('button'); x.className = 'pgx-x'; x.textContent = '✕';
+        x.addEventListener('click', async function (e) {
+          e.stopPropagation();
+          const ok = await pldnConfirm(T("«" + u.name + "» ni chiqarasizmi?", 'Удалить «' + u.name + '»?'));
+          if (!ok) return;
+          fbDb.collection('chats').doc(c.id).update({ members: FV().arrayRemove(u.uid) }).catch(function (er) { alert(fbErrMsg(er)); });
+        });
+        row.appendChild(x);
+      }
+      row.addEventListener('click', function () {
+        if (mine && u.uid === mine.uid) return;
+        fbOpenChat({ otherUid: u.uid, name: u.name, color: u.color, avatar: u.avatar }, true);
+      });
+      list.appendChild(row);
+    });
+  }
+  $('pgxGrBack').addEventListener('click', function () { setGrpExp(false); goToScreen('chatDetailScreen'); });
+  $('pgxGrAdd').addEventListener('click', openAdd);
+  $('pgxGrEdit').addEventListener('click', function () { openSettings(); });
+  $('pgxGrUrow').addEventListener('click', function () {
+    const c = fbCurrentChat; if (!c || !c.username) return;
+    try { navigator.clipboard.writeText(c.username); alert(T('Username nusxalandi: ', 'Username скопирован: ') + c.username); } catch (_) {}
+  });
+  $('pgxGrMore').addEventListener('click', function () {
+    const c = fbCurrentChat; if (!c || !isG(c.type)) return;
+    const ch = c.type === 'channel', items = [];
+    if (isOwnerOf(c)) items.push({ icon: '✏️', label: T("O'zgartirish", 'Изменить'), fn: function () { openSettings(); } });
+    if (window.pldnPdfOpen) items.push({ icon: '📄', label: T('PDF qilish', 'Сохранить в PDF'), fn: function () { window.pldnPdfOpen(); } });
+    if (window.pldnWpItems) window.pldnWpItems().forEach(function (it) { items.push(it); });
+    items.push(isOwnerOf(c)
+      ? { icon: '🗑️', label: ch ? T("Kanalni o'chirish", 'Удалить канал') : T("Guruhni o'chirish", 'Удалить группу'), fn: function () { $('pgxSetDanger').click(); } }
+      : { icon: '🚪', label: ch ? T('Kanaldan chiqish', 'Покинуть канал') : T('Guruhdan chiqish', 'Покинуть группу'), fn: function () { $('pgxSetDanger').click(); } });
+    window.pldnPopMenu(items, { el: $('pgxGrMore') });
+  });
+  // tepadan pastga tortganda katta rasm
+  (function () {
+    const body = $('pgxGrBody'); let sy = 0;
+    body.addEventListener('touchstart', function (e) { sy = e.touches[0].clientY; }, { passive: true });
+    body.addEventListener('touchmove', function (e) {
+      const dy = e.touches[0].clientY - sy;
+      if (!grpExp && body.scrollTop <= 0 && dy > 70) setGrpExp(true);
+      else if (grpExp && dy < -50) setGrpExp(false);
+    }, { passive: true });
+    $('pgxGrBig').addEventListener('click', function () { setGrpExp(false); });
+  })();
 
   // ================= GURUH MA'LUMOTI (a'zolar ro'yxati) =================
   const info = mkScreen('pgxInfoScreen',
@@ -10420,8 +10561,19 @@
     '<div class="pgx-card" style="padding:14px;"><input type="text" class="name-input" id="pgxSetName" maxlength="40" autocomplete="off"><button class="done-btn" id="pgxSetSave" style="margin-top:10px;"></button><p class="subtitle" id="pgxSetMsg" style="min-height:18px;margin-top:6px;"></p></div>' +
     '<div class="pgx-card" id="pgxSetInfo" style="margin-top:14px;"></div>' +
     '<div class="pgx-card" style="margin-top:14px;"><div class="pgx-item danger" id="pgxSetDanger"></div></div></div>');
+  (function () {
+    const ab = document.createElement('textarea'); ab.id = 'pgxSetAbout'; ab.maxLength = 300; ab.rows = 4; ab.className = 'name-input';
+    ab.style.cssText = 'height:auto;min-height:96px;resize:none;padding:12px;box-sizing:border-box;font-family:inherit;margin-top:10px;width:100%;';
+    $('pgxSetName').insertAdjacentElement('afterend', ab);
+    const cn = document.createElement('div'); cn.id = 'pgxSetAboutCnt'; cn.style.cssText = 'text-align:right;font-size:12px;color:var(--text-secondary,#8e8e93);margin-top:2px;';
+    ab.insertAdjacentElement('afterend', cn);
+    ab.addEventListener('input', function () { cn.textContent = Array.from(ab.value).length + '/300'; });
+  })();
   function openSettings() {
     const c = fbCurrentChat; if (!c || !isG(c.type)) return;
+    $('pgxSetAbout').value = c.about || ''; $('pgxSetAbout').disabled = !isOwnerOf(c);
+    $('pgxSetAbout').placeholder = c.type === 'channel' ? T('Kanal haqida (300 tagacha belgi)', 'О канале (до 300 символов)') : T('Guruh haqida (300 tagacha belgi)', 'О группе (до 300 символов)');
+    $('pgxSetAboutCnt').textContent = Array.from($('pgxSetAbout').value).length + '/300';
     const owner = isOwnerOf(c);
     $('pgxSetTitle').textContent = T('Sozlamalar', 'Настройки');
     setAv($('pgxSetAv'), c.avatar, c.name, c.color);
@@ -10444,16 +10596,18 @@
       : ('🚪 ' + (c.type === 'channel' ? T('Kanaldan chiqish', 'Покинуть канал') : T('Guruhdan chiqish', 'Покинуть группу')));
     goToScreen('pgxSetScreen');
   }
-  $('pgxSetBack').addEventListener('click', function () { goToScreen('chatDetailScreen'); });
+  $('pgxSetBack').addEventListener('click', function () { renderGrp(); goToScreen('pgxGrpScreen'); });
   $('pgxSetSave').addEventListener('click', async function () {
     const c = fbCurrentChat; if (!c || !isOwnerOf(c)) return;
     const name = $('pgxSetName').value.trim().slice(0, 40);
     if (!name) return;
+    const about = Array.from($('pgxSetAbout').value).slice(0, 300).join('').trim();
     try {
       const batch = fbDb.batch();
-      batch.update(fbDb.collection('chats').doc(c.id), { name: name });
+      batch.update(fbDb.collection('chats').doc(c.id), { name: name, about: about });
       if (c.username) batch.update(fbDb.collection('usernames').doc(c.username), { name: name, kind: c.type, chatId: c.id, owner: c.owner, avatar: c.avatar || null });
       await batch.commit();
+      c.about = about; c.name = name;
       $('pgxSetMsg').textContent = '✅ ' + T('Saqlandi', 'Сохранено');
     } catch (e) { $('pgxSetMsg').textContent = fbErrMsg(e); }
   });
@@ -10876,6 +11030,8 @@
 
   // ---------- ulashish takliflari ----------
   const links = {};       // uid -> {status, by, ms}
+  const wpOffers = {};    // chatId -> {other, status, by, ms, thumb}  (fon rasm o'rnatish ruxsati)
+  let wpOfUnsub = null;
   function linkRef(uid) { return fbDb.collection('storyLinks').doc(linkId(myUid, uid)); }
   async function sendOffer(uid) {
     try {
@@ -10894,7 +11050,7 @@
     const l = links[uid];
     let items;
     if (l && l.status === 'accepted') {
-      items = [['✅', T('Hikoyalar ulashilgan', 'Истории общие'), null], ['🚫', T("Ulashishni to'xtatish", 'Остановить обмен'), async function () {
+      items = [['✅', T('Hikoyalar ulashilgan', 'Истории общие'), null], ['🚫', T("Hikoya ulashishni to'xtatish", 'Остановить обмен историями'), async function () {
         const ok = await pldnConfirm(T('«' + name + '» bilan hikoyalar ulashishi to\'xtatilsinmi?', 'Остановить обмен историями с «' + name + '»?'));
         if (ok) setStatus(uid, 'cancelled');
       }]];
@@ -10906,6 +11062,14 @@
       items = [['➕', T('+Hikoya (ulashish taklifi)', '+История (предложить обмен)'), function () { sendOffer(uid); }]];
     }
     if (window.pldnBlockMenu) items = window.pldnBlockMenu(uid, items, name);
+    // "PDF qilish": shu foydalanuvchi bilan ochiq chatni PDF qiladi (bloklash tugmasi ostida)
+    if (window.pldnPdfOpen && typeof fbCurrentChat !== 'undefined' && fbCurrentChat && (fbCurrentChat.type || 'dm') === 'dm' && fbCurrentChat.otherUid === uid) {
+      items = items.concat([['📄', T('PDF qilish', 'Сохранить в PDF'), function () { window.pldnPdfOpen(); }]]);
+    }
+    // "Fon joylash": shu chat uchun orqa fon (faqat o'zim uchun)
+    if (window.pldnWpItems && typeof fbCurrentChat !== 'undefined' && fbCurrentChat && (fbCurrentChat.type || 'dm') === 'dm' && fbCurrentChat.otherUid === uid) {
+      window.pldnWpItems().forEach(function (it) { items.push([it.icon, it.label, it.fn]); });
+    }
     // Holat yozuvlari (amalsiz qatorlar) olib tashlanadi; menyu ⋮ tugmasi ostida qalqib chiqadi
     const pop = items.filter(function (it) { return it[2]; }).map(function (it) { return { icon: it[0], label: it[1], fn: it[2] }; });
     const anchor = $('pgxCtMore');
@@ -10916,7 +11080,8 @@
   // ---------- "Takliflar" bo'limi (🔔) ----------
   let offTok = 0;
   window.pldnOffersPending = function () {
-    return Object.keys(links).filter(function (k) { return links[k].status === 'pending' && links[k].by !== myUid; }).length;
+    return Object.keys(links).filter(function (k) { return links[k].status === 'pending' && links[k].by !== myUid; }).length
+      + Object.keys(wpOffers).filter(function (k) { return wpOffers[k].status === 'pending' && wpOffers[k].by !== myUid; }).length;
   };
   function offersRefresh() {
     if (typeof pldnRefreshBell === 'function') pldnRefreshBell();
@@ -10930,7 +11095,7 @@
     const tok = ++offTok;
     body.innerHTML = '';
     const uids = Object.keys(links).sort(function (a, b) { return links[b].ms - links[a].ms; });
-    if (!uids.length) {
+    if (!uids.length && !Object.keys(wpOffers).length) {
       const e = document.createElement('div'); e.className = 'pldn-np-empty'; e.textContent = T("Hozircha taklif yo'q.", 'Предложений пока нет.');
       body.appendChild(e); return;
     }
@@ -10965,6 +11130,35 @@
           stDiv.textContent = T('kutilmoqda...', 'ожидание...'); stDiv.style.marginBottom = '10px'; card.appendChild(stDiv);
           btns([T('Bekor qilish', 'Отменить'), function () { setStatus(uid, 'cancelled'); }, 'np-cancel'], null);
         } else { stDiv.textContent = l.status === 'accepted' ? T('Qabul qilindi ✓', 'Принято ✓') : T('Bekor qilindi', 'Отменено'); card.appendChild(stDiv); }
+      }
+      body.appendChild(card);
+    });
+    // fon rasm o'rnatish takliflari
+    const wpIds = Object.keys(wpOffers).sort(function (a, b) { return wpOffers[b].ms - wpOffers[a].ms; });
+    const wpUsers = await Promise.all(wpIds.map(function (id) { return fbGetUser(wpOffers[id].other).catch(function () { return { uid: wpOffers[id].other, name: '?', first: '', last: '', username: '' }; }); }));
+    if (tok !== offTok) return;
+    wpIds.forEach(function (id, i) {
+      const u = wpUsers[i], w = wpOffers[id], mineOffer = w.by === myUid;
+      const card = document.createElement('div'); card.className = 'pldn-np-card'; card.style.marginBottom = '12px';
+      [T('Ism: ', 'Имя: ') + (u.first || u.name || '-'), T('Familiya: ', 'Фамилия: ') + (u.last || '-'), 'PLDN/-' + (u.username || ''), T("Taklif: fon rasm o'rnatish ruxsati.", 'Предложение: разрешение на установку фонового изображения.')].forEach(function (t, k) {
+        const d = document.createElement('div'); d.textContent = t;
+        d.style.cssText = k === 3 ? 'margin:8px 0 12px;font-weight:600;' : (k === 2 ? 'color:#2AABEE;' : '');
+        card.appendChild(d);
+      });
+      if (w.thumb) { const im = new Image(); im.src = w.thumb; im.style.cssText = 'max-width:120px;max-height:120px;border-radius:10px;margin-bottom:12px;display:block'; card.appendChild(im); }
+      const stDiv = document.createElement('div'); stDiv.style.cssText = 'font-weight:700;';
+      const setWp = function (status) { fbDb.collection('chatWallpapers').doc(id).update({ status: status, updatedAt: fbSrvTs() }).catch(function (e) { alert(fbErrMsg(e)); }); };
+      const btns = function (a, b) {
+        const row = document.createElement('div'); row.className = 'pldn-np-btns';
+        [a, b].forEach(function (x) { if (!x) return; const bt = document.createElement('button'); bt.className = x[2]; bt.textContent = x[0]; bt.addEventListener('click', x[1]); row.appendChild(bt); });
+        card.appendChild(row);
+      };
+      if (!mineOffer) {
+        if (w.status === 'pending') btns([T('Bekor qilish', 'Отклонить'), function () { setWp('declined'); }, 'np-cancel'], [T('Qabul qilish', 'Принять'), function () { setWp('accepted'); }, 'np-yes']);
+        else { stDiv.textContent = w.status === 'accepted' ? T('Qabul qildingiz ✓', 'Вы приняли ✓') : w.status === 'declined' ? T('Qabul qilmadingiz', 'Вы не приняли') : T('Bekor qilindi', 'Отменено'); card.appendChild(stDiv); }
+      } else {
+        if (w.status === 'pending') { stDiv.textContent = T('kutilmoqda...', 'ожидание...'); stDiv.style.marginBottom = '10px'; card.appendChild(stDiv); btns([T('Bekor qilish', 'Отменить'), function () { setWp('cancelled'); }, 'np-cancel'], null); }
+        else { stDiv.textContent = w.status === 'accepted' ? T('Qabul qilindi ✓', 'Принято ✓') : w.status === 'declined' ? T('Rad etildi', 'Отклонено') : T('Bekor qilindi', 'Отменено'); card.appendChild(stDiv); }
       }
       body.appendChild(card);
     });
@@ -11010,6 +11204,19 @@
       render();
       offersRefresh();
     }, function (e) { console.error('Hikoya aloqalari', e); });
+    if (wpOfUnsub) { try { wpOfUnsub(); } catch (_) {} }
+    wpOfUnsub = fbDb.collection('chatWallpapers').where('members', 'array-contains', uid).onSnapshot(function (snap) {
+      Object.keys(wpOffers).forEach(function (k) { delete wpOffers[k]; });
+      snap.forEach(function (d) {
+        const v = d.data() || {};
+        if (!v.ready || !v.status) return;
+        const other = (v.members || []).filter(function (u) { return u !== uid; })[0];
+        if (!other) return;
+        const t = v.updatedAt || v.at;
+        wpOffers[d.id] = { other: other, status: v.status, by: v.by, ms: t && t.toMillis ? t.toMillis() : Date.now(), thumb: v.thumb || '' };
+      });
+      offersRefresh();
+    }, function (e) { console.error('Fon takliflari', e); });
   }
   async function delStory(ref) {
     try {
@@ -12379,7 +12586,9 @@
     bd.style.display = 'block';
   }
   const vb = document.getElementById('callVideoBtn');
-  if (vb) { const b = document.createElement('button'); b.className = 'call-hdr-btn'; b.textContent = '📄'; b.addEventListener('click', openPanel); vb.parentNode.appendChild(b); }
+  window.pldnPdfOpen = openPanel;
+  // Shaxsiy chatda PDF profil menyusida (⋮); sarlavhadagi 📄 faqat guruh/kanalda qoladi
+  if (vb) { const b = document.createElement('button'); b.className = 'call-hdr-btn'; b.textContent = '📄'; b.style.display = 'none'; b.addEventListener('click', openPanel); vb.parentNode.appendChild(b); window.pldnPdfBtn = b; }
   dbGet('job').then(function (j) { if (j && !j.finished) { job = j; paintPill(); } }).catch(function () {});
 })();
 </script>
@@ -13128,6 +13337,297 @@
       return r;
     };
   }
+})();
+</script>
+<script>
+// ===== CHAT / GURUH / KANAL FONLARI ===== VERSION: chat-wallpaper-v2 (siqishsiz, xiralik, ulashish)
+(function () {
+  const T = function (a, b) { return fbT(a, b); };
+  const $ = function (id) { return document.getElementById(id); };
+  const BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>';
+  const CH = 700000;                       // bitta bo'lak (base64 belgi), 4 ga bo'linadi
+  const area = $('messagesArea');
+  const me = function () { return fbAuth && fbAuth.currentUser; };
+  const TS = function () { return firebase.firestore.FieldValue.serverTimestamp(); };
+  const pcol = function () { const u = me(); return u ? fbDb.collection('users').doc(u.uid).collection('wallpapers') : null; };
+  const scol = function () { return fbDb.collection('chatWallpapers'); };
+  const keyOf = function (chatId) { const u = me(); return u ? u.uid + '|' + chatId : ''; };
+  const state = {};                        // "uid|chat" -> {key:'p'|'s', by, kind, status, url}
+  const urls = {};                         // imzo -> objectURL
+  function paint(u) { area.style.background = u ? 'url("' + u + '") center/cover no-repeat' : ''; }
+  function flash(msg) {
+    const t = document.createElement('div');
+    t.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(0,0,0,.8);color:#fff;padding:10px 18px;border-radius:18px;z-index:100010;font-size:15px;max-width:86%;text-align:center';
+    t.textContent = msg; document.body.appendChild(t); setTimeout(function () { t.remove(); }, 2400);
+  }
+
+  // ---------- IndexedDB kesh (qayta yuklamaslik uchun) ----------
+  function idb() { return new Promise(function (res) { try { const r = indexedDB.open('pldn_wp', 1); r.onupgradeneeded = function () { r.result.createObjectStore('b'); }; r.onsuccess = function () { res(r.result); }; r.onerror = function () { res(null); }; } catch (_) { res(null); } }); }
+  async function idbGet(k) { const db = await idb(); if (!db) return null; return new Promise(function (res) { try { const q = db.transaction('b').objectStore('b').get(k); q.onsuccess = function () { res(q.result || null); }; q.onerror = function () { res(null); }; } catch (_) { res(null); } }); }
+  async function idbPut(k, v) { const db = await idb(); if (!db) return; return new Promise(function (res) { try { const tx = db.transaction('b', 'readwrite'); tx.objectStore('b').put(v, k); tx.oncomplete = function () { res(); }; tx.onerror = function () { res(); }; } catch (_) { res(); } }); }
+
+  // ---------- rasm yordamchilari ----------
+  function b64ToBytes(b64) { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+  function readDataURL(file) { return new Promise(function (res, rej) { const r = new FileReader(); r.onload = function () { res(r.result); }; r.onerror = function () { rej(new Error('read')); }; r.readAsDataURL(file); }); }
+  function loadImg(src) { return new Promise(function (res, rej) { const im = new Image(); im.onload = function () { res(im); }; im.onerror = function () { rej(new Error('img')); }; im.src = src; }); }
+  async function makeThumb(file) {
+    const u = URL.createObjectURL(file);
+    try {
+      const im = await loadImg(u), k = Math.min(1, 96 / Math.max(im.width, im.height));
+      const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(im.width * k)); cv.height = Math.max(1, Math.round(im.height * k));
+      cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+      let d = cv.toDataURL('image/webp', 0.7); if (d.indexOf('data:image/webp') !== 0) d = cv.toDataURL('image/jpeg', 0.7);
+      return d.length < 25000 ? d : '';
+    } catch (_) { return ''; } finally { URL.revokeObjectURL(u); }
+  }
+  async function blurBlob(blob, amount) {
+    const u = URL.createObjectURL(blob);
+    try {
+      const im = await loadImg(u), k = Math.min(1, 1024 / Math.max(im.width, im.height));
+      const w = Math.max(1, Math.round(im.width * k)), h = Math.max(1, Math.round(im.height * k));
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      const x = cv.getContext('2d'), px = Math.max(1, amount * w / 720), pad = Math.ceil(px * 2);
+      if (typeof x.filter === 'string') { x.filter = 'blur(' + px + 'px)'; x.drawImage(im, -pad, -pad, w + pad * 2, h + pad * 2); }
+      else { // zaxira: kichraytirib qayta kattalashtirish
+        const sm = document.createElement('canvas'), f = Math.max(2, Math.round(px)); sm.width = Math.max(2, Math.round(w / f)); sm.height = Math.max(2, Math.round(h / f));
+        sm.getContext('2d').drawImage(im, 0, 0, sm.width, sm.height); x.imageSmoothingEnabled = true; x.drawImage(sm, 0, 0, w, h);
+      }
+      return await new Promise(function (res) { cv.toBlob(function (b) { res(b || blob); }, 'image/jpeg', 0.88); });
+    } catch (_) { return blob; } finally { URL.revokeObjectURL(u); }
+  }
+
+  // ---------- yuklash / yuklab olish (siqishsiz, bo'laklarda) ----------
+  async function putChunks(chunksCol, parts, ver, onProg) {
+    for (let i = 0; i < parts.length; i += 3) {
+      await Promise.all(parts.slice(i, i + 3).map(function (p, j) { return chunksCol.doc(ver + '_' + (i + j)).set({ d: p }); }));
+      if (onProg) onProg(Math.min(parts.length, i + 3), parts.length);
+    }
+  }
+  async function purgeOld(chunksCol, ver) {
+    try {
+      const s = await chunksCol.get(); let b = fbDb.batch(), n = 0;
+      s.forEach(function (d) { if (d.id.indexOf(ver + '_') !== 0) { b.delete(d.ref); n++; } });
+      if (n) await b.commit();
+    } catch (e) { console.error('Eski bo\'laklar', e); }
+  }
+  async function delAll(metaRef) {
+    const s = await metaRef.collection('chunks').get(); let b = fbDb.batch(), n = 0;
+    for (const d of s.docs) { b.delete(d.ref); if (++n % 400 === 0) { await b.commit(); b = fbDb.batch(); } }
+    await b.commit(); await metaRef.delete();
+  }
+  async function getBlobUrl(sig, meta, chunksCol) {
+    if (urls[sig]) return urls[sig];
+    const hit = await idbGet(sig);
+    if (hit && hit.blob) return (urls[sig] = URL.createObjectURL(hit.blob));
+    let blob;
+    if (typeof meta.d === 'string' && meta.d) { blob = await (await fetch(meta.d)).blob(); }   // eski (v66) fonlar
+    else {
+      const n = meta.n || 0, docs = await Promise.all(Array.from({ length: n }, function (_, i) { return chunksCol.doc(meta.ver + '_' + i).get(); }));
+      if (docs.some(function (d) { return !d.exists; })) throw new Error('chunks');
+      blob = new Blob(docs.map(function (d) { return b64ToBytes(d.data().d); }), { type: meta.mime || 'image/jpeg' });
+    }
+    if (meta.blur > 0) blob = await blurBlob(blob, meta.blur);
+    idbPut(sig, { blob: blob });
+    return (urls[sig] = URL.createObjectURL(blob));
+  }
+
+  // ---------- chat ochilganda fonni topish va qo'llash ----------
+  async function applyCurrent() {
+    const c = fbCurrentChat, u = me(); if (!c || !u) return;
+    const k = keyOf(c.id);
+    paint(state[k] && state[k].url ? state[k].url : null);
+    try {
+      const rs = await Promise.all([pcol().doc(c.id).get(), scol().doc(c.id).get().catch(function () { return null; })]);
+      const p = rs[0], s = rs[1];
+      let pick = null;
+      if (p.exists) pick = { key: 'p', meta: p.data(), chunks: p.ref.collection('chunks') };
+      else if (s && s.exists) {
+        const v = s.data();
+        if (v.ready && (v.by === u.uid || v.kind !== 'dm' || v.status === 'accepted')) pick = { key: 's', meta: v, chunks: s.ref.collection('chunks') };
+      }
+      if (!pick) { state[k] = null; if (fbCurrentChat === c) paint(null); return; }
+      const sig = u.uid + '|' + c.id + '|' + pick.key + '|' + (pick.meta.ver || 'x') + '|' + (pick.meta.blur || 0);
+      const url = await getBlobUrl(sig, pick.meta, pick.chunks);
+      state[k] = { key: pick.key, by: pick.meta.by || u.uid, kind: pick.meta.kind || '', status: pick.meta.status || '', url: url };
+      if (fbCurrentChat === c) paint(url);
+    } catch (e) { console.error('Fon', e); }
+  }
+  const origOpen = fbOpenChat;
+  fbOpenChat = function () { const r = origOpen.apply(this, arguments); try { applyCurrent(); } catch (_) {} return r; };
+  const prevReset = window.pldnChatUiReset;
+  window.pldnChatUiReset = function () { if (prevReset) prevReset.apply(this, arguments); paint(null); };
+
+  // ---------- saqlash ----------
+  async function doSave(c, file, blur, share, mode, onProg) {
+    const u = me(); if (!u) throw new Error('auth');
+    onProg(0, 1);
+    const du = await readDataURL(file), m = /^data:([^;,]*);base64,/.exec(du);
+    if (!m) throw new Error('format');
+    const b64 = du.slice(m[0].length), parts = [];
+    for (let i = 0; i < b64.length; i += CH) parts.push(b64.slice(i, i + CH));
+    const ver = Date.now(), thumb = await makeThumb(file), mime = m[1] || 'image/jpeg';
+    if (!share) {
+      const mr = pcol().doc(c.id);
+      await putChunks(mr.collection('chunks'), parts, ver, onProg);
+      await mr.set({ name: c.name || '', type: c.type || 'dm', at: TS(), n: parts.length, mime: mime, ver: ver, blur: blur, thumb: thumb });
+      purgeOld(mr.collection('chunks'), ver);
+    } else {
+      const sr = scol().doc(c.id), ex = await sr.get().catch(function () { return null; });
+      const dm = mode === 'dm';
+      if (!ex || !ex.exists) {
+        const base = { by: u.uid, kind: dm ? 'dm' : c.type, ready: false, at: TS() };
+        if (dm) { base.members = [u.uid, c.otherUid]; base.status = 'pending'; base.updatedAt = TS(); }
+        await sr.set(base);
+      } else if (dm && ex.data().by !== u.uid) {   // eski taklif rad etilgan/bekor qilingan: o'chirib qaytadan boshlaymiz
+        await sr.delete();
+        await sr.set({ by: u.uid, kind: 'dm', ready: false, at: TS(), members: [u.uid, c.otherUid], status: 'pending', updatedAt: TS() });
+      }
+      await putChunks(sr.collection('chunks'), parts, ver, onProg);
+      const upd = { ready: true, n: parts.length, mime: mime, ver: ver, blur: blur, thumb: thumb, name: c.name || '', at: TS() };
+      if (dm) { const old = ex && ex.exists && ex.data().by === u.uid ? ex.data().status : ''; upd.status = old === 'accepted' ? 'accepted' : 'pending'; upd.updatedAt = TS(); }
+      await sr.update(upd);
+      purgeOld(sr.collection('chunks'), ver);
+      try { await delAll(pcol().doc(c.id)); } catch (_) {}   // shaxsiy fon bo'lsa, u ulashilgan fonni yopib qo'ymasin
+    }
+    delete urls[u.uid + '|' + c.id];
+    delete state[keyOf(c.id)];
+  }
+
+  // ---------- ko'rib chiqish oynasi: xiralik + ulashish ----------
+  async function shareMode(c) {
+    const u = me();
+    if (c.type === 'group' || c.type === 'channel') return c.owner === u.uid ? 'owner' : 'none';
+    if (!c.otherUid) return 'none';
+    try {
+      const s = await scol().doc(c.id).get();
+      if (s.exists) { const v = s.data(); if (v.by !== u.uid && (v.status === 'pending' || v.status === 'accepted')) return 'none'; }
+    } catch (_) {}
+    return 'dm';
+  }
+  function fmtSize(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  async function openPreview(file, c) {
+    const mode = await shareMode(c);
+    const url = URL.createObjectURL(file);
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:#0f0f10;z-index:100003;display:flex;flex-direction:column;color:#fff;padding:10px 14px;box-sizing:border-box;padding-top:max(10px,env(safe-area-inset-top))';
+    const hd = document.createElement('div'); hd.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:10px';
+    const x = document.createElement('button'); x.textContent = '✕'; x.style.cssText = 'background:#333;color:#fff;border:0;border-radius:12px;width:44px;height:44px;font-size:20px';
+    const tt = document.createElement('div'); tt.textContent = T('Fon rasmi', 'Фон чата'); tt.style.cssText = 'flex:1;text-align:center;font-weight:700;font-size:18px';
+    const ok = document.createElement('button'); ok.textContent = T("Qo'llash", 'Применить'); ok.style.cssText = 'background:#2AABEE;color:#fff;border:0;border-radius:12px;padding:0 18px;height:44px;font-size:16px;font-weight:600';
+    hd.append(x, tt, ok);
+    const box = document.createElement('div'); box.style.cssText = 'flex:1;min-height:0;border-radius:16px;overflow:hidden;position:relative;background:#222';
+    const im = document.createElement('div'); im.style.cssText = 'position:absolute;inset:-30px;background:url("' + url + '") center/cover no-repeat';
+    box.appendChild(im);
+    const ctl = document.createElement('div'); ctl.style.cssText = 'padding:12px 4px 6px';
+    const lb = document.createElement('div'); lb.style.cssText = 'text-align:center;color:#bbb;font-size:15px;margin-bottom:6px';
+    const sl = document.createElement('input'); sl.type = 'range'; sl.min = 0; sl.max = 30; sl.step = 1; sl.value = 0; sl.style.cssText = 'width:100%';
+    const upd = function () { lb.textContent = T('Xiralik', 'Размытие') + ': ' + (sl.value === '0' ? T("yo'q (o'z holicha)", 'нет (как есть)') : sl.value); im.style.filter = 'blur(' + (sl.value / 2) + 'px)'; };
+    sl.addEventListener('input', upd); upd();
+    const sz = document.createElement('div'); sz.style.cssText = 'text-align:center;color:#777;font-size:13px;margin-top:6px'; sz.textContent = T('Hajmi: ', 'Размер: ') + fmtSize(file.size) + T(" (siqilmaydi)", ' (без сжатия)');
+    ctl.append(lb, sl, sz);
+    let cb = null;
+    if (mode !== 'none') {
+      const row = document.createElement('label'); row.style.cssText = 'display:flex;align-items:center;gap:10px;margin-top:12px;font-size:15px;color:#ddd;line-height:1.3';
+      cb = document.createElement('input'); cb.type = 'checkbox'; cb.style.cssText = 'width:22px;height:22px;flex-shrink:0'; cb.checked = mode === 'owner';
+      const tx = document.createElement('span');
+      tx.textContent = mode === 'owner' ? T("Hamma a'zolarga ko'rinsin", "Видно всем участникам") : T("Suhbatdoshga ham taklif yuborish (u qabul qilsa ikkalangizda bir xil fon bo'ladi)", 'Предложить собеседнику (если примет — у обоих будет один фон)');
+      row.append(cb, tx); ctl.appendChild(row);
+    }
+    ov.append(hd, box, ctl); document.body.appendChild(ov);
+    const close = function () { URL.revokeObjectURL(url); ov.remove(); };
+    x.addEventListener('click', close);
+    ok.addEventListener('click', async function () {
+      ok.disabled = true; x.disabled = true;
+      const share = !!(cb && cb.checked), blur = +sl.value;
+      try {
+        await doSave(c, file, blur, share, mode, function (i, n) { ok.textContent = n > 1 ? i + '/' + n : '...'; });
+        close();
+        flash('🖼 ' + (share && mode === 'dm' ? T('Fon o\'rnatildi, taklif yuborildi', 'Фон установлен, предложение отправлено') : T("Fon o'rnatildi", 'Фон установлен')));
+        if (fbCurrentChat && fbCurrentChat.id === c.id) applyCurrent();
+      } catch (e) { console.error(e); alert(fbErrMsg(e)); ok.disabled = false; x.disabled = false; ok.textContent = T("Qo'llash", 'Применить'); }
+    });
+  }
+  const fileIn = document.createElement('input'); fileIn.type = 'file'; fileIn.accept = 'image/*'; fileIn.style.display = 'none'; document.body.appendChild(fileIn);
+  fileIn.addEventListener('change', function () {
+    const f = fileIn.files && fileIn.files[0]; fileIn.value = '';
+    const c = fbCurrentChat; if (!f || !c || !me()) return;
+    openPreview(f, c);
+  });
+  function pick() { if (fbCurrentChat) fileIn.click(); }
+
+  async function removeCurrent(c) {
+    const u = me(), st = state[keyOf(c.id)];
+    if (!st) return;
+    if (st.key === 'p') await delAll(pcol().doc(c.id));
+    else if (st.by === u.uid) await delAll(scol().doc(c.id));
+    else await scol().doc(c.id).update({ status: 'declined', updatedAt: TS() });
+    delete state[keyOf(c.id)];
+    if (fbCurrentChat && fbCurrentChat.id === c.id) applyCurrent();
+  }
+  window.pldnWpItems = function () {
+    const c = fbCurrentChat, items = [{ icon: '🖼', label: T('Fon joylash', 'Установить фон'), fn: pick }];
+    if (c && state[keyOf(c.id)]) items.push({ icon: '🧹', label: T('Fonni olib tashlash', 'Убрать фон'), fn: async function () {
+      try { await removeCurrent(c); flash(T('Fon olib tashlandi', 'Фон убран')); } catch (e) { alert(fbErrMsg(e)); }
+    } });
+    return items;
+  };
+
+  // ---------- PLDN sozlamalari > Fonlar ----------
+  const st = document.createElement('style');
+  st.textContent = '#pldnWallpapersScreen{padding:0;align-items:stretch;overflow:hidden}';
+  document.head.appendChild(st);
+  const scr = document.createElement('div'); scr.className = 'screen'; scr.id = 'pldnWallpapersScreen';
+  scr.innerHTML = '<div class="chat-detail-header"><button class="chat-back-btn" id="pldnWpBack">' + BACK + '</button><div class="chat-detail-info"><div class="chat-detail-name" id="pldnWpTitle"></div></div></div><div class="settings-body" id="pldnWpBody"></div>';
+  $('chatDetailScreen').parentNode.appendChild(scr);
+  const lbl = $('pldnWpLabel'); if (lbl) lbl.textContent = T('Fonlar', 'Фоны');
+  $('pldnWpTitle').textContent = T('Fonlar', 'Фоны');
+  $('pldnWpBack').addEventListener('click', function () { goToScreen('pldnSettingsScreen'); });
+  const typeLabel = function (t) { return t === 'channel' ? T('Kanal', 'Канал') : (t === 'group' ? T('Guruh', 'Группа') : T('Shaxsiy chat', 'Личный чат')); };
+  async function renderList() {
+    const u = me(), box = $('pldnWpBody'); box.innerHTML = '';
+    const note = document.createElement('p'); note.className = 'logout-modal-text'; note.style.cssText = 'text-align:left;padding:0 10px 10px;';
+    note.textContent = T("Fonlar hisobingizga ulangan barcha qurilmalarda saqlanadi. Fon qo'yish: chat, guruh yoki kanal profilidagi ⋮ menyudan «Fon joylash».", 'Фоны сохраняются на всех устройствах вашего аккаунта. Установить фон: меню ⋮ в профиле чата, группы или канала.');
+    box.appendChild(note);
+    const wrap = document.createElement('div'); wrap.className = 'pgx-card'; box.appendChild(wrap);
+    const info = document.createElement('div'); info.style.cssText = 'padding:16px;color:var(--text-secondary,#8e8e93)'; info.textContent = T('Yuklanmoqda...', 'Загрузка...'); wrap.appendChild(info);
+    try {
+      const rs = await Promise.all([pcol().orderBy('at', 'desc').get(), scol().where('by', '==', u.uid).get()]);
+      const items = [];
+      rs[0].forEach(function (d) { const v = d.data() || {}; items.push({ ref: d.ref, id: d.id, v: v, shared: false, ms: v.at && v.at.toMillis ? v.at.toMillis() : 0 }); });
+      rs[1].forEach(function (d) { const v = d.data() || {}; if (v.ready) items.push({ ref: d.ref, id: d.id, v: v, shared: true, ms: v.at && v.at.toMillis ? v.at.toMillis() : 0 }); });
+      items.sort(function (a, b) { return b.ms - a.ms; });
+      wrap.innerHTML = '';
+      const empty = function () { info.textContent = T("Hali fon qo'yilmagan.", 'Фоны пока не установлены.'); wrap.appendChild(info); };
+      if (!items.length) { empty(); return; }
+      items.forEach(function (it) {
+        const v = it.v, row = document.createElement('div'); row.className = 'pgx-mem'; row.style.cursor = 'default';
+        const th = document.createElement('div'); th.style.cssText = 'width:56px;height:56px;border-radius:10px;flex-shrink:0;background:#ccd';
+        const src = v.thumb || (typeof v.d === 'string' && v.d.indexOf('data:image/') === 0 ? v.d : '');
+        if (src) th.style.background = 'url("' + src + '") center/cover no-repeat';
+        const mid = document.createElement('div'); mid.className = 'pgx-mem-main';
+        const n = document.createElement('div'); n.className = 'pgx-mem-name'; n.textContent = v.name || '—';
+        const s = document.createElement('div'); s.className = 'pgx-mem-sub';
+        let sub = typeLabel(v.type || v.kind) + ' · ';
+        if (!it.shared) sub += T('faqat menga', 'только мне');
+        else if (v.kind === 'dm') sub += v.status === 'accepted' ? T('ikkalangizga ✓', 'у обоих ✓') : v.status === 'pending' ? T('taklif kutilmoqda', 'ожидает ответа') : T('faqat menga', 'только мне');
+        else sub += T("hamma a'zolarga", 'для всех участников');
+        s.textContent = sub; mid.append(n, s);
+        if (v.blur > 0) { const b = document.createElement('div'); b.className = 'pgx-mem-sub'; b.textContent = T('Xiralik: ', 'Размытие: ') + v.blur; mid.appendChild(b); }
+        const x = document.createElement('button'); x.className = 'pgx-x'; x.textContent = '✕';
+        x.addEventListener('click', async function () {
+          const ok = await pldnConfirm(T("Bu fon olib tashlansinmi?", 'Убрать этот фон?')); if (!ok) return;
+          try {
+            await delAll(it.ref); delete state[u.uid + '|' + it.id]; row.remove();
+            if (fbCurrentChat && fbCurrentChat.id === it.id) applyCurrent();
+            if (!wrap.children.length) empty();
+          } catch (e) { alert(fbErrMsg(e)); }
+        });
+        row.append(th, mid, x); wrap.appendChild(row);
+      });
+    } catch (e) { console.error(e); wrap.innerHTML = ''; info.textContent = fbErrMsg(e); wrap.appendChild(info); }
+  }
+  const row = $('pldnWallpapersRow');
+  if (row) row.addEventListener('click', function () { renderList(); goToScreen('pldnWallpapersScreen'); });
 })();
 </script>
 <script>
