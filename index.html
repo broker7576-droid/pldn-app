@@ -1,4 +1,4 @@
-<!-- VERSION: firebase-stickerpacks-v59 (2026-10-12) -->
+<!-- VERSION: firebase-stickerpacks-v63 (2026-10-13) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -11625,7 +11625,7 @@
   // ---------- papkalar (to'plamlar) ----------
   // stickerPacks/{id}: {name, username, owner, cover} + stickers/{sid}: {d, at}; stickerNames/{username}: {owner, packId}; users/{uid}/packs/{id}: {at}
   let legacy = [], libIds = [], packs = {}, cur = null, attached = null, curList = [], preview = null, curUnsub = null, legUnsub = null, libUnsub = null, uid = null;
-  let q = '', results = null, target = null, sTimer = null, libLoaded = false;
+  let q = '', results = null, target = null, sTimer = null, libLoaded = false, pending = null;
   const lenOf = function (s) { return Array.from(s).length; };
   const sbox = el('div', 'padding:0 0 8px;flex:none');
   const sIn = el('input', 'width:100%;box-sizing:border-box;padding:11px 14px;border:0;border-radius:12px;background:#f1f2f6;font-size:16px;color:#222;outline:none');
@@ -11643,7 +11643,7 @@
     b.textContent = t; b.addEventListener('click', function (e) { e.stopPropagation(); fn(b); }); return b;
   }
   function form(title, fields, okText, onOk) {
-    const o = el('div', 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99996;display:flex;align-items:center;justify-content:center;padding:20px');
+    const o = el('div', 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99998;display:flex;align-items:center;justify-content:center;padding:20px');
     const c = el('div', 'background:#fff;border-radius:16px;padding:18px;width:100%;max-width:340px;color:#222');
     c.appendChild(el('div', 'font-weight:700;font-size:17px;margin-bottom:6px', '')).textContent = title;
     const ins = fields.map(function (f) {
@@ -11665,31 +11665,54 @@
     row.append(cancel, ok); c.appendChild(row); o.appendChild(c); document.body.appendChild(o); if (ins[0]) ins[0].focus();
   }
 
-  function newPackDialog() {
-    const me = fbAuth && fbAuth.currentUser; if (!me) return;
-    form(T('Yangi papka', 'Новая папка'), [
-      { ph: T('Nomi (4–32 belgi)', 'Название (4–32 символа)'), max: 32 },
-      { ph: T('username (5–27, faqat a–z)', 'username (5–27, только a–z)'), max: 27, filter: function (v) { return v.toLowerCase().replace(/[^a-z]/g, ''); } }
-    ], T('Saqlash', 'Сохранить'), async function (v) {
-      const name = v[0].trim(), un = v[1];
-      if (lenOf(name) < 4 || lenOf(name) > 32) return T("Nom 4 dan 32 tagacha belgi bo'lsin.", 'Название — от 4 до 32 символов.');
-      if (!/^[a-z]{5,27}$/.test(un)) return T("Username 5 dan 27 tagacha, faqat lotin harflari bo'lsin.", 'Username — от 5 до 27 символов, только латиница.');
-      const ex = await fbDb.collection('stickerNames').doc(un).get();
-      if (ex.exists) return T('Bu username band. Boshqasini tanlang.', 'Этот username занят. Выберите другой.');
-      const ts = firebase.firestore.FieldValue.serverTimestamp();
-      const ref = fbDb.collection('stickerPacks').doc();
-      const b = fbDb.batch();
-      b.set(ref, { name: name, username: un, owner: me.uid, cover: '', createdAt: ts });
-      b.set(fbDb.collection('stickerNames').doc(un), { owner: me.uid, packId: ref.id });
-      b.set(fbDb.collection('users').doc(me.uid).collection('packs').doc(ref.id), { at: ts });
-      try { await b.commit(); } catch (e) {
-        if (e && e.code === 'permission-denied') return T('Saqlab bo\'lmadi: username band bo\'lishi mumkin.', 'Не удалось сохранить: возможно, username занят.');
-        throw e;
+  // Stiker yasash: rasm tanlash -> muharrir -> "Saqlash" bosilganda papka tanlanadi yoki yangisi yaratiladi
+  function startCreate() { target = 'create'; fileIn.click(); }
+  function chooseDest() {
+    return new Promise(function (res) {
+      const o = el('div', 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99997;display:flex;align-items:flex-end;justify-content:center');
+      const c = el('div', 'background:#fff;border-radius:18px 18px 0 0;padding:16px;width:100%;max-width:480px;box-sizing:border-box;max-height:75%;overflow-y:auto;color:#222');
+      o.appendChild(c); document.body.appendChild(o);
+      const done = function (v) { o.remove(); res(v); };
+      o.addEventListener('click', function (e) { if (e.target === o) done(null); });
+      const own = libIds.map(function (id) { return packs[id]; }).filter(function (p) { return p && p.owner === uid; });
+      const big = function (t, fn, gray) {
+        const b = el('button', 'display:block;width:100%;padding:15px;margin-top:10px;border:0;border-radius:12px;background:' + (gray ? '#f1f2f6' : '#eef6fd') + ';color:' + (gray ? '#555' : '#1b8fd0') + ';font-size:16px;text-align:left');
+        b.textContent = t; b.addEventListener('click', fn); return b;
+      };
+      const title = function (t) { const d = el('div', 'font-weight:700;font-size:17px'); d.textContent = t; return d; };
+      function menu() {
+        c.innerHTML = ''; c.appendChild(title(T('Stikerni saqlash', 'Сохранить стикер')));
+        if (own.length) c.appendChild(big('📁 ' + T('Mavjud papkaga joylash', 'Добавить в существующую папку'), list));
+        c.appendChild(big('✨ ' + T('Yangi papka yaratish', 'Создать новую папку'), mkNew));
+        c.appendChild(big(T('Bekor qilish', 'Отмена'), function () { done(null); }, true));
       }
-      packs[ref.id] = { id: ref.id, name: name, username: un, owner: me.uid, cover: '' };
-      if (libIds.indexOf(ref.id) < 0) libIds.unshift(ref.id);
-      selectFolder(ref.id);
-      return null;
+      function list() {
+        c.innerHTML = ''; c.appendChild(title(T('Papkani tanlang', 'Выберите папку')));
+        own.forEach(function (p) {
+          const r = el('div', 'display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid #eee');
+          const mid = el('div', 'flex:1;min-width:0');
+          const n = el('div', 'font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'); n.textContent = p.name;
+          const u = el('div', 'color:#2AABEE;font-size:13px'); u.textContent = '@' + p.username;
+          mid.append(n, u); r.append(coverEl(p, 48), mid);
+          r.addEventListener('click', function () { done({ type: 'pack', id: p.id }); });
+          c.appendChild(r);
+        });
+        c.appendChild(big('← ' + T('Orqaga', 'Назад'), menu, true));
+      }
+      function mkNew() {
+        form(T('Yangi papka', 'Новая папка'), [
+          { ph: T('Nomi (4–32 belgi)', 'Название (4–32 символа)'), max: 32 },
+          { ph: T('username (5–27, faqat a–z)', 'username (5–27, только a–z)'), max: 27, filter: function (v) { return v.toLowerCase().replace(/[^a-z]/g, ''); } }
+        ], T('Yaratish va saqlash', 'Создать и сохранить'), async function (v) {
+          const name = v[0].trim(), un = v[1];
+          if (lenOf(name) < 4 || lenOf(name) > 32) return T("Nom 4 dan 32 tagacha belgi bo'lsin.", 'Название — от 4 до 32 символов.');
+          if (!/^[a-z]{5,27}$/.test(un)) return T("Username 5 dan 27 tagacha, faqat lotin harflari bo'lsin.", 'Username — от 5 до 27 символов, только латиница.');
+          const ex = await fbDb.collection('stickerNames').doc(un).get();
+          if (ex.exists) return T('Bu username band. Boshqasini tanlang.', 'Этот username занят. Выберите другой.');
+          done({ type: 'new', name: name, un: un }); return null;
+        });
+      }
+      menu();
     });
   }
   function renamePack(p) {
@@ -11729,6 +11752,39 @@
       libIds = libIds.filter(function (x) { return x !== p.id; }); cur = null; attached = undefined; ensureCur();
     } catch (e) { console.error(e); alert(fbErrMsg(e)); }
   }
+  function flash(msg) {
+    const t = el('div', 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(0,0,0,.8);color:#fff;padding:10px 18px;border-radius:18px;z-index:100002;font-size:15px;max-width:86%;text-align:center');
+    t.textContent = msg; document.body.appendChild(t); setTimeout(function () { t.remove(); }, 2200);
+  }
+  async function saveFav(s) {
+    if (legacy.some(function (x) { return x.d === s.d; })) { flash(T('Bu stiker allaqachon saralanganlarda.', 'Этот стикер уже в избранном.')); return; }
+    try {
+      await fbDb.collection('users').doc(uid).collection('stickers').add({ d: s.d, at: firebase.firestore.FieldValue.serverTimestamp() });
+      flash('♥️ ' + T('Saralanganlarga saqlandi', 'Сохранено в избранное'));
+    } catch (e) { console.error(e); alert(fbErrMsg(e)); }
+  }
+  function packMenu(p, x, y) {
+    const items = [];
+    if (p.owner === uid) {
+      items.push({ icon: '✏️', label: T("Nomini o'zgartirish", 'Изменить название'), fn: function () { renamePack(p); } });
+      items.push({ icon: '🗑', label: T("Papkani o'chirish", 'Удалить папку'), fn: function () { delPack(p); } });
+    } else items.push({ icon: '🗑', label: T("Ro'yxatimdan olib tashlash", 'Убрать из моего списка'), fn: function () { removeFromLib(p); } });
+    window.pldnPopMenu(items, { x: x, y: y });
+  }
+  function stickerMenu(s, x, y, canDel, isFav) {
+    const items = [];
+    if (!isFav) {
+      const fv = legacy.find(function (z) { return z.d === s.d; });
+      if (fv) items.push({ icon: '💔', label: T('Saralanganlardan olib tashlash', 'Убрать из избранного'), fn: function () {
+        fbDb.collection('users').doc(uid).collection('stickers').doc(fv.id).delete().then(function () { flash(T('Saralanganlardan olib tashlandi', 'Убрано из избранного')); }).catch(function (e) { alert(fbErrMsg(e)); });
+      } });
+      else items.push({ icon: '♥️', label: T('Saqlash', 'Сохранить'), fn: function () { saveFav(s); } });
+    }
+    if (canDel) items.push({ icon: '🗑', label: isFav ? T("Saralanganlardan olib tashlash", 'Убрать из избранного') : T("O'chirish", 'Удалить'), fn: async function () {
+      const ok = await pldnConfirm(isFav ? T('Saralanganlardan olib tashlansinmi?', 'Убрать из избранного?') : T("Stiker o'chirilsinmi?", 'Удалить стикер?')); if (ok) delSticker(s);
+    } });
+    if (items.length) window.pldnPopMenu(items, { x: x, y: y });
+  }
   function delSticker(s) {
     const col = cur === 'legacy' ? fbDb.collection('users').doc(uid).collection('stickers') : fbDb.collection('stickerPacks').doc(cur).collection('stickers');
     col.doc(s.id).delete().catch(function (e) { alert(fbErrMsg(e)); });
@@ -11747,7 +11803,6 @@
   function ensureCur() {
     if (preview) return;
     if (cur && cur !== 'legacy' && libIds.indexOf(cur) < 0) cur = null;
-    if (cur === 'legacy' && !legacy.length && libIds.length) cur = null;
     if (!cur) cur = libIds[0] || (legacy.length ? 'legacy' : null);
     if (cur !== attached) selectFolder(cur); else renderPanel();
   }
@@ -11791,22 +11846,33 @@
   }
   function renderStrip() {
     strip.innerHTML = '';
-    const mk = function (child, active, fn) {
+    const mk = function (child, active, fn, onLong) {
       const c = el('div'); c.className = 'stk-chip' + (active ? ' on' : '');
-      c.appendChild(child); c.addEventListener('click', fn); strip.appendChild(c); return c;
+      c.appendChild(child);
+      let tm = null, lp = false;
+      if (onLong) {
+        c.addEventListener('touchstart', function (e) {
+          lp = false; const t = e.touches && e.touches[0], x = t ? t.clientX : 0, y = t ? t.clientY : 0;
+          tm = setTimeout(function () { lp = true; onLong(x, y); }, 500);
+        }, { passive: true });
+        ['touchend', 'touchmove', 'touchcancel'].forEach(function (ev) { c.addEventListener(ev, function () { clearTimeout(tm); }, { passive: true }); });
+        c.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+      }
+      c.addEventListener('click', function () { if (lp) { lp = false; return; } fn(); });
+      strip.appendChild(c); return c;
     };
-    mk(el('span', 'font-size:26px;color:#2AABEE', '＋'), false, newPackDialog);
-    if (legacy.length) mk(el('span', 'font-size:24px', '🙂'), cur === 'legacy' && !preview, function () { selectFolder('legacy'); });
+    mk(el('span', 'font-size:26px;color:#2AABEE', '＋'), false, startCreate);
+    mk(el('span', 'font-size:24px', '♥️'), cur === 'legacy' && !preview, function () { selectFolder('legacy'); });
     libIds.forEach(function (id) {
       const p = packs[id]; if (!p) return;
       const inner = coverEl(p, 40); inner.style.borderRadius = '8px';
-      mk(inner, cur === id && !preview, function () { selectFolder(id); });
+      mk(inner, cur === id && !preview, function () { selectFolder(id); }, function (x, y) { packMenu(p, x, y); });
     });
   }
   function renderHead() {
     head.innerHTML = '';
     const p = curPack();
-    if (!p) { if (cur === 'legacy') head.appendChild(el('b', 'color:#222', T('Papkasiz stikerlar', 'Стикеры без папки'))); return; }
+    if (!p) { if (cur === 'legacy') head.appendChild(el('b', 'color:#222', '♥️ ' + T('Saralanganlar', 'Избранное'))); return; }
     const l = el('div', 'flex:1;min-width:0');
     const n = el('div', 'font-weight:700;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'); n.textContent = p.name;
     const u = el('div', 'color:#2AABEE;font-size:13px'); u.textContent = '@' + p.username;
@@ -11841,37 +11907,26 @@
       });
       return;
     }
-    if (!cur) { grid.appendChild(el('div', 'color:#888;padding:14px 4px;line-height:1.4', T("Hali papka yo'q. Tepadagi ＋ ni bosib yangi papka tuzing yoki username bilan qidiring.", 'Папок пока нет. Нажмите ＋ вверху, чтобы создать папку, или найдите по username.'))); return; }
+    if (!cur) { grid.appendChild(el('div', 'color:#888;padding:14px 4px;line-height:1.4', T("Hali papka yo'q. Tepadagi ＋ ni bosib stiker yasang, saqlashda yangi papka yaratasiz. Yoki username bilan qidiring.", 'Папок пока нет. Нажмите ＋ вверху, сделайте стикер и при сохранении создайте папку. Или найдите по username.'))); return; }
     const p = curPack();
     const canEdit = cur === 'legacy' || !!(p && p.owner === uid);
     const g = el('div'); g.className = 'stk-grid';
-    if (canEdit) {
-      const add = el('div'); add.className = 'stk-cell stk-add'; add.innerHTML = '<span>＋</span><small>' + T('Stiker', 'Стикер') + '</small>';
-      add.addEventListener('click', function () { target = cur; fileIn.click(); });
-      g.appendChild(add);
-    }
     curList.forEach(function (s) {
       const c = el('div'); c.className = 'stk-cell';
       const im = new Image(); im.src = s.d; c.appendChild(im);
-      let tm = null, lp = false;
-      if (canEdit) {
-        c.addEventListener('touchstart', function () {
-          lp = false;
-          tm = setTimeout(async function () {
-            lp = true;
-            const ok = await pldnConfirm(T("Stiker o'chirilsinmi?", 'Удалить стикер?'));
-            if (ok) delSticker(s);
-          }, 550);
-        }, { passive: true });
-        ['touchend', 'touchmove', 'touchcancel'].forEach(function (ev) { c.addEventListener(ev, function () { clearTimeout(tm); }, { passive: true }); });
-      }
+      let tm = null, lp = false, px = 0, py = 0;
+      c.addEventListener('touchstart', function (e) {
+        lp = false; const t = e.touches && e.touches[0]; px = t ? t.clientX : 0; py = t ? t.clientY : 0;
+        tm = setTimeout(function () { lp = true; stickerMenu(s, px, py, canEdit, cur === 'legacy'); }, 500);
+      }, { passive: true });
+      ['touchend', 'touchmove', 'touchcancel'].forEach(function (ev) { c.addEventListener(ev, function () { clearTimeout(tm); }, { passive: true }); });
       c.addEventListener('contextmenu', function (e) { e.preventDefault(); });
       c.addEventListener('click', function () { if (lp) { lp = false; return; } bd.style.display = 'none'; send(s.d); });
       g.appendChild(c);
     });
     grid.appendChild(g);
-    if (canEdit && curList.length) grid.appendChild(el('small', 'display:block;color:#888;margin-top:10px;', T("O'chirish uchun stikerni bosib turing.", 'Для удаления удерживайте стикер.')));
-    if (!canEdit && !curList.length) grid.appendChild(el('div', 'color:#888;padding:14px 4px', T("Bu papkada stiker yo'q.", 'В этой папке нет стикеров.')));
+    if (curList.length) grid.appendChild(el('small', 'display:block;color:#888;margin-top:10px;', T("Stikerni bosib turing: saqlash yoki o'chirish.", 'Удерживайте стикер: сохранить или удалить.')));
+    else grid.appendChild(el('div', 'color:#888;padding:14px 4px;line-height:1.4', cur === 'legacy' ? T("Saralangan stiker yo'q. Istalgan stikerni bosib turib «Saqlash» ni tanlang.", 'Избранного пока нет. Удерживайте любой стикер и выберите «Сохранить».') : T("Bu papkada stiker yo'q.", 'В этой папке нет стикеров.')));
   }
   function renderPanel() {
     const s = !!q;
@@ -11978,37 +12033,61 @@
   $('stkUn').addEventListener('click', function () { if (!undo.length) return; wctx.putImageData(undo.pop(), 0, 0); if (!undo.length) dirty = false; draw(); });
   $('stkX').addEventListener('click', function () { ed.style.display = 'none'; });
 
+  let saving = false;
   async function save() {
-    const me = fbAuth && fbAuth.currentUser; if (!me) return;
+    const me = fbAuth && fbAuth.currentUser; if (!me || saving) return;
     let o = compose(), data = '', sz = 512;
     for (let i = 0; i < 3; i++) {
       data = o.toDataURL('image/webp', 0.85);
       if (data.indexOf('data:image/webp') !== 0) data = o.toDataURL('image/png');
       if (data.length <= 450000) break;
       sz = Math.round(sz * 0.75);
-      const s = document.createElement('canvas'); s.width = s.height = sz;
-      s.getContext('2d').drawImage(compose(), 0, 0, sz, sz); o = s;
+      const s2 = document.createElement('canvas'); s2.width = s2.height = sz;
+      s2.getContext('2d').drawImage(compose(), 0, 0, sz, sz); o = s2;
     }
     if (data.length > 650000) { alert(T('Stiker juda katta.', 'Стикер слишком большой.')); return; }
+    const dest = await chooseDest(); if (!dest) return;
+    saving = true;
     try {
-      const tg = target, ts = firebase.firestore.FieldValue.serverTimestamp();
-      if (!tg || tg === 'legacy') await fbDb.collection('users').doc(me.uid).collection('stickers').add({ d: data, at: ts });
-      else {
-        await fbDb.collection('stickerPacks').doc(tg).collection('stickers').add({ d: data, at: ts });
-        const pk = packs[tg];
+      const ts = firebase.firestore.FieldValue.serverTimestamp();
+      const thumb = function () {
+        const t = document.createElement('canvas'); t.width = t.height = 96;
+        t.getContext('2d').drawImage(o, 0, 0, 96, 96);
+        let th = t.toDataURL('image/webp', 0.8); if (th.indexOf('data:image/webp') !== 0) th = t.toDataURL('image/png');
+        return th;
+      };
+      let id;
+      if (dest.type === 'new') {
+        const ref = fbDb.collection('stickerPacks').doc(), th = thumb();
+        const bt = fbDb.batch();
+        bt.set(ref, { name: dest.name, username: dest.un, owner: me.uid, cover: th, createdAt: ts });
+        bt.set(fbDb.collection('stickerNames').doc(dest.un), { owner: me.uid, packId: ref.id });
+        bt.set(fbDb.collection('users').doc(me.uid).collection('packs').doc(ref.id), { at: ts });
+        bt.set(ref.collection('stickers').doc(), { d: data, at: ts });
+        try { await bt.commit(); } catch (e) {
+          if (e && e.code === 'permission-denied') { alert(T("Papka yaratilmadi: username band bo'lishi mumkin.", 'Папка не создана: возможно, username занят.')); return; }
+          throw e;
+        }
+        id = ref.id;
+        packs[id] = { id: id, name: dest.name, username: dest.un, owner: me.uid, cover: th };
+        if (libIds.indexOf(id) < 0) libIds.unshift(id);
+      } else {
+        id = dest.id;
+        await fbDb.collection('stickerPacks').doc(id).collection('stickers').add({ d: data, at: ts });
+        const pk = packs[id];
         if (pk && !pk.cover) {
-          const t = document.createElement('canvas'); t.width = t.height = 96;
-          t.getContext('2d').drawImage(o, 0, 0, 96, 96);
-          let th = t.toDataURL('image/webp', 0.8); if (th.indexOf('data:image/webp') !== 0) th = t.toDataURL('image/png');
-          try { await fbDb.collection('stickerPacks').doc(tg).update({ cover: th }); pk.cover = th; } catch (_) {}
+          const th = thumb();
+          try { await fbDb.collection('stickerPacks').doc(id).update({ cover: th }); pk.cover = th; } catch (_) {}
         }
       }
-      ed.style.display = 'none'; openPanel();
+      target = null; q = ''; sIn.value = ''; results = null;
+      ed.style.display = 'none'; selectFolder(id); bd.style.display = 'block';
     } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
+    finally { saving = false; }
   }
   $('stkOk').addEventListener('click', save);
 
-  fileIn.addEventListener('change', function () {
+  fileIn.addEventListener('change', async function () {
     const f = fileIn.files && fileIn.files[0]; fileIn.value = '';
     if (!f) return;
     const rd = new FileReader();
