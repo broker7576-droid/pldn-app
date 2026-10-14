@@ -1,4 +1,4 @@
-<!-- VERSION: chat-wallpaper-video-v69 (2026-10-13) -->
+<!-- VERSION: chat-wallpaper-video-v70 (2026-10-13) -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -13733,7 +13733,11 @@
   fileIn.addEventListener('change', function () {
     const f = fileIn.files && fileIn.files[0]; fileIn.value = '';
     const c = fbCurrentChat; if (!f || !c || !me()) return;
-    if (/^video\//.test(f.type)) openVideoPreview(f, c); else openPreview(f, c);
+    const isV = /^video\//.test(f.type || '') || (!/^image\//.test(f.type || '') && /\.(mp4|mov|m4v|3gp|3gpp|webm|mkv|avi)$/i.test(f.name || ''));
+    if (isV) {
+      flash('🎞 ' + (f.name || 'video') + ' · ' + (f.type || '?') + ' · ' + (f.size / 1048576).toFixed(1) + ' MB', 2200);
+      openVideoPreview(f, c).catch(function (e) { console.error(e); flash('Video xatosi: ' + (e && e.message ? e.message : e), 5000); });
+    } else openPreview(f, c);
   });
   function pick() { if (fbCurrentChat) fileIn.click(); }
 
