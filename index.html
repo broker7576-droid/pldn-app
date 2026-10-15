@@ -1,4 +1,4 @@
-<!-- VERSION: 145 -->
+<!-- VERSION: 146 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -803,6 +803,15 @@
   .pldn-np-card.upd { position: relative; margin-bottom: 12px; }
   .pldn-np-card.upd .upd-del { position: absolute; top: 8px; right: 10px; border: 0; background: transparent; color: var(--text-secondary, #8e8e93); font-size: 20px; line-height: 1; padding: 6px; cursor: pointer; }
   .pldn-np-card.upd .upd-ver { margin: 0 0 6px; }
+  .pldn-np-card.upd .upd-notes { position: relative; margin-top: 12px; padding: 8px 34px 8px 12px; border-left: 3px solid #2AABEE; border-radius: 4px 10px 10px 4px; background: rgba(42,171,238,.10); font-size: 14px; line-height: 21px; color: var(--text-primary, #fff); }
+  .pldn-np-card.upd .upd-notes.short { padding-right: 12px; }
+  .pldn-np-card.upd .upd-notes .qt { overflow: hidden; }
+  .pldn-np-card.upd .upd-notes div { margin: 0; overflow-wrap: anywhere; }
+  .pldn-np-card.upd .upd-notes.can { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .pldn-np-card.upd .upd-notes.can:not(.open) .qt { max-height: 84px; -webkit-mask-image: linear-gradient(#000 68%, transparent); mask-image: linear-gradient(#000 68%, transparent); }
+  .pldn-np-card.upd .upd-notes .chev { display: none; position: absolute; right: 9px; bottom: 8px; width: 18px; height: 18px; transition: transform .2s; }
+  .pldn-np-card.upd .upd-notes.can .chev { display: block; }
+  .pldn-np-card.upd .upd-notes.open .chev { transform: rotate(180deg); }
   .pldn-np-card.upd .upd-st { margin: 0; font-weight: 600; }
   .pldn-np-card.upd .upd-st.ok { color: #34C759; }
   .pldn-np-card.upd .upd-st.no { color: #FF3B30; }
@@ -8085,6 +8094,7 @@
   // VERSION: firebase-update-v7
   const PLDN_BUILD = '__PLDN_BUILD__'; // GitHub Actions yig'ishda raqamga almashtiradi
   const PLDN_REPO = 'broker7576-droid/pldn-app';
+  window.PLDN_BUILD_NUM = parseInt(PLDN_BUILD, 10) || 0; window.PLDN_REPO_NAME = PLDN_REPO;
   let pldnUpdateInfo = null; // {latest, url} yangilanish bor bo'lsa
   // Yangilanish tarixi (doimiy kartalar): [{v, st:'pending'|'downloaded'|'skipped', ts}]
   function pldnUpdHistGet() { try { const a = JSON.parse(localStorage.getItem('pldn_upd_hist') || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } }
@@ -8123,11 +8133,23 @@
         const v = parseInt(String(rel.tag_name || '').replace(/\D/g, ''), 10);
         const hasApk = (rel.assets || []).some(x => /\.apk$/i.test(x.name));
         if (!v || !hasApk || v <= cur || v >= latest || a.some(x => x.v === v)) return;
-        a.push({ v: v, st: 'skipped', ts: Date.parse(rel.published_at) || Date.now() });
+        a.push({ v: v, st: 'skipped', ts: Date.parse(rel.published_at) || Date.now(), notes: pldnUpdNotesClean(rel.body) });
         ch = true;
       });
       if (ch) pldnUpdHistSet(a);
     } catch (_) {}
+  }
+  // Versiya haqidagi qisqa izoh (GitHub release matni): kartaning pastida chiqadi
+  function pldnUpdNotesClean(body) {
+    return String(body || '').replace(/\r/g, '').split('\n').map(function (x) { return x.trim(); })
+      .filter(function (x) { return x && !/^#+\s*$/.test(x) && !/^build\s*\d+$/i.test(x); }).slice(0, 14).join('\n').slice(0, 1500);
+  }
+  function pldnUpdHistNotes(v, body) {
+    const n = pldnUpdNotesClean(body);
+    if (!n) return;
+    const a = pldnUpdHistGet();
+    const x = a.find(function (y) { return y.v === v; });
+    if (x && x.notes !== n) { x.notes = n; pldnUpdHistSet(a); }
   }
   function pldnUpdHistDel(v) { pldnUpdHistSet(pldnUpdHistGet().filter(x => x.v !== v)); }
   // Ilova yangilanish paytida (masalan, "noma'lum ilovalar" ruxsati berilganda) yopilib qolsa, qayta ochilganda yuklashni o'zi davom ettiradi
@@ -8168,6 +8190,7 @@
         pldnUpdateInfo = { latest: latest, url: asset.browser_download_url };
         await pldnUpdHistBackfill(cur, latest);
         pldnUpdHistAdd(latest);
+        pldnUpdHistNotes(latest, j.body);
         pldnRefreshBell();
         if (!manual) { pldnUpdMaybeResume(cur); return; }
         const ok = await pldnConfirm(fbT('Yangi versiya mavjud (v' + latest + '). Yuklab olib o\'rnatasizmi?', 'Доступна новая версия (v' + latest + '). Скачать и установить?'));
@@ -8224,7 +8247,8 @@
     barW.appendChild(bar);
     const act = document.createElement('div');
     act.className = 'pldn-np-btns upd-act';
-    card.append(st, barW, act);
+    const nt = card.querySelector('.upd-notes');
+    if (nt) { card.insertBefore(st, nt); card.insertBefore(barW, nt); card.insertBefore(act, nt); } else card.append(st, barW, act);
     let timer = null;
     function stop() { if (timer) { clearInterval(timer); timer = null; } pldnUpdBusy = false; }
     function fail(msg) {
@@ -8288,6 +8312,35 @@
       }, 700);
     };
     act.appendChild(give);
+  }
+  function pldnUpdAddNotes(card, it) {
+    if (!it || !it.notes) return;
+    const box = document.createElement('div');
+    box.className = 'upd-notes short';
+    const qt = document.createElement('div');
+    qt.className = 'qt';
+    it.notes.split('\n').forEach(function (ln) {
+      const t = ln.replace(/^[-*•°·]+\s*/, '').trim();
+      if (!t) return;
+      const d = document.createElement('div');
+      d.textContent = '• ' + t;
+      qt.appendChild(d);
+    });
+    if (!qt.childNodes.length) return;
+    box.appendChild(qt);
+    box.insertAdjacentHTML('beforeend', '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="#2AABEE" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>');
+    card.appendChild(box);
+    // 4 qatordan uzun bo'lsa: qisqartirilgan ko'rinish, bosilsa to'liq ochiladi, yana bosilsa yopiladi
+    let tries = 0;
+    (function check() {
+      if (!box.isConnected) { if (++tries < 15) setTimeout(check, 120); return; }
+      if (!box.clientHeight) { if (++tries < 15) setTimeout(check, 120); return; }
+      if (qt.scrollHeight > 86) {
+        box.classList.remove('short');
+        box.classList.add('can');
+        box.addEventListener('click', function () { box.classList.toggle('open'); });
+      }
+    })();
   }
   function pldnNpRender(tab) {
     const body = document.getElementById('pldnNpBody');
@@ -8424,6 +8477,7 @@
           row.append(no, yes);
           card.appendChild(row);
         }
+        pldnUpdAddNotes(card, it);
         body.appendChild(card);
       });
     } else {
@@ -10700,6 +10754,58 @@
       } catch (e) { alert(fbErrMsg(e)); }
     }
   });
+
+  // ================= PLDN YANGILANISHLARI KANALI =================
+  // 1) Har bir foydalanuvchi bu kanalga bir marta avtomatik obuna bo'ladi (keyin o'zi chiqib ketsa, qayta qo'shilmaydi).
+  // 2) Kanal egasi yangi versiyani ochganda, shu versiyaning o'zgarishlari kanalga bitta xabar bo'lib yuboriladi.
+  const PLDN_UPD_CH = 'pldnyangilanishlari';
+  async function pldnUpdChannel() {
+    const u = me(); if (!u || !window.PLDN_BUILD_NUM) return;
+    try {
+      const un = await fbDb.collection('usernames').doc(PLDN_UPD_CH).get();
+      if (!un.exists) return;
+      const chatId = (un.data() || {}).chatId; if (!chatId) return;
+      const ref = fbDb.collection('chats').doc(chatId);
+      const uref = fbDb.collection('users').doc(u.uid);
+      const us = await uref.get();
+      if (us.exists && !(us.data() || {}).updChJoined) {
+        try { await ref.update({ members: FV().arrayUnion(u.uid) }); } catch (e) { if (e && e.code === 'unavailable') return; }
+        try { await uref.update({ updChJoined: true }); } catch (_) {}
+      }
+      // Egasi bo'lsa: shu versiya izohini kanalga yuborish
+      let cd = null;
+      try { cd = (await ref.get()).data(); } catch (_) { return; }
+      if (!cd || cd.owner !== u.uid) return;
+      const build = window.PLDN_BUILD_NUM;
+      const mref = ref.collection('messages').doc('upd' + build);
+      if ((await mref.get()).exists) return;
+      const r = await fetch('https://api.github.com/repos/' + window.PLDN_REPO_NAME + '/releases/tags/v' + build, { headers: { Accept: 'application/vnd.github+json' } });
+      if (!r.ok) return;
+      const j = await r.json();
+      const lines = String(j.body || '').replace(/\r/g, '').split('\n').map(function (x) { return x.trim(); })
+        .filter(function (x) { return x && !/^build\s*\d+$/i.test(x); }).slice(0, 14)
+        .map(function (x) { return '• ' + x.replace(/^[-*•°·]+\s*/, ''); });
+      if (!lines.length) return;
+      const text = ('PLDN v' + build + ' yangilanishi\n' + lines.join('\n')).slice(0, 2000);
+      const ts = FV().serverTimestamp();
+      const unread = {};
+      (cd.members || []).forEach(function (m) { if (m !== u.uid) unread[m] = FV().increment(1); });
+      const batch = fbDb.batch();
+      batch.set(mref, { from: u.uid, text: text, type: 'text', createdAt: ts });
+      batch.set(ref, { lastText: text.slice(0, 100), lastFrom: u.uid, updatedAt: ts, unread: unread }, { merge: true });
+      await batch.commit();
+    } catch (e) { console.warn('pldnUpdChannel', e); }
+  }
+  // fbAuth ilova ochilganda hali tayyor bo'lmasligi mumkin: foydalanuvchi kirganini kutib turamiz
+  (function () {
+    let lastUid = '';
+    setInterval(function () {
+      try {
+        const u = me();
+        if (u && u.uid !== lastUid) { lastUid = u.uid; setTimeout(pldnUpdChannel, 3000); }
+      } catch (_) {}
+    }, 4000);
+  })();
 
   // ================= OMMAVIY QIDIRUV (username -> guruh/kanal) =================
   window.pldnPublicSearch = async function (u, resEl) {
