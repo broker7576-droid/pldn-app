@@ -1,4 +1,4 @@
-<!-- VERSION: 150 -->
+<!-- VERSION: 149 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -11136,18 +11136,38 @@
     } catch (e) { console.error(e); btn.disabled = false; alert(fbErrMsg(e)); }
   });
 
-  // "•••" tugmasi: PLDN/- qatori
+  // "•••" tugmasi: ixcham menyu (pldn/- va pldnsw/-)
   (function () {
     const si = $('chatSearchInput'), dots = $('chatSearchMore'), list = $('chatList');
     if (!si || !dots || !list) return;
+    function miniMenu(items, x, y) {
+      const old = document.getElementById('pldnMiniOv'); if (old) old.remove();
+      const ov = document.createElement('div'); ov.id = 'pldnMiniOv';
+      ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:100001;background:transparent';
+      const m = document.createElement('div');
+      m.style.cssText = 'position:absolute;min-width:124px;background:var(--bg-elevated,#fff);border-radius:12px;box-shadow:0 4px 18px rgba(0,0,0,.2);padding:4px 0;overflow:hidden';
+      items.forEach(function (it) {
+        const r = document.createElement('div');
+        r.style.cssText = 'padding:10px 18px;font-size:15px;color:var(--text-primary,#000);cursor:pointer;white-space:nowrap';
+        r.textContent = it.label;
+        r.addEventListener('click', function (e) { e.stopPropagation(); ov.remove(); it.fn(); });
+        m.appendChild(r);
+      });
+      ov.appendChild(m);
+      ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+      document.body.appendChild(ov);
+      m.style.left = Math.max(8, Math.min(x, window.innerWidth - m.offsetWidth - 8)) + 'px';
+      m.style.top = y + 'px';
+    }
+    const setPrefix = function (p) {
+      si.value = p; si.focus();
+      try { si.setSelectionRange(si.value.length, si.value.length); } catch (_) {}
+      si.dispatchEvent(new Event('input', { bubbles: true }));
+    };
     dots.addEventListener('click', function (e) {
       e.stopPropagation();
       const r = dots.getBoundingClientRect();
-      window.pldnPopMenu([{ icon: '@', label: 'pldn/-', fn: function () {
-        si.value = 'PLDN/-'; si.focus();
-        try { si.setSelectionRange(si.value.length, si.value.length); } catch (_) {}
-        si.dispatchEvent(new Event('input', { bubbles: true }));
-      } }], { x: r.left, y: r.bottom + 6 });
+      miniMenu([{ label: 'pldn/-', fn: function () { setPrefix('PLDN/-'); } }, { label: 'pldnsw/-', fn: function () { setPrefix('PLDNSW/-'); } }], r.left - 4, r.bottom + 6);
     });
     const box = document.createElement('div'); box.id = 'globalSearchRes'; box.style.display = 'none';
     list.parentNode.insertBefore(box, list);
@@ -11161,7 +11181,9 @@
       inf.append(nm, sb); item.append(av, inf); item.addEventListener('click', fn); return item;
     };
     const hint = function (t) { const d = document.createElement('div'); d.className = 'gs-hint'; d.textContent = t; box.appendChild(d); };
-    async function run(q, t) {
+
+    // ---- pldn/- : foydalanuvchi, guruh, kanal (username bo'yicha)
+    async function runUsers(q, t) {
       try {
         const FP = firebase.firestore.FieldPath.documentId();
         const r = await Promise.all([
@@ -11187,14 +11209,97 @@
         if (!n) hint(T('Hech narsa topilmadi', 'Ничего не найдено'));
       } catch (e) { if (t === tok) { box.innerHTML = ''; hint(fbErrMsg(e)); } }
     }
+
+    // ---- pldnsw/- : barcha chat, guruh va kanallardagi xabarlardan so'z qidirish
+    // Har chatdan oxirgi SW_PER ta xabar o'qiladi (eng faol SW_CHATS ta chat), natija 5 daqiqa eslab turiladi.
+    const SW_PER = 150, SW_CHATS = 25, SW_TTL = 5 * 60 * 1000;
+    const swCache = {}; let swChats = null, swChatsTs = 0;
+    const tms = function (x) { return x && x.toMillis ? x.toMillis() : 0; };
+    async function swLoadChats() {
+      const u = me(); if (!u) return [];
+      if (swChats && Date.now() - swChatsTs < SW_TTL) return swChats;
+      const snap = await fbDb.collection('chats').where('members', 'array-contains', u.uid).get();
+      const arr = []; snap.forEach(function (d) { arr.push({ id: d.id, data: d.data() || {} }); });
+      arr.sort(function (a, b) { return tms(b.data.updatedAt) - tms(a.data.updatedAt); });
+      swChats = arr.slice(0, SW_CHATS); swChatsTs = Date.now();
+      return swChats;
+    }
+    async function swLoadMsgs(id) {
+      const c = swCache[id];
+      if (c && Date.now() - c.ts < SW_TTL) return c.msgs;
+      const snap = await fbDb.collection('chats').doc(id).collection('messages').orderBy('createdAt', 'desc').limit(SW_PER).get();
+      const msgs = [];
+      snap.forEach(function (d) {
+        const v = d.data() || {};
+        if (typeof v.text === 'string' && v.text && v.type !== 'call') msgs.push({ id: d.id, text: v.text, from: v.from, ms: tms(v.createdAt) });
+      });
+      swCache[id] = { ts: Date.now(), msgs: msgs };
+      return msgs;
+    }
+    const swWhen = function (ms) {
+      if (!ms) return ''; const d = new Date(ms);
+      return d.toLocaleDateString([], { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+    function swSnippet(text, q) {
+      const flat = text.replace(/\s+/g, ' ');
+      const i = flat.toLowerCase().indexOf(q);
+      const from = Math.max(0, i - 30), to = Math.min(flat.length, i + q.length + 50);
+      const sp = document.createElement('span');
+      sp.appendChild(document.createTextNode((from > 0 ? '…' : '') + flat.slice(from, i)));
+      const b = document.createElement('b'); b.textContent = flat.slice(i, i + q.length); sp.appendChild(b);
+      sp.appendChild(document.createTextNode(flat.slice(i + q.length, to) + (to < flat.length ? '…' : '')));
+      return sp;
+    }
+    async function runWords(q, t) {
+      box.innerHTML = ''; hint(T('Qidirilmoqda...', 'Поиск...'));
+      try {
+        const chats = await swLoadChats();
+        await Promise.all(chats.map(function (c) { return swLoadMsgs(c.id).catch(function () { return []; }); }));
+        if (t !== tok) return;
+        const mine = me(); const hits = [];
+        chats.forEach(function (c) {
+          ((swCache[c.id] || {}).msgs || []).forEach(function (m) { if (m.text.toLowerCase().indexOf(q) >= 0) hits.push({ c: c, m: m }); });
+        });
+        hits.sort(function (a, b) { return b.m.ms - a.m.ms; });
+        box.innerHTML = '';
+        if (!hits.length) { hint(T('Hech narsa topilmadi', 'Ничего не найдено')); return; }
+        const total = hits.length;
+        hits.slice(0, 60).forEach(function (h) {
+          const c = h.c, d = c.data, isGrp = d.type === 'group' || d.type === 'channel';
+          const other = !isGrp ? (d.members || []).filter(function (x) { return !mine || x !== mine.uid; })[0] : null;
+          const row = mkRow(isGrp ? fbSafeAvatar(d.avatar) : null, isGrp ? (d.name || '') : '…', '', isGrp ? fbColorFor(c.id) : fbColorFor(other || c.id), function () {
+            if (isGrp) fbOpenChat(pvChatInfo({ chatId: c.id, kind: d.type, name: d.name, avatar: d.avatar, owner: d.owner, username: d.username }, d), false);
+            else if (other) fbGetUser(other).then(function (u) { fbOpenChat({ otherUid: other, name: u.name, color: u.color, avatar: u.avatar }, true); }).catch(function () {});
+          });
+          const sub = row.querySelector('.chat-msg'); sub.textContent = '';
+          sub.appendChild(swSnippet(h.m.text, q));
+          const meta = document.createElement('span'); meta.className = 'chat-msg'; meta.style.fontSize = '12px'; meta.textContent = swWhen(h.m.ms);
+          row.querySelector('.chat-info').appendChild(meta);
+          if (!isGrp && other) {
+            fbGetUser(other).then(function (u) { row.querySelector('.chat-name').textContent = u.name; setAv(row.querySelector('.chat-avatar'), u.avatar, u.name, u.color); }).catch(function () {});
+          }
+          box.appendChild(row);
+        });
+        if (total > 60) hint(T('Yana ' + (total - 60) + ' ta natija bor. So\u2018zni aniqroq yozing.', 'Ещё ' + (total - 60) + ' результатов. Уточните запрос.'));
+      } catch (e) { if (t === tok) { box.innerHTML = ''; hint(fbErrMsg(e)); } }
+    }
+
     si.addEventListener('input', function () {
-      const m = si.value.trim().toLowerCase().match(/^pldn\/-?(.*)$/);
+      const val = si.value.trim().toLowerCase();
+      const msw = val.match(/^pldnsw\/-?(.*)$/);
+      const mu = msw ? null : val.match(/^pldn\/-?(.*)$/);
       clearTimeout(timer); const t = ++tok;
-      if (!m) { box.style.display = 'none'; box.innerHTML = ''; list.style.display = ''; return; }
-      const q = m[1].replace(/[^a-z0-9]/g, '');
+      if (!msw && !mu) { box.style.display = 'none'; box.innerHTML = ''; list.style.display = ''; return; }
       list.style.display = 'none'; box.style.display = ''; box.innerHTML = '';
+      if (msw) {
+        const q = msw[1].trim();
+        if (q.length < 2) { hint(T("Chat, guruh va kanallardagi xabarlardan qidiriladigan so\u2018zni yozing", 'Введите слово для поиска по сообщениям чатов, групп и каналов')); return; }
+        timer = setTimeout(function () { runWords(q, t); }, 600);
+        return;
+      }
+      const q = mu[1].replace(/[^a-z0-9]/g, '');
       if (q.length < 2) { hint(T('Foydalanuvchi, guruh yoki kanal username\u2019ini yozing', 'Введите username пользователя, группы или канала')); return; }
-      timer = setTimeout(function () { run(q, t); }, 300);
+      timer = setTimeout(function () { runUsers(q, t); }, 300);
     });
   })();
 
