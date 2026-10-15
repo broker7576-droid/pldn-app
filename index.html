@@ -1,4 +1,4 @@
-<!-- VERSION: 141 -->
+<!-- VERSION: 142 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -1398,6 +1398,7 @@
 
   .message-bubble:not(.image-bubble) { display: flow-root; }
 
+  .msg-tick { display: inline-block; width: 13px; height: 13px; margin-left: 4px; vertical-align: -2px; flex: none; pointer-events: none; }
   .msg-time {
     float: right;
     font-size: 11px;
@@ -5932,6 +5933,33 @@
     }
   }
 
+  // Xabar holati belgilari (SVG, hamma Androidda bir xil): yuborilayapti / yuborildi / o'qildi
+  const FB_TICKS = {
+    sending: '<svg class="msg-tick" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="#fff" stroke="#1E88FF" stroke-width="2.4"/><path d="M17.5 6.5L7.2 11.2l3.6 1.3 1.5 4.1z" stroke="#1E88FF" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>',
+    sent: '<svg class="msg-tick" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2" y="2" width="20" height="20" fill="#fff" stroke="#1E88FF" stroke-width="2.6"/><rect x="8.2" y="8.2" width="7.6" height="7.6" stroke="#1E88FF" stroke-width="2.4"/></svg>',
+    read: '<svg class="msg-tick" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="#fff" stroke="#14C99B" stroke-width="2.4"/><rect x="8.2" y="8.2" width="7.6" height="7.6" stroke="#14C99B" stroke-width="2.4"/></svg>'
+  };
+  let fbTickUnread = 0;
+  const fbPendingIds = new Set();
+  function fbUpdateTicks() {
+    const bs = messagesArea.querySelectorAll('.message-bubble[data-tick]');
+    let k = fbTickUnread;
+    for (let i = bs.length - 1; i >= 0; i--) {
+      const b = bs[i];
+      let st;
+      if (fbPendingIds.has(b.dataset.msgId)) { st = 'sending'; if (k > 0) k--; }
+      else if (k > 0) { st = 'sent'; k--; }
+      else st = 'read';
+      if (b.dataset.tickState === st) continue;
+      b.dataset.tickState = st;
+      const tm = b.querySelector('.msg-time');
+      if (!tm) continue;
+      const old = tm.querySelector('.msg-tick');
+      if (old) old.remove();
+      tm.insertAdjacentHTML('beforeend', FB_TICKS[st]);
+    }
+  }
+
   function bubbleClock(d) {
     const pad = n => String(n).padStart(2, '0');
     return pad(d.getHours()) + ':' + pad(d.getMinutes());
@@ -8504,6 +8532,7 @@
   // ===== HAQIQIY CHATLAR (Firestore) =====
   let fbCurrentChat = null;   // {id, otherUid, name, color, avatar}
   let fbMsgUnsub = null;
+  let fbTickUnsub = null;
   let fbChatsUnsub = null;
   let fbRenderToken = 0;
   const fbUserCache = {};
@@ -8659,6 +8688,7 @@
     try { fbScrollSave(); } catch (_) {}
     fbScrReady = false;
     if (fbMsgUnsub) { fbMsgUnsub(); fbMsgUnsub = null; }
+    if (fbTickUnsub) { fbTickUnsub(); fbTickUnsub = null; }
     fbVoiceCache.forEach(b => { if (b._audio) b._audio.pause(); });
     fbVoiceCache.clear();
     if (fbPeerUnsub) { fbPeerUnsub(); fbPeerUnsub = null; }
@@ -8706,6 +8736,17 @@
 
     // Ro'yxat har yangilanganda (emotsiya, tahrirlash, o'qildi...) qayta chiziladi: foydalanuvchi turgan joyi saqlanadi
     let fbScrLoaded = false, fbScrSize = 0, fbScrLast = '';
+    fbPendingIds.clear(); fbTickUnread = 0;
+    if (fbTickUnsub) { fbTickUnsub(); fbTickUnsub = null; }
+    fbTickUnsub = fbDb.collection('chats').doc(chatId).onSnapshot(cs => {
+      if (fbCurrentChat !== myChat) return;
+      const un = ((cs.data() || {}).unread) || {};
+      let mx = 0;
+      if (isGrp) { Object.keys(un).forEach(u => { if (u !== me.uid) mx = Math.max(mx, Number(un[u]) || 0); }); }
+      else mx = Number(un[info.otherUid]) || 0;
+      fbTickUnread = mx;
+      fbUpdateTicks();
+    }, () => {});
     let fbRestore = fbScrollMem[chatId] || null; // oxirgi marta qolgan joy
     fbMsgUnsub = fbDb.collection('chats').doc(chatId).collection('messages').orderBy('createdAt')
       .onSnapshot(snap => {
@@ -8713,6 +8754,7 @@
         const keepTop = messagesArea.scrollTop;
         const wasBottom = !fbScrLoaded || (messagesArea.scrollHeight - messagesArea.scrollTop - messagesArea.clientHeight) < 120;
         messagesArea.innerHTML = '';
+        fbPendingIds.clear();
         let lastDayKey = '';
         snap.forEach(doc => {
           const m = doc.data({ serverTimestamps: 'estimate' });
@@ -8755,8 +8797,13 @@
             if (myChat.type === 'group' && dir === 'incoming' && typeof pldnAddSender === 'function') pldnAddSender(b, m.from);
             if (m.reply && typeof m.reply === 'object') fbAddQuote(b, m.reply);
             fbApplyReactions(b, m.reactions, me.uid);
+            if (dir === 'outgoing' && !isCall) {
+              b.dataset.tick = '1';
+              if (doc.metadata.hasPendingWrites) fbPendingIds.add(doc.id);
+            }
           }
         });
+        fbUpdateTicks();
         // o'chirilgan ovozli xabarlarni keshdan olib tashlash
         const liveIds = new Set();
         snap.forEach(d => liveIds.add(d.id));
