@@ -102,14 +102,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp android/app/build/outputs/apk/debug/app-debug.apk pldn-app.apk
-          gh release create "v$VERSION_CODE" pldn-app.apk --repo "${{ github.repository }}" --title "PLDN $VERSION_NAME" --notes "Build $VERSION_CODE" --latest
+          if [ -s changelog.txt ]; then
+            tr -d '\r' < changelog.txt > /tmp/notes.txt
+          else
+            echo "Build $VERSION_CODE" > /tmp/notes.txt
+          fi
+          gh release create "v$VERSION_CODE" pldn-app.apk --repo "${{ github.repository }}" --title "PLDN $VERSION_NAME" --notes-file /tmp/notes.txt --latest
 
       - name: Stamp version in repo
         run: |
           sed -i "1s/^<!-- VERSION:.*/<!-- VERSION: $VERSION_CODE -->/" index.html
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add index.html
+          : > changelog.txt
+          git add index.html changelog.txt
           git commit -m "Version $VERSION_CODE [skip ci]" || exit 0
           git push origin HEAD:main || (git fetch origin main && git rebase origin/main && git push origin HEAD:main) || true
+
           
