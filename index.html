@@ -1,4 +1,4 @@
-<!-- VERSION: 151 -->
+<!-- VERSION: 150 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -6255,6 +6255,7 @@
     msgActionMenu.classList.add('open');
   }
 
+  window.pldnOpenMsgMenu = openMsgMenu;
   function closeMsgMenu() {
     msgActionMenu.classList.remove('open');
     currentMenuBubble = null;
@@ -8678,7 +8679,7 @@
       rows.push({
         id: d.id, otherUid: other, name: u.name, color: u.color, avatar: u.avatar, locked: !!u.locked,
         type: isGrp ? v.type : 'dm', members: v.members || [], owner: v.owner || '', admins: v.admins || [], username: v.username || '',
-        access: v.access || 'open', allowedReactions: Array.isArray(v.allowedReactions) ? v.allowedReactions : null, blocked: v.blocked || [], discussion: v.discussion || '',
+        access: v.access || 'open', allowedReactions: Array.isArray(v.allowedReactions) ? v.allowedReactions : null, blocked: v.blocked || [], discussion: v.discussion || '', adminPerms: v.adminPerms || {}, restricted: v.restricted || {},
         msg: (v.lastFrom === me ? fbT('Siz: ', 'Вы: ') : '') + v.lastText,
         time: fbTimeLabel(ts), ms: ts ? ts.getTime() : 0, unread: unread, real: true
       });
@@ -8768,7 +8769,7 @@
     const isGrp = info.type === 'group' || info.type === 'channel';
     const myChat = { id: chatId, otherUid: info.otherUid || null, name: info.name, color: info.color, avatar: info.avatar || null,
       type: isGrp ? info.type : 'dm', members: info.members || [], owner: info.owner || '', admins: info.admins || [], username: info.username || '',
-      access: info.access || 'open', allowedReactions: Array.isArray(info.allowedReactions) ? info.allowedReactions : null, blocked: info.blocked || [], discussion: info.discussion || '' };
+      access: info.access || 'open', allowedReactions: Array.isArray(info.allowedReactions) ? info.allowedReactions : null, blocked: info.blocked || [], discussion: info.discussion || '', adminPerms: info.adminPerms || {}, restricted: info.restricted || {} };
     fbCurrentChat = myChat;
     if (!isGrp) fbWatchPeer(info.otherUid);
 
@@ -8862,6 +8863,11 @@
             if (dir === 'outgoing' && !isCall) {
               b.dataset.tick = '1';
               if (doc.metadata.hasPendingWrites) fbPendingIds.add(doc.id);
+            } else if (!isCall && fbCurrentChat && fbCurrentChat.type === 'channel' && window.pldnCanEditAll && window.pldnCanEditAll(fbCurrentChat)) {
+              b.addEventListener('click', function (ev) {
+                if (b.dataset.kind === 'image') return;
+                ev.stopPropagation(); window.pldnOpenMsgMenu(b);
+              });
             }
           }
         });
@@ -8920,6 +8926,7 @@
     const me = fbAuth && fbAuth.currentUser;
     const chat = fbCurrentChat;
     if (!me || !chat) return;
+    if (chat.type === 'channel' && chat.restricted && Number(chat.restricted[me.uid]) > Date.now()) { alert(fbT('Siz kanalda vaqtincha cheklangansiz', 'Вы временно ограничены в канале')); return; }
     if (emoji && chat.type === 'channel' && Array.isArray(chat.allowedReactions) &&
         chat.allowedReactions.map(fbEmojiKey).indexOf(fbEmojiKey(emoji)) < 0) { alert(fbT('Bu reaksiya kanalda ruxsat etilmagan', 'Эта реакция в канале запрещена')); return; }
     try {
@@ -10268,9 +10275,34 @@
     else { el.textContent = initials(name || '?'); el.style.background = color; }
   }
   function me() { return fbAuth && fbAuth.currentUser; }
-  function canAdd(c) { const u = me(); return !!(u && c && (c.type === 'group' || c.owner === u.uid)); }
-  function canPost(c) { const u = me(); return !!(u && c && (c.type !== 'channel' || c.owner === u.uid)); }
   function isOwnerOf(c) { const u = me(); return !!(u && c && c.owner === u.uid); }
+  // Kanal boshqaruvchilari imtiyozlari
+  const ADM_PERMS = [
+    ['block', "Kanal a'zolarini bloklash", 'Блокировать участников канала'],
+    ['kick', "Kanal a'zolarini kanaldan chiqarish", 'Исключать участников из канала'],
+    ['mute', "Kanal a'zolarini vaqt bilan cheklash", 'Ограничивать участников по времени'],
+    ['promote', "Kanal a'zolarini boshqaruvchi qilish", 'Назначать администраторов'],
+    ['add', "Kanalga a'zolar qo'shish", 'Добавлять участников в канал'],
+    ['post', 'Kanalga xabar yuborish', 'Отправлять сообщения в канал'],
+    ['editdel', "Kanal xabarlarini o'chirish va tahrirlash", 'Удалять и редактировать сообщения канала'],
+    ['info', "Kanal ma'lumotlarini o'zgartirish", 'Изменять информацию о канале'],
+    ['privacy', "Kanal maxfiylik sozlamalarini o'zgartirish", 'Изменять настройки приватности канала'],
+    ['viewlog', "Kanaldagi oxirgi amallarni ko'rish", 'Просматривать последние действия'],
+    ['perms', 'Kanal boshqaruv imtiyozlarini erkin tanlash', 'Свободно выбирать права администраторов'],
+    ['blockAdmins', 'Boshqaruvchilarni bloklash', 'Блокировать администраторов']
+  ];
+  const ADM_KEYS = ADM_PERMS.map(function (p) { return p[0]; });
+  function myPerms(c) {
+    const u = me(); if (!u || !c) return [];
+    if (c.owner === u.uid) return ADM_KEYS;
+    if (c.type === 'channel' && (c.admins || []).indexOf(u.uid) >= 0 && c.adminPerms) return c.adminPerms[u.uid] || [];
+    return [];
+  }
+  function can(c, p) { return myPerms(c).indexOf(p) >= 0; }
+  function chsAllowed(c) { return !!(c && c.type === 'channel' && ['info', 'privacy', 'viewlog', 'block', 'promote', 'perms'].some(function (p) { return can(c, p); })); }
+  window.pldnCanEditAll = function (c) { return !!(c && c.type === 'channel' && can(c, 'editdel')); };
+  function canAdd(c) { const u = me(); return !!(u && c && (c.type === 'group' || c.owner === u.uid || can(c, 'add'))); }
+  function canPost(c) { const u = me(); return !!(u && c && (c.type !== 'channel' || c.owner === u.uid || can(c, 'post'))); }
   function cnt(c) { const n = (c.members || []).length; return c.type === 'channel' ? n + ' ' + T('obunachi', 'подписчиков') : n + ' ' + T("a'zo", 'участников'); }
 
   // ================= YARATISH =================
@@ -10397,7 +10429,7 @@
       const v = snap.data();
       if ((v.members || []).indexOf(u.uid) < 0) { fbLeaveChat(); goToScreen('screen4'); return; }
       chat.members = v.members || []; chat.owner = v.owner || ''; chat.admins = v.admins || [];
-      chat.access = v.access || 'open'; chat.allowedReactions = Array.isArray(v.allowedReactions) ? v.allowedReactions : null; chat.blocked = v.blocked || []; chat.discussion = v.discussion || '';
+      chat.access = v.access || 'open'; chat.allowedReactions = Array.isArray(v.allowedReactions) ? v.allowedReactions : null; chat.blocked = v.blocked || []; chat.discussion = v.discussion || ''; chat.adminPerms = v.adminPerms || {}; chat.restricted = v.restricted || {};
       chat.name = v.name || chat.name; chat.avatar = fbSafeAvatar(v.avatar); chat.username = v.username || ''; chat.about = typeof v.about === 'string' ? v.about : '';
       applyChatUi(chat);
       if ($('pgxInfoScreen').classList.contains('active')) renderInfo();
@@ -10564,7 +10596,7 @@
       mid.append(n, s); row.append(av, mid);
       const r = rank(u);
       if (r < 2) { const b = document.createElement('span'); b.className = 'pgx-pill ' + (r === 0 ? 'own' : 'adm'); b.textContent = r === 0 ? T('Ega', 'Владелец') : 'Admin'; row.appendChild(b); }
-      else if (isOwnerOf(c)) {
+      else if (isOwnerOf(c) && c.type !== 'channel') {
         const x = document.createElement('button'); x.className = 'pgx-x'; x.textContent = '✕';
         x.addEventListener('click', async function (e) {
           e.stopPropagation();
@@ -10578,6 +10610,7 @@
         if (mine && u.uid === mine.uid) return;
         fbOpenChat({ otherUid: u.uid, name: u.name, color: u.color, avatar: u.avatar }, true);
       });
+      if (c.type === 'channel' && mine && u.uid !== mine.uid && u.uid !== c.owner) { attachLongPress(row, function (x, y) { openMemberMenu(c, u, x, y); }); }
       list.appendChild(row);
     });
   }
@@ -10594,6 +10627,7 @@
     if (isOwnerOf(c) && !ch) items.push({ icon: '✏️', label: T("O'zgartirish", 'Изменить'), fn: function () { openSettings(); } });
     if (window.pldnPdfOpen) items.push({ icon: '📄', label: T('PDF qilish', 'Сохранить в PDF'), fn: function () { window.pldnPdfOpen(); } });
     if (window.pldnWpItems) window.pldnWpItems().forEach(function (it) { items.push(it); });
+    if (ch && chsAllowed(c) && !isOwnerOf(c)) items.push({ icon: '⚙️', label: T('Kanal sozlamalari', 'Настройки канала'), fn: function () { openSettings(); } });
     items.push(isOwnerOf(c)
       ? (ch ? { icon: '⚙️', label: T('Kanal sozlamalari', 'Настройки канала'), fn: function () { openSettings(); } }
             : { icon: '🗑️', label: T("Guruhni o'chirish", 'Удалить группу'), fn: function () { $('pgxSetDanger').click(); } })
@@ -10664,7 +10698,7 @@
       mid.append(n, s);
       row.append(av, mid);
       if (u.uid === c.owner) { const b = document.createElement('span'); b.className = 'pgx-badge'; b.textContent = T('egasi', 'владелец'); row.appendChild(b); }
-      else if (isOwnerOf(c)) {
+      else if (isOwnerOf(c) && c.type !== 'channel') {
         const x = document.createElement('button'); x.className = 'pgx-x'; x.textContent = '✕';
         x.addEventListener('click', async function (e) {
           e.stopPropagation();
@@ -10678,6 +10712,7 @@
         if (mine && u.uid === mine.uid) return;
         fbOpenChat({ otherUid: u.uid, name: u.name, color: u.color, avatar: u.avatar }, true);
       });
+      if (c.type === 'channel' && mine && u.uid !== mine.uid && u.uid !== c.owner) { attachLongPress(row, function (x, y) { openMemberMenu(c, u, x, y); }); }
       list.appendChild(row);
     });
   }
@@ -10699,7 +10734,7 @@
   })();
   function openSettings() {
     const c = fbCurrentChat; if (!c || !isG(c.type)) return;
-    if (c.type === 'channel' && isOwnerOf(c)) { openChSet(); return; }
+    if (c.type === 'channel' && chsAllowed(c)) { openChSet(); return; }
     $('pgxSetAbout').value = c.about || ''; $('pgxSetAbout').disabled = !isOwnerOf(c);
     $('pgxSetAbout').placeholder = c.type === 'channel' ? T('Kanal haqida (300 tagacha belgi)', 'О канале (до 300 символов)') : T('Guruh haqida (300 tagacha belgi)', 'О группе (до 300 символов)');
     $('pgxSetAboutCnt').textContent = Array.from($('pgxSetAbout').value).length + '/300';
@@ -10828,7 +10863,7 @@
   const chMk = function (cls, txt) { const d = document.createElement('div'); if (cls) d.className = cls; if (txt != null) d.textContent = txt; return d; };
 
   function openChSet(keep) {
-    const c = fbCurrentChat; if (!c || c.type !== 'channel' || !isOwnerOf(c)) return;
+    const c = fbCurrentChat; if (!c || c.type !== 'channel' || !chsAllowed(c)) return;
     if (!keep || !chD) {
       chD = { name: c.name || '', username: c.username || '', about: c.about || '', access: c.access || 'open', discussion: c.discussion || '', discussionName: '',
               allowedReactions: Array.isArray(c.allowedReactions) ? c.allowedReactions.slice() : null };
@@ -10845,6 +10880,11 @@
     $('chsUnWrap').style.display = '';
     $('chsUnMsg').textContent = ''; $('chsMsg').textContent = '';
     $('chsSave').disabled = false;
+    const ci = can(c, 'info'), cp = can(c, 'privacy');
+    $('chsName').disabled = !ci; $('chsAbout').disabled = !ci; $('chsUser').disabled = !cp;
+    $('chsFile').disabled = !ci; $('chsAv').parentNode.style.pointerEvents = ci ? '' : 'none';
+    $('chsSave').style.display = (ci || cp) ? '' : 'none';
+    $('chsDanger').parentNode.style.display = isOwnerOf(c) ? '' : 'none';
     $('chsDanger').textContent = '🗑️ ' + T("Kanalni o'chirish", 'Удалить канал');
     renderChRows();
     goToScreen('pgxChSetScreen');
@@ -10852,14 +10892,15 @@
   function renderChRows() {
     const c = fbCurrentChat; if (!c || !chD) return;
     const box = $('chsRows'); box.innerHTML = '';
+    const ci = can(c, 'info'), cp = can(c, 'privacy');
     const rows = [
-      ['📢', T('Kanal turi', 'Тип канала'), chAccLabel(chD.access), chPickType],
-      ['💬', T('Muhokama', 'Обсуждение'), chD.discussion ? (chD.discussionName || '✓') : T("O'chiq", 'Выкл'), chPickDiscussion],
-      ['❤️', T('Reaksiyalar', 'Реакции'), chD.allowedReactions === null ? T('Hammasi', 'Все') : (chD.allowedReactions.length ? String(chD.allowedReactions.length) : T("O'chiq", 'Выкл')), chPickReactions],
-      ['🛡️', T('Boshqaruvchilar', 'Администраторы'), String((c.admins || []).length), function () { alert(T('Boshqaruvchilar bo\u2018limi keyingi bosqichda qo\u2018shiladi.', 'Раздел администраторов будет добавлен позже.')); }],
-      ['🚫', T('Bloklanganlar', 'Заблокированные'), String((c.blocked || []).length), chBlocked],
-      ['📋', T('Oxirgi amallar', 'Последние действия'), '', chActions]
-    ];
+      cp && ['📢', T('Kanal turi', 'Тип канала'), chAccLabel(chD.access), chPickType],
+      ci && ['💬', T('Muhokama', 'Обсуждение'), chD.discussion ? (chD.discussionName || '✓') : T("O'chiq", 'Выкл'), chPickDiscussion],
+      ci && ['❤️', T('Reaksiyalar', 'Реакции'), chD.allowedReactions === null ? T('Hammasi', 'Все') : (chD.allowedReactions.length ? String(chD.allowedReactions.length) : T("O'chiq", 'Выкл')), chPickReactions],
+      (can(c, 'promote') || can(c, 'perms')) && ['🛡️', T('Boshqaruvchilar', 'Администраторы'), String((c.admins || []).length), chAdmins],
+      can(c, 'block') && ['🚫', T('Bloklanganlar', 'Заблокированные'), String((c.blocked || []).length), chBlocked],
+      can(c, 'viewlog') && ['📋', T('Oxirgi amallar', 'Последние действия'), '', chActions]
+    ].filter(Boolean);
     rows.forEach(function (r) {
       const d = chMk('chs-row'); const ic = chMk('ic', r[0]), lb = chMk('lb', r[1]), vl = chMk('vl', r[2]);
       d.append(ic, lb, vl); d.addEventListener('click', r[3]); box.appendChild(d);
@@ -10988,6 +11029,7 @@
               else if ((c.blocked || []).indexOf(uid) >= 0) { bt.textContent = '✓'; bt.disabled = true; bt.style.opacity = '.5'; }
               else bt.textContent = T('Bloklash', 'Заблокировать');
               bt.addEventListener('click', async function () {
+                if ((c.admins || []).indexOf(uid) >= 0 && !can(c, 'blockAdmins')) { alert(T("Boshqaruvchilarni bloklash uchun ruxsatingiz yo'q", 'Нет права блокировать администраторов')); return; }
                 const ok = await pldnConfirm(T('«' + nm + "» ni kanaldan bloklaysizmi?", 'Заблокировать «' + nm + '» в канале?'));
                 if (!ok) return;
                 bt.disabled = true;
@@ -11029,30 +11071,37 @@
   }
   // ✓ Saqlash
   $('chsSave').addEventListener('click', async function () {
-    const c = fbCurrentChat; if (!c || !isOwnerOf(c) || !chD) return;
+    const c = fbCurrentChat; if (!c || !chsAllowed(c) || !chD) return;
+    const ci = can(c, 'info'), cp = can(c, 'privacy'); if (!ci && !cp) return;
     const btn = this, msg = $('chsMsg'), unm = $('chsUnMsg');
     const name = (chD.name || '').trim().slice(0, 40);
-    if (!name) { msg.textContent = T('Kanal nomini kiriting', 'Введите название канала'); return; }
+    if (ci && !name) { msg.textContent = T('Kanal nomini kiriting', 'Введите название канала'); return; }
     const about = Array.from(chD.about || '').slice(0, 300).join('').trim();
     const newU = (chD.username || '').trim();
     const oldU = c.username || '';
     btn.disabled = true; msg.textContent = T('Saqlanmoqda...', 'Сохранение...'); unm.textContent = '';
     try {
-      if (!/^[a-z0-9]{4,20}$/.test(newU)) { unm.style.color = '#ff3b30'; unm.textContent = T("Username 4–20 ta kichik harf yoki raqam bo'lsin", 'Username: 4–20 строчных букв или цифр'); msg.textContent = ''; btn.disabled = false; return; }
-      if (newU && newU !== oldU) {
+      if (cp && !/^[a-z0-9]{4,20}$/.test(newU)) { unm.style.color = '#ff3b30'; unm.textContent = T("Username 4–20 ta kichik harf yoki raqam bo'lsin", 'Username: 4–20 строчных букв или цифр'); msg.textContent = ''; btn.disabled = false; return; }
+      if (cp && newU && newU !== oldU) {
         const r = await Promise.all([fbDb.collection('usernames').doc(newU).get(), fbDb.collection('users').where('username', '==', newU).limit(1).get()]);
         if (r[0].exists || !r[1].empty) { unm.style.color = '#ff3b30'; unm.textContent = T('Bu username band, boshqasini tanlang', 'Этот username занят'); msg.textContent = ''; btn.disabled = false; return; }
       }
       const cref = fbDb.collection('chats').doc(c.id);
-      const upd = { name: name, about: about, access: chD.access, username: newU, discussion: chD.discussion || '',
-                    allowedReactions: chD.allowedReactions === null ? FV().delete() : chD.allowedReactions };
-      const meta = { kind: 'channel', chatId: c.id, owner: c.owner, name: name, avatar: c.avatar || null, access: chD.access };
+      const upd = {};
+      if (ci) { upd.name = name; upd.about = about; upd.discussion = chD.discussion || ''; upd.allowedReactions = chD.allowedReactions === null ? FV().delete() : chD.allowedReactions; }
+      if (cp) { upd.access = chD.access; upd.username = newU; }
+      const meta = { kind: 'channel', chatId: c.id, owner: c.owner, name: ci ? name : c.name, avatar: c.avatar || null, access: cp ? chD.access : (c.access || 'open') };
       const batch = fbDb.batch();
       batch.update(cref, upd);
-      if (newU !== oldU && oldU) batch.delete(fbDb.collection('usernames').doc(oldU));
-      if (newU) batch.set(fbDb.collection('usernames').doc(newU), meta);
+      if (cp) {
+        if (newU !== oldU && oldU) batch.delete(fbDb.collection('usernames').doc(oldU));
+        if (newU) batch.set(fbDb.collection('usernames').doc(newU), meta);
+      } else if (ci && oldU) {
+        batch.set(fbDb.collection('usernames').doc(oldU), meta);
+      }
       await batch.commit();
-      c.name = name; c.about = about; c.access = chD.access; c.username = newU; c.discussion = chD.discussion || ''; c.allowedReactions = chD.allowedReactions;
+      if (ci) { c.name = name; c.about = about; c.discussion = chD.discussion || ''; c.allowedReactions = chD.allowedReactions; }
+      if (cp) { c.access = chD.access; c.username = newU; }
       chD = null; msg.textContent = '';
       renderGrp(); goToScreen('pgxGrpScreen');
     } catch (e) { console.error(e); msg.textContent = fbErrMsg(e); btn.disabled = false; }
@@ -11060,7 +11109,7 @@
   // Rasm darhol saqlanadi
   $('chsFile').addEventListener('change', function () {
     const c = fbCurrentChat; const f = this.files && this.files[0]; this.value = '';
-    if (!c || !f || !isOwnerOf(c)) return;
+    if (!c || !f || !can(c, 'info')) return;
     const r = new FileReader();
     r.onload = function () {
       fbCompressAvatar(r.result).then(async function (a) {
@@ -11100,7 +11149,7 @@
   function pvChatInfo(v, d) {
     return { id: v.chatId, type: v.kind, name: d.name || v.name, color: fbColorFor(v.chatId), avatar: fbSafeAvatar(d.avatar) || fbSafeAvatar(v.avatar),
       members: d.members || [], owner: d.owner || v.owner || '', admins: d.admins || [], username: d.username || v.username || '',
-      access: d.access || 'open', allowedReactions: Array.isArray(d.allowedReactions) ? d.allowedReactions : null, blocked: d.blocked || [], discussion: d.discussion || '' };
+      access: d.access || 'open', allowedReactions: Array.isArray(d.allowedReactions) ? d.allowedReactions : null, blocked: d.blocked || [], discussion: d.discussion || '', adminPerms: d.adminPerms || {}, restricted: d.restricted || {} };
   }
   // Topilgan guruh/kanal: a'zo bo'lsa chat ochiladi, bo'lmasa "Qo'shilish" tugmali ko'rinish
   window.pldnOpenFound = async function (v, uname) {
@@ -11302,6 +11351,155 @@
       timer = setTimeout(function () { runUsers(q, t); }, 300);
     });
   })();
+
+  // ================= BOSHQARUVCHILAR (imtiyozlar, a'zoni bosib turish menyusi) =================
+  (function () {
+    const st = document.createElement('style');
+    st.textContent =
+      '#pgxAdmPermScreen{padding:0;align-items:stretch;overflow:hidden}' +
+      '.ap-row{display:flex;align-items:center;gap:14px;padding:14px 16px;cursor:pointer;border-bottom:1px solid rgba(128,128,128,.15)}.ap-row:last-child{border-bottom:0}' +
+      '.ap-box{width:24px;height:24px;border:2px solid #8e8e93;border-radius:6px;box-sizing:border-box;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;line-height:1}' +
+      '.ap-row.on .ap-box{background:#2AABEE;border-color:#2AABEE}' +
+      '.ap-row.dis{opacity:.38;pointer-events:none}.ap-lb{flex:1;font-size:16px;line-height:1.3;color:var(--text-primary,#000)}';
+    document.head.appendChild(st);
+  })();
+  function attachLongPress(el, fn) {
+    let tm = null, sx = 0, sy = 0, fired = false;
+    const cancel = function () { if (tm) { clearTimeout(tm); tm = null; } };
+    el.addEventListener('touchstart', function (e) {
+      const t = e.touches[0]; sx = t.clientX; sy = t.clientY; fired = false; cancel();
+      tm = setTimeout(function () { tm = null; fired = true; try { if (navigator.vibrate) navigator.vibrate(15); } catch (_) {} fn(sx, sy); }, 500);
+    }, { passive: true });
+    el.addEventListener('touchmove', function (e) { const t = e.touches[0]; if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) cancel(); }, { passive: true });
+    el.addEventListener('touchend', cancel); el.addEventListener('touchcancel', cancel);
+    el.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    el.addEventListener('click', function (e) { if (fired) { fired = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+  }
+  mkScreen('pgxAdmPermScreen',
+    '<div class="chat-detail-header"><button class="chat-back-btn" id="apBack">' + BACK + '</button><div class="chat-detail-info"><div class="chat-detail-name" id="apTitle"></div></div>' +
+    '<button class="chs-ok" id="apSave" aria-label="OK"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12.5 10 17.5 19 7"/></svg></button></div>' +
+    '<div class="settings-body"><div class="chs-hint" id="apWho"></div><div class="pgx-card" id="apList" style="padding:0;"></div><p class="subtitle" id="apMsg" style="min-height:18px;margin:10px 4px;"></p></div>');
+  let apD = null, apRet = null;
+  function apReturn() { if (apRet) apRet(); else { renderGrp(); goToScreen('pgxGrpScreen'); } }
+  function openPerms(c, u, isNew, ret) {
+    apRet = ret || null;
+    const cur = isNew ? [] : ((c.adminPerms || {})[u.uid] || []);
+    apD = { uid: u.uid, name: u.name, isNew: isNew, perms: cur.slice() };
+    $('apTitle').textContent = T('Boshqaruvchi imtiyozlari', 'Права администратора');
+    $('apWho').textContent = u.name + (u.username ? '  ·  PLDN/-' + u.username : '');
+    $('apMsg').textContent = '';
+    const free = isOwnerOf(c) || can(c, 'perms'); const mineP = myPerms(c);
+    const box = $('apList'); box.innerHTML = '';
+    ADM_PERMS.forEach(function (p) {
+      const row = document.createElement('div');
+      const on = apD.perms.indexOf(p[0]) >= 0;
+      row.className = 'ap-row' + (on ? ' on' : '') + ((free || mineP.indexOf(p[0]) >= 0) ? '' : ' dis');
+      const bx = document.createElement('div'); bx.className = 'ap-box'; bx.textContent = on ? '✓' : '';
+      const lb = document.createElement('div'); lb.className = 'ap-lb'; lb.textContent = T(p[1], p[2]);
+      row.append(bx, lb);
+      row.addEventListener('click', function () {
+        const i = apD.perms.indexOf(p[0]);
+        if (i >= 0) apD.perms.splice(i, 1); else apD.perms.push(p[0]);
+        const nowOn = i < 0; row.classList.toggle('on', nowOn); bx.textContent = nowOn ? '✓' : '';
+      });
+      box.appendChild(row);
+    });
+    $('apSave').disabled = false;
+    goToScreen('pgxAdmPermScreen');
+  }
+  $('apBack').addEventListener('click', function () { apReturn(); });
+  $('apSave').addEventListener('click', async function () {
+    const c = fbCurrentChat; if (!c || !apD) return;
+    const btn = this; btn.disabled = true; $('apMsg').textContent = T('Saqlanmoqda...', 'Сохранение...');
+    try {
+      const perms = ADM_KEYS.filter(function (k) { return apD.perms.indexOf(k) >= 0; });
+      const upd = {}; upd['adminPerms.' + apD.uid] = perms;
+      if (apD.isNew) upd.admins = FV().arrayUnion(apD.uid);
+      await fbDb.collection('chats').doc(c.id).update(upd);
+      c.adminPerms = Object.assign({}, c.adminPerms || {}); c.adminPerms[apD.uid] = perms;
+      if (apD.isNew) c.admins = (c.admins || []).concat([apD.uid]);
+      apD = null; apReturn();
+    } catch (e) { console.error(e); $('apMsg').textContent = fbErrMsg(e); btn.disabled = false; }
+  });
+  async function chRemoveAdmin(c, u) {
+    const ok = await pldnConfirm(T('«' + u.name + '» ni boshqaruvchilikdan olasizmi?', 'Снять «' + u.name + '» с должности администратора?'));
+    if (!ok) return false;
+    try {
+      const upd = { admins: FV().arrayRemove(u.uid) }; upd['adminPerms.' + u.uid] = FV().delete();
+      await fbDb.collection('chats').doc(c.id).update(upd);
+      c.admins = (c.admins || []).filter(function (z) { return z !== u.uid; });
+      if (c.adminPerms) { c.adminPerms = Object.assign({}, c.adminPerms); delete c.adminPerms[u.uid]; }
+      return true;
+    } catch (e) { alert(fbErrMsg(e)); return false; }
+  }
+  async function memberDo(c, u, upd, after) {
+    try { await fbDb.collection('chats').doc(c.id).update(upd); if (after) after(); renderGrp(); }
+    catch (e) { alert(fbErrMsg(e)); }
+  }
+  function openMemberMenu(c, u, x, y) {
+    if (!c || c.type !== 'channel' || u.uid === c.owner) return;
+    const owner = isOwnerOf(c), isAdm = (c.admins || []).indexOf(u.uid) >= 0, items = [];
+    const rs = c.restricted || {}; const muted = Number(rs[u.uid]) > Date.now();
+    const kick = function () {
+      pldnConfirm(T('«' + u.name + '» ni kanaldan chiqarasizmi?', 'Исключить «' + u.name + '» из канала?')).then(function (ok) {
+        if (ok) memberDo(c, u, { members: FV().arrayRemove(u.uid) }, function () { c.members = (c.members || []).filter(function (z) { return z !== u.uid; }); });
+      });
+    };
+    const block = function () {
+      pldnConfirm(T('«' + u.name + '» ni kanaldan bloklaysizmi?', 'Заблокировать «' + u.name + '» в канале?')).then(function (ok) {
+        if (ok) memberDo(c, u, { blocked: FV().arrayUnion(u.uid), members: FV().arrayRemove(u.uid) }, function () {
+          c.blocked = (c.blocked || []).concat([u.uid]); c.members = (c.members || []).filter(function (z) { return z !== u.uid; });
+        });
+      });
+    };
+    const muteMenu = function () {
+      const set = function (ms) {
+        const upd = {}; upd['restricted.' + u.uid] = ms ? Date.now() + ms : FV().delete();
+        memberDo(c, u, upd, function () { c.restricted = Object.assign({}, c.restricted || {}); if (ms) c.restricted[u.uid] = Date.now() + ms; else delete c.restricted[u.uid]; });
+      };
+      const H = 3600 * 1000, D = 24 * H;
+      const mi = [{ icon: '⏱️', label: T('1 soat', '1 час'), fn: function () { set(H); } },
+                  { icon: '📅', label: T('1 kun', '1 день'), fn: function () { set(D); } },
+                  { icon: '🗓️', label: T('1 hafta', '1 неделя'), fn: function () { set(7 * D); } },
+                  { icon: '🌙', label: T('1 oy', '1 месяц'), fn: function () { set(30 * D); } }];
+      if (muted) mi.push({ icon: '✅', label: T('Cheklovni olish', 'Снять ограничение'), fn: function () { set(0); } });
+      window.pldnPopMenu(mi, { x: x, y: y });
+    };
+    if (!isAdm) {
+      if (can(c, 'promote')) items.push({ icon: '🛡️', label: T('Boshqaruvchi qilish', 'Сделать администратором'), fn: function () { openPerms(c, u, true); } });
+      if (can(c, 'mute')) items.push({ icon: '⏳', label: T('Vaqt bilan cheklash', 'Ограничить по времени'), fn: muteMenu });
+      if (can(c, 'block')) items.push({ icon: '🚫', label: T('Bloklash', 'Заблокировать'), fn: block });
+      if (can(c, 'kick')) items.push({ icon: '🗑️', label: T("O'chirish", 'Удалить'), fn: kick });
+    } else {
+      if (owner || can(c, 'perms')) items.push({ icon: '🛡️', label: T('Imtiyozlarni o\u2018zgartirish', 'Изменить права'), fn: function () { openPerms(c, u, false); } });
+      if (owner || can(c, 'promote')) items.push({ icon: '➖', label: T('Boshqaruvchilikdan olish', 'Снять с администраторов'), fn: function () { chRemoveAdmin(c, u).then(function (ok) { if (ok) renderGrp(); }); } });
+      if (can(c, 'blockAdmins')) items.push({ icon: '🚫', label: T('Bloklash', 'Заблокировать'), fn: block });
+      if (owner) items.push({ icon: '🗑️', label: T("O'chirish", 'Удалить'), fn: kick });
+    }
+    if (!items.length) return;
+    window.pldnPopMenu(items, { x: x, y: y });
+  }
+  // Sozlamalardagi "Boshqaruvchilar" ro'yxati
+  function chAdmins() {
+    const c = fbCurrentChat; if (!c) return;
+    chOpenSub(T('Boshqaruvchilar', 'Администраторы'), function (b) {
+      b.appendChild(chMk('chs-hint', T("Boshqaruvchi qo'shish: obunachilar ro'yxatida a'zoni bosib turing va \u00abBoshqaruvchi qilish\u00bb ni tanlang.", 'Чтобы назначить администратора, удерживайте участника в списке подписчиков и выберите «Сделать администратором».')));
+      const card = chMk('pgx-card'); card.style.padding = '0'; b.appendChild(card);
+      const ids = (c.admins || []).slice();
+      if (!ids.length) { card.appendChild(chMk('chs-hint', T("Hozircha boshqaruvchi yo'q", 'Администраторов пока нет'))); return; }
+      Promise.all(ids.map(function (id) { return fbGetUser(id).catch(function () { return { uid: id, name: '?', username: '', avatar: null, color: fbColorFor(id) }; }); })).then(function (us) {
+        us.forEach(function (u) {
+          const n = ((c.adminPerms || {})[u.uid] || []).length;
+          const row = chMk('pgx-mem'); row.style.cursor = (isOwnerOf(c) || can(c, 'perms')) ? 'pointer' : 'default';
+          const av = chMk('pgx-mem-av'); setAv(av, u.avatar, u.name, u.color);
+          const mid = chMk('pgx-mem-main'); mid.append(chMk('pgx-mem-name', u.name), chMk('pgx-mem-sub', n + ' / ' + ADM_KEYS.length + ' ' + T('imtiyoz', 'прав')));
+          row.append(av, mid);
+          row.addEventListener('click', function () { if (isOwnerOf(c) || can(c, 'perms')) openPerms(c, u, false, function () { chAdmins(); }); });
+          card.appendChild(row);
+        });
+      });
+    });
+  }
 
   // ================= PLDN YANGILANISHLARI KANALI =================
   // 1) Har bir foydalanuvchi bu kanalga bir marta avtomatik obuna bo'ladi (keyin o'zi chiqib ketsa, qayta qo'shilmaydi).
