@@ -1,4 +1,4 @@
-<!-- VERSION: 153 -->
+<!-- VERSION: 154 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -13503,6 +13503,14 @@
   const dbClear = function () { return kv('readwrite', function (s) { return s.clear(); }); };
 
   let job = null, running = false, cancelReq = false, L = null, cx = null, err = '', curRx = '';
+  const HK = function () { return window.pldnPdfHooks || {}; }; // tahrirlash moduli (kod orqali qo'shiladigan funksiya) ilgaklari
+  async function delMark() {
+    if (job._delRun) return;
+    if (L.y + 44 > BOT) await newPage();
+    cx.font = 'italic 20px sans-serif'; cx.fillStyle = '#8a97a3'; cx.textAlign = 'center';
+    cx.fillText('\u22EF ' + T('xabar(lar) PDFdan olib tashlangan', 'сообщение(я) удалено из PDF') + ' \u22EF', W / 2, L.y + 24); cx.textAlign = 'left';
+    L.y += 40; job._delRun = true;
+  }
   const RXH = 34; // reaksiya qatori balandligi (xabar ichida)
   const mmss = function (s) { s = Math.max(0, Math.round(s || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
   const names = {};
@@ -13598,9 +13606,15 @@
     L.y += total + 10;
   }
   async function drawMsg(m, ms, id) {
+    const origMs = ms; let ed = null;
+    try { if (HK().mapMsg) ed = HK().mapMsg(m, ms, id, job); } catch (e) { console.error(e); }
+    if (ed && ed.deleted) { await delMark(); L.ms = origMs; return; }
+    job._delRun = false;
+    if (ed) { m = ed.m || m; ms = ed.ms || ms; }
     const mine = m.from === job.me, d = new Date(ms), p2 = function (n) { return String(n).padStart(2, '0'); };
-    const day = d.getDate() + '.' + p2(d.getMonth() + 1) + '.' + d.getFullYear(), foot = p2(d.getHours()) + ':' + p2(d.getMinutes());
-    if (L.day !== day) {
+    const day = d.getDate() + '.' + p2(d.getMonth() + 1) + '.' + d.getFullYear(); let foot = p2(d.getHours()) + ':' + p2(d.getMinutes());
+    if (ed) { if (ed.hideTime) foot = ''; if (ed.edited) foot = (foot ? foot + ' ' : '') + '\u270E'; }
+    if (!(ed && ed.hideDate) && L.day !== day) {
       if (L.y + 60 > BOT) await newPage();
       cx.font = '22px sans-serif'; const tw = cx.measureText(day).width + 30;
       cx.fillStyle = 'rgba(80,100,120,.55)'; rr((W - tw) / 2, L.y, tw, 36, 18); cx.fill();
@@ -13612,7 +13626,7 @@
     else if (m.type === 'voice') await bubble(['🎤 ' + T('Ovozli xabar', 'Голосовое') + ' ' + mmss(m.duration)], mine, head, foot);
     else if (m.type === 'video') {
       let vr = null;
-      try { vr = await window.pldnVideoSave(job.chatId, job.name, job.type, id, m, ms, job.code); } catch (e) { console.error(e); }
+      try { vr = await window.pldnVideoSave(job.chatId, job.name, job.type, id, m, origMs, job.code); } catch (e) { console.error(e); }
       if (m.thumb) { const keepRx = curRx; curRx = ''; await imgBubble(m.thumb, mine, false, head, foot); curRx = keepRx; }
       const lines = ['🎥 ' + T('Video', 'Видео') + ' ' + mmss(m.dur) + (vr && vr.no ? ' · #' + vr.no : '')];
       if (!vr || !vr.no) lines.push(T('(video saqlanmadi)', '(видео не сохранено)'));
@@ -13627,7 +13641,7 @@
       await bubble(lines, mine, head, foot);
     }
     curRx = '';
-    L.ms = ms;
+    L.ms = origMs;
   }
 
   // ---------- asosiy jarayon ----------
@@ -13685,9 +13699,17 @@
       }
       if (L && (L.y > TOP + 1 || !job.pages)) await flush();
       job.built = true; await dbPut('job', job);
+      try {
+        const hk = HK();
+        if (hk.beforeFinish) {
+          const okf = await hk.beforeFinish(job, { count: job.pages, get: function (i) { return dbGet('pg' + i); }, set: function (i, b) { return dbPut('pg' + i, b); } });
+          if (okf === false) { await dbClear(); job = null; paintPill(); return; }
+        }
+      } catch (e) { console.error('pdf hook', e); }
       pill.textContent = '📄 ' + T('PDF yig‘ilmoqda…', 'Сборка PDF…');
       const res = await finish(), where = res.where;
       try { await window.pldnPdfSave({ code: job.code, chatId: job.chatId, chat: job.name, type: job.type, ms: job.created, msgs: job.msgs, size: res.size, pages: res.pages }); } catch (e) { console.error('pdf lib', e); }
+      try { if (HK().afterFinish) await HK().afterFinish(job, res); } catch (e) { console.error('pdf hook', e); }
       job.finished = true; job.where = where; await dbClear(); paintPill();
       bd.style.display = 'none'; alert(T('PDF saqlandi: ', 'PDF сохранён: ') + where + '\n' + T('Ilovada: PLDN sozlamalari → Videolar va PDF fayllar.', 'В приложении: Настройки PLDN → Видео и PDF-файлы.'));
       job = null;
@@ -13734,8 +13756,13 @@
   function btn(txt, cls, fn) { const b = document.createElement('button'); b.textContent = txt; if (cls) b.className = cls; b.addEventListener('click', fn); pn.appendChild(b); }
   function start(days) {
     const c = fbCurrentChat; if (!c) return;
-    job = { chatId: c.id, name: c.name || 'chat', type: c.type || 'dm', since: days ? Date.now() - days * 86400000 : 0, cursor: 0, pages: 0, msgs: 0, finished: false, created: Date.now(), code: code45(), other: (c.type || 'dm') === 'dm' ? (c.otherUid || '') : '' };
-    dbClear().then(function () { return dbPut('job', job); }).then(function () { bd.style.display = 'none'; run(); });
+    const nj = { chatId: c.id, name: c.name || 'chat', type: c.type || 'dm', since: days ? Date.now() - days * 86400000 : 0, cursor: 0, pages: 0, msgs: 0, finished: false, created: Date.now(), code: code45(), other: (c.type || 'dm') === 'dm' ? (c.otherUid || '') : '' };
+    bd.style.display = 'none';
+    Promise.resolve().then(function () { const hk = HK(); return hk.beforeStart ? hk.beforeStart(nj) : true; }).catch(function (e) { console.error('pdf hook', e); return true; }).then(function (ok) {
+      if (ok === false) return;
+      job = nj;
+      return dbClear().then(function () { return dbPut('job', job); }).then(function () { run(); });
+    });
   }
   function openPanel() {
     pn.innerHTML = '';
