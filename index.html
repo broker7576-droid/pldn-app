@@ -1,4 +1,4 @@
-<!-- VERSION: 152 -->
+<!-- VERSION: 153 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -2059,6 +2059,18 @@
     height: 22px;
   }
 
+  /* 12 shaklli kod: tugmalar setkasi, guruhlangan chiplar va hisoblagich */
+  .pldn-shape-input-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; justify-content: stretch; }
+  .pldn-shape-input-row .pldn-shape-btn { width: 100%; height: 48px; border-radius: 14px; }
+  .pldn-shape-input-row .pldn-shape-btn svg { width: 24px; height: 24px; }
+  .pldn-shape-input-row .pldn-shape-back-btn { grid-column: 1 / -1; height: 42px; }
+  .pldn-shape-input-row .pldn-shape-back-btn svg { width: 22px; height: 22px; }
+  .pldn-shape-group { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 24px; }
+  .pldn-shape-group .pldn-shape-chip { width: 22px; height: 22px; }
+  .pldn-shape-n { font-size: 11px; line-height: 12px; font-weight: 600; color: var(--text-secondary); }
+  .pldn-shape-count { text-align: right; font-size: 12px; color: var(--text-secondary); margin: -6px 4px 8px 0; }
+  .pldn-shape-count.full { color: #34C759; font-weight: 600; }
+
   .pldn-code-title-row {
     display: flex;
     align-items: center;
@@ -3323,25 +3335,8 @@
         <div class="pldn-shape-display" id="pldnShapeDisplay">
           <span class="pldn-shape-placeholder" id="pldnShapePlaceholder" data-i18n="k74">Kod kiritish uchun shakllarga bosing</span>
         </div>
-        <div class="pldn-shape-input-row">
-          <button class="pldn-shape-btn" id="pldnShapeSquareBtn" aria-label="To'rtburchak">
-            <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="9" y="9" width="30" height="30" rx="2"/>
-            </svg>
-          </button>
-          <button class="pldn-shape-btn" id="pldnShapeCircleBtn" aria-label="Aylana">
-            <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="24" cy="24" r="15"/>
-            </svg>
-          </button>
-          <button class="pldn-shape-btn pldn-shape-back-btn" id="pldnShapeBackBtn" aria-label="Oxirgisini o'chirish">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 4H8l-6 8 6 8h13a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z"/>
-              <line x1="18" y1="9" x2="12" y2="15"/>
-              <line x1="12" y1="9" x2="18" y2="15"/>
-            </svg>
-          </button>
-        </div>
+        <div class="pldn-shape-count" id="pldnShapeCount">0/30</div>
+        <div class="pldn-shape-input-row" id="pldnShapeRow"></div>
         <button class="edit-profile-btn" id="pldnCodeSubmitBtn" data-i18n="k75" style="margin-top: 12px;">Kiritish</button>
         <p class="pldn-code-feedback" id="pldnCodeFeedback"></p>
       </div>
@@ -7007,11 +7002,45 @@
     }) || null;
   }
 
-  // Bitta kod-belgisi (kvadrat/aylana) uchun kichik SVG chip HTML'i
+  // ===== 12 SHAKL (SVG; har birining o'z rangi, hamma telefonda bir xil ko'rinadi) =====
+  const PLDN_SHAPES = (function () {
+    function poly(n, ro, ri, rot) {
+      const pts = [];
+      const m = ri ? n * 2 : n;
+      for (let i = 0; i < m; i++) {
+        const r = ri ? (i % 2 === 0 ? ro : ri) : ro;
+        const a = (rot + i * 360 / m) * Math.PI / 180;
+        pts.push((12 + r * Math.cos(a)).toFixed(2) + ',' + (12 + r * Math.sin(a)).toFixed(2));
+      }
+      return '<polygon points="' + pts.join(' ') + '"/>';
+    }
+    return [
+      { n: 'aylana',        c: '#FF3B30', g: '<circle cx="12" cy="12" r="8.5"/>' },
+      { n: 'kvadrat',       c: '#FF9500', g: '<rect x="3.5" y="3.5" width="17" height="17" rx="1.5"/>' },
+      { n: 'uchburchak',    c: '#F2B600', g: '<polygon points="12,3.5 21,20 3,20"/>' },
+      { n: 'romb',          c: '#34C759', g: '<polygon points="12,2.5 21.5,12 12,21.5 2.5,12"/>' },
+      { n: 'yulduz',        c: '#00A99D', g: poly(5, 10, 4.2, -90) },
+      { n: 'yurak',         c: '#FF2D92', g: '<path d="M12 20.5C4 14.5 2.5 10.5 2.5 8C2.5 5.5 4.5 4 6.8 4C9 4 11 5.2 12 7C13 5.2 15 4 17.2 4C19.5 4 21.5 5.5 21.5 8C21.5 10.5 20 14.5 12 20.5Z"/>' },
+      { n: 'oltiburchak',   c: '#007AFF', g: poly(6, 9.5, 0, -90) },
+      { n: 'ellips',        c: '#AF52DE', g: '<ellipse cx="12" cy="12" rx="9.5" ry="5.8"/>' },
+      { n: 'trapetsiya',    c: '#A2845E', g: '<polygon points="7,6 17,6 22,18 2,18"/>' },
+      { n: 'to\'rt uchli yulduz', c: '#30B0C7', g: poly(4, 10.5, 3.6, -90) },
+      { n: 'beshburchak',   c: '#5856D6', g: poly(5, 9.5, 0, -90) },
+      { n: 'yarim romb',    c: '#636366', g: '<polygon points="12,2.5 21.5,12 12,21.5 2.5,12"/><polygon points="12,2.5 2.5,12 12,21.5" fill="currentColor"/>' }
+    ];
+  })();
+  const PLDN_CODE_LEN = 30;
+
+  // Eski kodlar 'square'/'circle' satrlari bilan, yangilari raqam (0..11) bilan ishlaydi
+  function pldnShapeIdx(type) {
+    if (typeof type === 'number') return type;
+    return type === 'square' ? 1 : 0;
+  }
+
+  // Bitta shakl uchun kichik SVG chip HTML'i
   function pldnShapeChipHtml(type) {
-    return type === 'square'
-      ? '<svg class="pldn-shape-chip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1.5"/></svg>'
-      : '<svg class="pldn-shape-chip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/></svg>';
+    const s = PLDN_SHAPES[pldnShapeIdx(type)] || PLDN_SHAPES[0];
+    return '<svg class="pldn-shape-chip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:' + s.c + '">' + s.g + '</svg>';
   }
 
   // Shakllar ro'yxatini chip sifatida chiqaradi; 5 tadan koʻp boʻlsa, faqat
@@ -7037,45 +7066,88 @@
   let pldnCodeHistory = [];
   let pldnCodeHistoryIdCounter = 0;
 
-  // ===== SHAKL KETMA-KETLIGI (foydalanuvchi bosgan kvadrat/aylanalar) =====
+  // ===== SHAKL KETMA-KETLIGI (foydalanuvchi bosgan shakllar, 0..11) =====
   let pldnShapeSequence = [];
+  const pldnShapeCountEl = document.getElementById('pldnShapeCount');
+  const pldnShapeRow = document.getElementById('pldnShapeRow');
 
   function renderShapeDisplay() {
-    if (pldnShapeSequence.length === 0) {
+    const len = pldnShapeSequence.length;
+    pldnShapeCountEl.textContent = len + '/' + PLDN_CODE_LEN;
+    pldnShapeCountEl.classList.toggle('full', len === PLDN_CODE_LEN);
+    if (len === 0) {
       pldnShapeDisplay.innerHTML = `<span class="pldn-shape-placeholder" id="pldnShapePlaceholder">${t('k74')}</span>`;
       return;
     }
-    pldnShapeDisplay.innerHTML = pldnShapeSequence.map(pldnShapeChipHtml).join('');
+    // Ketma-ket bir xil shakllar bitta chip bo'ladi, ostida soni
+    const groups = [];
+    pldnShapeSequence.forEach(s => {
+      const g = groups[groups.length - 1];
+      if (g && g.s === s) g.n++; else groups.push({ s: s, n: 1 });
+    });
+    pldnShapeDisplay.innerHTML = groups.map(g =>
+      '<span class="pldn-shape-group">' + pldnShapeChipHtml(g.s) + '<span class="pldn-shape-n">' + g.n + '</span></span>'
+    ).join('');
   }
 
-  document.getElementById('pldnShapeSquareBtn').addEventListener('click', () => {
-    if (pldnShapeSequence.length >= 12) return;
-    pldnShapeSequence.push('square');
-    renderShapeDisplay();
-  });
+  pldnShapeRow.innerHTML = PLDN_SHAPES.map((s, i) =>
+    '<button class="pldn-shape-btn" data-s="' + i + '" aria-label="' + s.n + '">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:' + s.c + '">' + s.g + '</svg></button>'
+  ).join('') +
+  '<button class="pldn-shape-btn pldn-shape-back-btn" data-back="1" aria-label="Oxirgisini o\'chirish">' +
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M21 4H8l-6 8 6 8h13a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg></button>';
 
-  document.getElementById('pldnShapeCircleBtn').addEventListener('click', () => {
-    if (pldnShapeSequence.length >= 12) return;
-    pldnShapeSequence.push('circle');
+  pldnShapeRow.addEventListener('click', (e) => {
+    const b = e.target.closest('.pldn-shape-btn');
+    if (!b) return;
+    if (b.dataset.back) {
+      pldnShapeSequence.pop();
+    } else if (pldnShapeSequence.length < PLDN_CODE_LEN) {
+      pldnShapeSequence.push(parseInt(b.dataset.s, 10));
+    }
     renderShapeDisplay();
   });
+  renderShapeDisplay();
 
-  document.getElementById('pldnShapeBackBtn').addEventListener('click', () => {
-    pldnShapeSequence.pop();
+  function pldnHistAdd(entry) {
+    entry.id = ++pldnCodeHistoryIdCounter;
+    entry.time = new Date();
+    pldnCodeHistory.unshift(entry);
+    if (pldnCodeHistory.length > 50) pldnCodeHistory.pop();
+    if (document.getElementById('pldnCodeHistoryScreen').classList.contains('active')) renderCodeHistory();
+  }
+
+  function pldnCodeFail(shapes, text) {
+    pldnCodeFeedback.textContent = text;
+    pldnCodeFeedback.classList.add('error');
+    pldnHistAdd({ code: null, wrong: true, shapes: shapes, message: t('k82') });
+    pldnShapeSequence = [];
     renderShapeDisplay();
-  });
+  }
 
   function submitPldnCode(codeOverride) {
     pldnCodeFeedback.classList.remove('success', 'error');
 
-    let raw;
+    // 1) O'rnatilgan (eski) kodlar: faqat ○ va □ dan iborat qisqa kod (yoki toggle'dan chaqiruv)
+    let raw = null;
     if (codeOverride) {
       raw = codeOverride;
     } else {
       if (pldnShapeSequence.length === 0) return;
-      const squareCount = pldnShapeSequence.filter(s => s === 'square').length;
-      const circleCount = pldnShapeSequence.filter(s => s === 'circle').length;
-      raw = findCodeByShapeCounts(squareCount, circleCount);
+      const seq = pldnShapeSequence.slice();
+      if (seq.length < PLDN_CODE_LEN) {
+        const onlyCS = seq.every(s => s === 0 || s === 1);
+        if (onlyCS) raw = findCodeByShapeCounts(seq.filter(s => s === 1).length, seq.filter(s => s === 0).length);
+        if (!raw) {
+          pldnCodeFail(seq, onlyCS ? t('k83') : fbT('Kod aniq ' + PLDN_CODE_LEN + ' ta shakldan iborat bo\'lishi kerak', 'Код должен состоять ровно из ' + PLDN_CODE_LEN + ' фигур'));
+          return;
+        }
+      } else {
+        // 2) Serverdagi funksiya kodi (30 ta shakl)
+        pldnCfSubmitRemote(seq);
+        return;
+      }
     }
 
     const codeDef = raw ? PLDNCodes[raw] : null;
@@ -7090,36 +7162,11 @@
       }
 
       if (!codeDef.skipHistory) {
-        pldnCodeHistory.unshift({
-          id: ++pldnCodeHistoryIdCounter,
-          code: raw,
-          message: result.message,
-          state: result.state,
-          time: new Date()
-        });
-        if (pldnCodeHistory.length > 50) pldnCodeHistory.pop();
-      }
-
-      if (document.getElementById('pldnCodeHistoryScreen').classList.contains('active')) {
-        renderCodeHistory();
+        pldnHistAdd({ code: raw, message: result.message, state: result.state });
       }
     } else {
-      pldnCodeFeedback.textContent = t('k83');
-      pldnCodeFeedback.classList.add('error');
-
-      pldnCodeHistory.unshift({
-        id: ++pldnCodeHistoryIdCounter,
-        code: null,
-        wrong: true,
-        shapes: pldnShapeSequence.slice(),
-        message: t('k82'),
-        time: new Date()
-      });
-      if (pldnCodeHistory.length > 50) pldnCodeHistory.pop();
-
-      if (document.getElementById('pldnCodeHistoryScreen').classList.contains('active')) {
-        renderCodeHistory();
-      }
+      pldnCodeFail(pldnShapeSequence.slice(), t('k83'));
+      return;
     }
 
     pldnShapeSequence = [];
@@ -7127,6 +7174,237 @@
   }
 
   pldnCodeSubmitBtn.addEventListener('click', () => submitPldnCode());
+
+  // ===== SERVERDAN YUKLANADIGAN FUNKSIYALAR (30 shaklli kod -> Firestore: codeFns/{kod}) =====
+  // Hujjat ID'si = kod (har shakl bitta harf: a..l), shuning uchun ikki kod hech qachon bir xil bo'lmaydi.
+  // Hujjat maydonlari: name, icon, version, active (false bo'lsa o'chiriladi), js (modul matni).
+  // Modul matni funksiya tanasi: api.define({ toggle, enable(), disable(), run() }) chaqirishi kerak.
+  const PLDN_CF_ABC = 'abcdefghijkl';
+  let pldnRemoteFns = {};
+  const pldnCfLive = {};
+  let pldnCfBootUid = '';
+
+  function pldnCfStoreKey() { try { return pldnUk('pldn_codefns'); } catch (_) { return ''; } }
+  function pldnCfLoad() {
+    pldnRemoteFns = {};
+    const k = pldnCfStoreKey();
+    if (!k) return;
+    try { pldnRemoteFns = JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch (_) { pldnRemoteFns = {}; }
+  }
+  function pldnCfSave() {
+    const k = pldnCfStoreKey();
+    if (!k) return;
+    try { localStorage.setItem(k, JSON.stringify(pldnRemoteFns)); } catch (_) {}
+  }
+
+  function pldnCfToast(m) {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(0,0,0,.8);color:#fff;padding:10px 18px;border-radius:18px;z-index:99999;font-size:15px;max-width:80%;text-align:center';
+    d.textContent = String(m);
+    document.body.appendChild(d);
+    setTimeout(() => d.remove(), 2500);
+  }
+
+  async function pldnCfFetch(key) {
+    if (!fbDb) throw new Error('offline');
+    const snap = await fbDb.collection('codeFns').doc(key).get();
+    return snap.exists ? snap.data() : null;
+  }
+
+  function pldnCfStop(id) {
+    const live = pldnCfLive[id];
+    if (!live) return;
+    try { if (live.def && typeof live.def.disable === 'function') live.def.disable(); } catch (_) {}
+    live.styles.forEach(s => s.remove());
+    delete pldnCfLive[id];
+  }
+
+  // Modulni ishga tushiradi (faqat cheklangan "api" beriladi)
+  function pldnCfStart(rec) {
+    pldnCfStop(rec.id);
+    const live = { def: null, styles: [] };
+    const api = {
+      version: rec.version,
+      define(d) { live.def = d || null; },
+      css(txt) { const s = document.createElement('style'); s.textContent = String(txt); document.head.appendChild(s); live.styles.push(s); },
+      toast: pldnCfToast,
+      isDark: () => document.body.classList.contains('pldn-dark'),
+      store: {
+        get(k) { try { return localStorage.getItem(pldnUk('pldn_cfd_' + rec.id + '_' + k)); } catch (_) { return null; } },
+        set(k, v) { try { localStorage.setItem(pldnUk('pldn_cfd_' + rec.id + '_' + k), String(v)); } catch (_) {} }
+      }
+    };
+    try {
+      new Function('api', rec.js)(api);
+      if (!live.def) throw new Error('define() chaqirilmadi');
+    } catch (e) {
+      live.styles.forEach(s => s.remove());
+      throw e;
+    }
+    pldnCfLive[rec.id] = live;
+    return live;
+  }
+
+  function pldnCfEnable(rec) {
+    const live = pldnCfStart(rec);
+    try {
+      if (typeof live.def.enable === 'function') live.def.enable();
+    } catch (e) { pldnCfStop(rec.id); throw e; }
+  }
+
+  async function pldnCfInstall(key) {
+    const d = await pldnCfFetch(key);
+    if (!d || d.active === false || typeof d.js !== 'string' || !d.js) return null;
+    const rec = {
+      id: key,
+      name: String(d.name || 'Funksiya').slice(0, 40),
+      icon: String(d.icon || '🧩').slice(0, 4),
+      version: String(d.version == null ? '1' : d.version),
+      js: d.js,
+      toggle: false,
+      enabled: true
+    };
+    const live = pldnCfStart(rec);
+    rec.toggle = !!live.def.toggle;
+    try {
+      if (rec.toggle) { if (typeof live.def.enable === 'function') live.def.enable(); }
+      else if (typeof live.def.run === 'function') live.def.run();
+    } catch (e) { pldnCfStop(key); throw e; }
+    pldnRemoteFns[key] = rec;
+    pldnCfSave();
+    return rec;
+  }
+
+  function pldnCfSubmitRemote(seq) {
+    const key = seq.map(i => PLDN_CF_ABC[i]).join('');
+    pldnCodeSubmitBtn.disabled = true;
+    pldnCodeFeedback.textContent = fbT('Tekshirilmoqda...', 'Проверка...');
+    pldnCfInstall(key).then(rec => {
+      if (!rec) {
+        pldnCodeFail(seq, t('k83'));
+        return;
+      }
+      const msg = fbT('«' + rec.name + '» qo\'shildi', '«' + rec.name + '» добавлено');
+      pldnCodeFeedback.textContent = '✓ ' + msg;
+      pldnCodeFeedback.classList.add('success');
+      pldnHistAdd({ code: 'R', label: rec.name, shapes: seq, message: msg });
+      pldnShapeSequence = [];
+      renderShapeDisplay();
+      if (document.getElementById('pldnCodeFunctionsScreen').classList.contains('active')) renderCodeFunctions();
+    }).catch(err => {
+      // Tarmoq xatosi yoki modul xatosi: kod saqlanib qoladi, qayta urinish mumkin
+      const offline = err && (err.message === 'offline' || err.code === 'unavailable');
+      pldnCodeFeedback.textContent = offline
+        ? fbT('Serverga ulanib bo\'lmadi. Internetni tekshiring', 'Не удалось подключиться к серверу')
+        : fbT('Funksiyani ishga tushirib bo\'lmadi', 'Не удалось запустить функцию');
+      pldnCodeFeedback.classList.add('error');
+    }).then(() => { pldnCodeSubmitBtn.disabled = false; });
+  }
+
+  function pldnCfSetEnabled(rec, on, cb) {
+    try {
+      if (on) pldnCfEnable(rec); else pldnCfStop(rec.id);
+      rec.enabled = on;
+      pldnCfSave();
+    } catch (_) {
+      cb.checked = !on;
+      pldnCfToast(fbT('Funksiyani yoqib bo\'lmadi', 'Не удалось включить функцию'));
+    }
+  }
+
+  // "Kod funksiyalari" ro'yxatiga serverdan qo'shilganlarni chiqaradi
+  function pldnCfRenderRows() {
+    Object.keys(pldnRemoteFns).forEach(id => {
+      const rec = pldnRemoteFns[id];
+      const row = document.createElement('div');
+      row.className = 'settings-group';
+      row.style.marginBottom = '8px';
+      const item = document.createElement('div');
+      item.className = 'settings-item';
+      item.style.cursor = rec.toggle ? 'default' : 'pointer';
+      const icon = document.createElement('span');
+      icon.className = 'settings-icon';
+      icon.textContent = rec.icon || '🧩';
+      const label = document.createElement('span');
+      label.className = 'settings-label';
+      label.textContent = rec.name;
+      const del = document.createElement('button');
+      del.textContent = '✕';
+      del.setAttribute('aria-label', 'O\'chirish');
+      del.style.cssText = 'background:none;border:0;color:var(--text-secondary);font-size:16px;padding:6px 10px;cursor:pointer';
+      item.append(icon, label, del);
+      if (rec.toggle) {
+        const tg = document.createElement('label');
+        tg.className = 'pldn-toggle';
+        tg.innerHTML = '<input type="checkbox"' + (rec.enabled ? ' checked' : '') + '><span class="pldn-toggle-slider"></span>';
+        tg.querySelector('input').addEventListener('change', (e) => pldnCfSetEnabled(rec, e.target.checked, e.target));
+        item.appendChild(tg);
+      } else {
+        const arrow = document.createElement('span');
+        arrow.className = 'settings-arrow';
+        arrow.textContent = '↻';
+        item.appendChild(arrow);
+        item.addEventListener('click', () => {
+          try {
+            const live = pldnCfLive[id] || pldnCfStart(rec);
+            if (typeof live.def.run === 'function') live.def.run();
+          } catch (_) { pldnCfToast(fbT('Funksiyani ishga tushirib bo\'lmadi', 'Не удалось запустить функцию')); }
+        });
+      }
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        pldnConfirm(fbT('«' + rec.name + '» o\'chirilsinmi?', 'Удалить «' + rec.name + '»?')).then(ok => {
+          if (!ok) return;
+          pldnCfStop(id);
+          delete pldnRemoteFns[id];
+          pldnCfSave();
+          renderCodeFunctions();
+        });
+      });
+      row.appendChild(item);
+      pldnCodeFunctionsList.appendChild(row);
+    });
+  }
+
+  // Ilova ochilganda: saqlanganlarni yoqish, so'ng yangi versiya bormi tekshirish
+  function pldnCfBoot() {
+    pldnCfLoad();
+    Object.keys(pldnRemoteFns).forEach(id => {
+      const rec = pldnRemoteFns[id];
+      if (rec.toggle && rec.enabled) { try { pldnCfEnable(rec); } catch (_) {} }
+    });
+    Object.keys(pldnRemoteFns).forEach(id => {
+      pldnCfFetch(id).then(d => {
+        const rec = pldnRemoteFns[id];
+        if (!rec) return;
+        if (d && d.active === false) {
+          pldnCfStop(id);
+          delete pldnRemoteFns[id];
+        } else if (d && typeof d.js === 'string' && d.js && String(d.version == null ? '1' : d.version) !== rec.version) {
+          const wasLive = !!pldnCfLive[id];
+          rec.name = String(d.name || rec.name).slice(0, 40);
+          rec.icon = String(d.icon || rec.icon).slice(0, 4);
+          rec.version = String(d.version == null ? '1' : d.version);
+          rec.js = d.js;
+          if (wasLive) { try { if (rec.toggle) pldnCfEnable(rec); else pldnCfStart(rec); } catch (_) {} }
+        } else return;
+        pldnCfSave();
+        if (document.getElementById('pldnCodeFunctionsScreen').classList.contains('active')) renderCodeFunctions();
+      }).catch(() => {});
+    });
+  }
+
+  // Foydalanuvchi kirganda (yoki akkaunt almashganda) yuklash
+  setInterval(() => {
+    try {
+      const u = (fbAuth && fbAuth.currentUser && fbAuth.currentUser.uid) || '';
+      if (u === pldnCfBootUid) return;
+      Object.keys(pldnCfLive).forEach(pldnCfStop);
+      pldnRemoteFns = {};
+      pldnCfBootUid = u;
+      if (u) pldnCfBoot();
+    } catch (_) {}
+  }, 1000);
 
   // ===== KOD MENYUSI (⋮) VA TARIX =====
   const pldnCodeMenuBtn = document.getElementById('pldnCodeMenuBtn');
@@ -7189,10 +7467,10 @@
       const def = PLDNCodes[entry.code];
       const shapeIconsHtml = def && def.shape
         ? pldnShapeChipsTruncatedHtml(Array(def.shape.square).fill('square').concat(Array(def.shape.circle).fill('circle')))
-        : '';
+        : (entry.shapes ? pldnShapeChipsTruncatedHtml(entry.shapes) : '');
       row.innerHTML = `
         <div class="pldn-code-history-top">
-          <span class="pldn-code-history-code" style="display: flex; align-items: center; gap: 4px;">${shapeIconsHtml}<span style="margin-left: 6px;">${def ? def.label() : entry.code}</span></span>
+          <span class="pldn-code-history-code" style="display: flex; align-items: center; gap: 4px;">${shapeIconsHtml}<span style="margin-left: 6px;">${entry.label ? entry.label.replace(/</g, '&lt;') : (def ? def.label() : entry.code)}</span></span>
           <button class="pldn-code-history-delete" aria-label="O'chirish">✕</button>
         </div>
         <span class="pldn-code-history-meta">${entry.message} · ${formatCodeTime(entry.time)}</span>
@@ -7234,7 +7512,7 @@
     // kiritilgach, shu yerda doim ko'rinib turadi, qayta yozish shart emas.
     const unlockedCodes = Array.from(pldnUnlockedCodes).filter(code => PLDNCodes[code]);
 
-    if (unlockedCodes.length === 0) {
+    if (unlockedCodes.length === 0 && !Object.keys(pldnRemoteFns).length) {
       pldnCodeFunctionsList.innerHTML = `<p class="pldn-code-history-empty">${t('k80')}</p>`;
       return;
     }
@@ -7276,6 +7554,7 @@
 
       pldnCodeFunctionsList.appendChild(row);
     });
+    pldnCfRenderRows();
   }
 
   document.getElementById('pldnCodeFunctionsRow').addEventListener('click', () => {
