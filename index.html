@@ -1,4 +1,4 @@
-<!-- VERSION: 156 -->
+<!-- VERSION: 155 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -15011,6 +15011,883 @@
   const row = $('pldnWallpapersRow');
   if (row) row.addEventListener('click', function () { renderList(); goToScreen('pldnWallpapersScreen'); });
 })();
+</script>
+<script>
+// ===== SEVGI REJIMI ❤️📍 (5-g'oya, 1-bosqich) ===== VERSION: love-v1
+// Xarita (o'z canvas xaritamiz, OpenStreetMap plitkalari), stikerli joylar, ikki tomonlama rozilik, jonli joylashuv.
+// Hozircha Firestore orqali (sinov); keyin o'z serveriga ko'chiriladi.
+(function () {
+  'use strict';
+  /*PURE-BEGIN*/
+  var STALE_MS = 90 * 1000;
+  var TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+  var P = {
+    ws: function (z) { return 256 * Math.pow(2, z); },
+    lngToX: function (lng, z) { return (lng + 180) / 360 * P.ws(z); },
+    latToY: function (lat, z) {
+      var s = Math.max(-0.9999, Math.min(0.9999, Math.sin(lat * Math.PI / 180)));
+      return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * P.ws(z);
+    },
+    xToLng: function (x, z) { return x / P.ws(z) * 360 - 180; },
+    yToLat: function (y, z) {
+      var n = Math.PI - 2 * Math.PI * y / P.ws(z);
+      return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+    },
+    dist: function (a, b) {
+      var R = 6371000, r = Math.PI / 180;
+      var dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+      var q = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      return 2 * R * Math.atan2(Math.sqrt(q), Math.sqrt(1 - q));
+    },
+    mPerPx: function (lat, z) { return 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, z); },
+    linkId: function (a, b) { return a < b ? a + '_' + b : b + '_' + a; },
+    coord: function (n) { return (Math.round(n * 1e6) / 1e6).toFixed(6); },
+    ageBucket: function (ms) {
+      var s = Math.max(0, Math.round(ms / 1000));
+      if (s < 5) return ['now', 0];
+      if (s < 60) return ['s', s];
+      var m = Math.floor(s / 60);
+      if (m < 60) return ['m', m];
+      var h = Math.floor(m / 60);
+      if (h < 24) return ['h', h];
+      return ['d', Math.floor(h / 24)];
+    },
+    isStale: function (ts, now) { return (now - ts) > STALE_MS; }
+  };
+
+  // ---------- O'z xaritamiz: canvas, pan / pinch / zoom, plitkalar, belgilar ----------
+  function LoveMap(box) {
+    var self = this;
+    var bg = document.createElement('canvas'), fg = document.createElement('canvas');
+    [bg, fg].forEach(function (c) { c.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;display:block'; box.appendChild(c); });
+    fg.style.touchAction = 'none';
+    var bctx = bg.getContext('2d'), fctx = fg.getContext('2d');
+    var W = 0, H = 0, dpr = 1, raf = 0, retryTimer = 0, failed = false;
+    var MINZ = 2, MAXZ = 19;
+    self.z = 3; self.cx = P.lngToX(0, 3); self.cy = P.latToY(20, 3);
+    self.markers = [];
+    self.onTap = null; self.onLongPress = null; self.onTileState = null;
+    var tiles = new Map();
+
+    function clampZ(z) { return Math.max(MINZ, Math.min(MAXZ, z)); }
+    function toScreen(lat, lng) {
+      return { x: P.lngToX(lng, self.z) - self.cx + W / 2, y: P.latToY(lat, self.z) - self.cy + H / 2 };
+    }
+    function unproject(x, y) {
+      return { lat: P.yToLat(self.cy + (y - H / 2), self.z), lng: P.xToLng(self.cx + (x - W / 2), self.z) };
+    }
+    self.toScreen = toScreen; self.unproject = unproject;
+    self.size = function () { return { w: W, h: H }; };
+    self.invalidate = function () { if (!raf) raf = requestAnimationFrame(draw); };
+
+    function prune() {
+      var arr = Array.from(tiles.entries()).sort(function (a, b) { return a[1].used - b[1].used; });
+      for (var i = 0; i < 80 && i < arr.length; i++) tiles.delete(arr[i][0]);
+    }
+    function getTile(z, x, y, load) {
+      var n = Math.pow(2, z);
+      x = ((x % n) + n) % n;
+      if (y < 0 || y >= n) return null;
+      var k = z + '/' + x + '/' + y, now = Date.now(), t = tiles.get(k);
+      if (t) {
+        if (t.st === 'err' && load && now - t.t > 20000) { tiles.delete(k); t = null; }
+        else { t.used = now; return t; }
+      }
+      if (!load) return null;
+      t = { st: 'load', t: now, used: now, img: new Image() };
+      t.img.onload = function () { t.st = 'ok'; self.invalidate(); };
+      t.img.onerror = function () { t.st = 'err'; t.t = Date.now(); self.invalidate(); };
+      t.img.src = TILE_URL.replace('{z}', z).replace('{x}', x).replace('{y}', y);
+      tiles.set(k, t);
+      if (tiles.size > 300) prune();
+      return t;
+    }
+
+    function drawLabel(txt, x, y, dark) {
+      fctx.font = '600 12px sans-serif'; fctx.textAlign = 'center'; fctx.textBaseline = 'middle';
+      fctx.lineWidth = 3; fctx.strokeStyle = dark ? '#000' : '#fff'; fctx.lineJoin = 'round';
+      fctx.strokeText(txt, x, y); fctx.fillStyle = dark ? '#fff' : '#222'; fctx.fillText(txt, x, y);
+    }
+
+    function drawMarkers(dark) {
+      fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      fctx.clearRect(0, 0, W, H);
+      var order = { place: 0, peer: 1, me: 2 };
+      var list = self.markers.slice().sort(function (a, b) { return order[a.kind] - order[b.kind]; });
+      list.forEach(function (m) {
+        var p = toScreen(m.lat, m.lng);
+        if (p.x < -90 || p.x > W + 90 || p.y < -90 || p.y > H + 90) return;
+        if (m.kind === 'place') {
+          fctx.save(); fctx.shadowColor = 'rgba(0,0,0,.3)'; fctx.shadowBlur = 6; fctx.shadowOffsetY = 2;
+          fctx.beginPath(); fctx.arc(p.x, p.y, 17, 0, 6.2832); fctx.fillStyle = dark ? '#2c2c2e' : '#fff'; fctx.fill(); fctx.restore();
+          fctx.font = '20px sans-serif'; fctx.textAlign = 'center'; fctx.textBaseline = 'middle'; fctx.fillStyle = '#000';
+          fctx.fillText(m.emoji || '📍', p.x, p.y + 1);
+          if (self.z >= 13 && m.label) drawLabel(m.label, p.x, p.y + 28, dark);
+        } else {
+          var col = m.stale ? '#9a9aa0' : m.color;
+          if (m.acc) {
+            var r = m.acc / P.mPerPx(m.lat, self.z);
+            if (r > 8) {
+              fctx.beginPath(); fctx.arc(p.x, p.y, Math.min(r, 600), 0, 6.2832);
+              fctx.globalAlpha = 0.14; fctx.fillStyle = col; fctx.fill();
+              fctx.globalAlpha = 0.4; fctx.lineWidth = 1; fctx.strokeStyle = col; fctx.stroke(); fctx.globalAlpha = 1;
+            }
+          }
+          fctx.save(); fctx.shadowColor = 'rgba(0,0,0,.35)'; fctx.shadowBlur = 5; fctx.shadowOffsetY = 1;
+          fctx.beginPath(); fctx.arc(p.x, p.y, 14, 0, 6.2832); fctx.fillStyle = '#fff'; fctx.fill(); fctx.restore();
+          fctx.beginPath(); fctx.arc(p.x, p.y, 11, 0, 6.2832); fctx.fillStyle = col; fctx.fill();
+          fctx.font = '700 12px sans-serif'; fctx.textAlign = 'center'; fctx.textBaseline = 'middle'; fctx.fillStyle = '#fff';
+          fctx.fillText(m.emoji || '•', p.x, p.y + 1);
+          if (m.label) drawLabel(m.label, p.x, p.y + 26, dark);
+        }
+      });
+    }
+
+    function draw() {
+      raf = 0;
+      if (!W || !H) return;
+      var dark = document.body.classList.contains('pldn-dark');
+      bg.style.filter = dark ? 'invert(1) hue-rotate(180deg) brightness(.82) contrast(.92)' : 'none';
+      bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      bctx.fillStyle = '#e8e6e1'; bctx.fillRect(0, 0, W, H);
+      var tz = Math.max(MINZ, Math.min(MAXZ, Math.round(self.z)));
+      var f = Math.pow(2, tz - self.z), sc = Math.pow(2, self.z - tz);
+      var cxT = self.cx * f, cyT = self.cy * f, ts = 256 * sc;
+      var x0 = Math.floor((cxT - W / 2 / sc) / 256), x1 = Math.floor((cxT + W / 2 / sc) / 256);
+      var y0 = Math.floor((cyT - H / 2 / sc) / 256), y1 = Math.floor((cyT + H / 2 / sc) / 256);
+      var total = 0, errN = 0, n = Math.pow(2, tz);
+      bctx.strokeStyle = '#d4d1ca'; bctx.lineWidth = 1;
+      for (var ty = y0; ty <= y1; ty++) {
+        for (var tx = x0; tx <= x1; tx++) {
+          var sx = (tx * 256 - cxT) * sc + W / 2, sy = (ty * 256 - cyT) * sc + H / 2;
+          var t = getTile(tz, tx, ty, true);
+          if (!t) continue;
+          total++;
+          if (t.st === 'ok') { bctx.drawImage(t.img, sx, sy, ts + 0.5, ts + 0.5); continue; }
+          if (t.st === 'err') errN++;
+          if (tz > MINZ) {
+            var px = ((tx % n) + n) % n;
+            var pt = getTile(tz - 1, px >> 1, ty >> 1, false);
+            if (pt && pt.st === 'ok') bctx.drawImage(pt.img, (px & 1) * 128, (ty & 1) * 128, 128, 128, sx, sy, ts + 0.5, ts + 0.5);
+          }
+          bctx.strokeRect(sx + 0.5, sy + 0.5, ts, ts);
+        }
+      }
+      var nowFailed = total > 0 && errN === total;
+      if (nowFailed !== failed) { failed = nowFailed; if (self.onTileState) { try { self.onTileState(failed); } catch (_) {} } }
+      if (failed && !retryTimer) retryTimer = setTimeout(function () { retryTimer = 0; self.invalidate(); }, 21000);
+      drawMarkers(dark);
+    }
+
+    self.resize = function () {
+      var w = box.clientWidth, h = box.clientHeight;
+      if (!w || !h) return;
+      var d = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
+      if (w === W && h === H && d === dpr) return;
+      W = w; H = h; dpr = d;
+      [bg, fg].forEach(function (c) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); });
+      self.invalidate();
+    };
+    self.setView = function (lat, lng, z) {
+      if (z != null) self.z = clampZ(z);
+      self.cx = P.lngToX(lng, self.z); self.cy = P.latToY(lat, self.z);
+      self.invalidate();
+    };
+    self.getCenter = function () { return { lat: P.yToLat(self.cy, self.z), lng: P.xToLng(self.cx, self.z) }; };
+    self.zoomAt = function (px, py, dz) {
+      var z2 = clampZ(self.z + dz);
+      if (z2 === self.z) return;
+      var f = Math.pow(2, z2 - self.z), ox = px - W / 2, oy = py - H / 2;
+      self.cx = (self.cx + ox) * f - ox; self.cy = (self.cy + oy) * f - oy; self.z = z2;
+      self.invalidate();
+    };
+    self.zoomBy = function (dz) { self.zoomAt(W / 2, H / 2, dz); };
+    self.setMarkers = function (arr) { self.markers = arr || []; self.invalidate(); };
+    self.fitPoints = function (pts) {
+      if (!pts || !pts.length) return;
+      if (pts.length === 1) { self.setView(pts[0].lat, pts[0].lng, 16); return; }
+      var z, minX, maxX, minY, maxY;
+      for (z = 18; z >= MINZ; z--) {
+        minX = Infinity; maxX = -Infinity; minY = Infinity; maxY = -Infinity;
+        pts.forEach(function (p) {
+          var x = P.lngToX(p.lng, z), y = P.latToY(p.lat, z);
+          if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+        });
+        if (maxX - minX < W - 120 && maxY - minY < H - 120) break;
+      }
+      var midLng = P.xToLng((minX + maxX) / 2, z), midLat = P.yToLat((minY + maxY) / 2, z);
+      self.setView(midLat, midLng, z);
+    };
+    self.hit = function (x, y) {
+      var best = null, bd = 1e9;
+      self.markers.forEach(function (m) {
+        var p = toScreen(m.lat, m.lng), d = Math.hypot(p.x - x, p.y - y), r = m.kind === 'place' ? 22 : 24;
+        if (d <= r && d < bd) { bd = d; best = m; }
+      });
+      return best;
+    };
+
+    // --- jestlar: bitta barmoq = siljitish, ikkita = kattalashtirish, ikki marta bosish = yaqinlashish, uzoq bosish = joy qo'shish
+    var ptrs = new Map(), down = null, lpTimer = 0, pinchD = 0, lastTap = { t: 0, x: 0, y: 0 };
+    function rel(e) { var r = fg.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+    function clearLp() { if (lpTimer) { clearTimeout(lpTimer); lpTimer = 0; } }
+    function twoPts() { var a = Array.from(ptrs.values()); return a.length >= 2 ? [a[0], a[1]] : null; }
+    fg.addEventListener('pointerdown', function (e) {
+      try { fg.setPointerCapture(e.pointerId); } catch (_) {}
+      var p = rel(e); ptrs.set(e.pointerId, p);
+      if (ptrs.size === 1) {
+        down = { x: p.x, y: p.y, t: Date.now(), moved: false, long: false };
+        clearLp();
+        lpTimer = setTimeout(function () {
+          lpTimer = 0;
+          if (down && !down.moved && ptrs.size === 1) { down.long = true; if (self.onLongPress) self.onLongPress(unproject(down.x, down.y)); }
+        }, 550);
+      } else {
+        clearLp(); if (down) down.moved = true;
+        var tp = twoPts(); if (tp) pinchD = Math.hypot(tp[0].x - tp[1].x, tp[0].y - tp[1].y);
+      }
+    });
+    fg.addEventListener('pointermove', function (e) {
+      if (!ptrs.has(e.pointerId)) return;
+      var p = rel(e), old = ptrs.get(e.pointerId);
+      if (ptrs.size >= 2) {
+        var before = twoPts(), mx0 = (before[0].x + before[1].x) / 2, my0 = (before[0].y + before[1].y) / 2;
+        ptrs.set(e.pointerId, p);
+        var tp = twoPts(), mx = (tp[0].x + tp[1].x) / 2, my = (tp[0].y + tp[1].y) / 2;
+        var d = Math.hypot(tp[0].x - tp[1].x, tp[0].y - tp[1].y);
+        self.cx -= (mx - mx0); self.cy -= (my - my0);
+        if (pinchD > 0 && d > 0) self.zoomAt(mx, my, Math.log(d / pinchD) / Math.LN2);
+        pinchD = d; self.invalidate();
+        return;
+      }
+      ptrs.set(e.pointerId, p);
+      if (!down) return;
+      if (!down.moved && Math.hypot(p.x - down.x, p.y - down.y) > 8) { down.moved = true; clearLp(); }
+      if (down.moved) { self.cx -= (p.x - old.x); self.cy -= (p.y - old.y); self.invalidate(); }
+    });
+    function up(e) {
+      if (!ptrs.has(e.pointerId)) return;
+      var wasOne = ptrs.size === 1; ptrs.delete(e.pointerId); clearLp();
+      if (!wasOne) { if (ptrs.size < 2) pinchD = 0; if (ptrs.size === 0) down = null; return; }
+      var dn = down; down = null;
+      if (e.type === 'pointercancel' || !dn || dn.moved || dn.long) return;
+      var m = self.hit(dn.x, dn.y), now = Date.now();
+      if (m) { lastTap.t = 0; if (self.onTap) self.onTap(m, unproject(dn.x, dn.y)); return; }
+      if (now - lastTap.t < 320 && Math.hypot(dn.x - lastTap.x, dn.y - lastTap.y) < 30) { lastTap.t = 0; self.zoomAt(dn.x, dn.y, 1); return; }
+      lastTap = { t: now, x: dn.x, y: dn.y };
+      if (self.onTap) self.onTap(null, unproject(dn.x, dn.y));
+    }
+    fg.addEventListener('pointerup', up);
+    fg.addEventListener('pointercancel', up);
+    fg.addEventListener('wheel', function (e) { e.preventDefault(); var p = rel(e); self.zoomAt(p.x, p.y, e.deltaY < 0 ? 0.5 : -0.5); }, { passive: false });
+    if (typeof ResizeObserver !== 'undefined') { try { new ResizeObserver(function () { self.resize(); }).observe(box); } catch (_) {} }
+    window.addEventListener('resize', function () { self.resize(); });
+    self.resize();
+  }
+  /*PURE-END*/
+
+  window.pldnLovePure = P; P.LoveMap = LoveMap; // faqat sinov uchun
+
+  if (typeof fbT !== 'function' || typeof goToScreen !== 'function') return;
+  var T = function (uz, ru) { return fbT(uz, ru); };
+  var $ = function (id) { return document.getElementById(id); };
+  var PUB_MIN_MS = 10 * 1000, PUB_MIN_DIST = 15, PUB_HEARTBEAT_MS = 45 * 1000;
+  var COL_ME = '#2AABEE', COL_PEER = '#ff4d6d';
+  var STICKERS = [
+    ['🏠', 'Uy', 'Дом'], ['🏫', 'Maktab', 'Школа'], ['🏢', 'Ish joyi', 'Работа'], ['🛒', "Do'kon", 'Магазин'],
+    ['🏥', 'Shifoxona', 'Больница'], ['🌳', 'Park', 'Парк'], ['☕', 'Kafe', 'Кафе'], ['🍽', 'Restoran', 'Ресторан'],
+    ['🏋️', 'Sport zal', 'Спортзал'], ['🕌', 'Masjid', 'Мечеть'], ['🚉', 'Bekat', 'Станция'], ['⛽', "Yoqilg'i", 'АЗС'],
+    ['🎓', 'Universitet', 'Университет'], ['📍', 'Joy', 'Место']
+  ];
+
+  function h(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function btn(text, cls, fn) { var b = h('button', 'pldn-love-btn ' + (cls || ''), text); b.addEventListener('click', fn); return b; }
+  function clock(ts, sec) {
+    var d = new Date(ts), p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return p(d.getHours()) + ':' + p(d.getMinutes()) + (sec ? ':' + p(d.getSeconds()) : '');
+  }
+  function ageText(ms) {
+    var b = P.ageBucket(ms), n = b[1];
+    if (b[0] === 'now') return T('hozir', 'сейчас');
+    if (b[0] === 's') return T(n + ' soniya oldin', n + ' сек. назад');
+    if (b[0] === 'm') return T(n + ' daqiqa oldin', n + ' мин. назад');
+    if (b[0] === 'h') return T(n + ' soat oldin', n + ' ч. назад');
+    return T(n + ' kun oldin', n + ' дн. назад');
+  }
+  function toast(m) {
+    var d = h('div', '', String(m));
+    d.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(0,0,0,.82);color:#fff;padding:10px 18px;border-radius:18px;z-index:99999;font-size:15px;max-width:84%;text-align:center';
+    document.body.appendChild(d); setTimeout(function () { d.remove(); }, 3200);
+  }
+  function serverTs() { return firebase.firestore.FieldValue.serverTimestamp(); }
+
+  // ---------- holat ----------
+  var S = {
+    uid: '', link: null, state: 'none', lastEnd: null, linkReady: false, linkErr: '',
+    peer: { uid: '', name: '', username: '' }, peerDoc: null, peerWasLive: false,
+    myLoc: null, sharing: false, geoStatus: '', centered: false,
+    places: [], online: (typeof navigator === 'undefined') || navigator.onLine !== false,
+    lastPubAt: 0, lastPubLoc: null, lastOkAt: 0, pubFails: 0, pubErr: '', busy: false
+  };
+  P._S = S; // faqat sinov uchun
+  var linkUnsub = null, peerUnsub = null, peerUnsubUid = '', map = null, firstOpen = true;
+
+  // ---------- joylar (stikerlar): hozircha faqat shu telefonda saqlanadi ----------
+  function placesKey() { try { return pldnUk('pldn_love_places'); } catch (_) { return ''; } }
+  function loadPlaces() {
+    S.places = []; var k = placesKey(); if (!k) return;
+    try {
+      var a = JSON.parse(localStorage.getItem(k) || '[]');
+      if (Array.isArray(a)) S.places = a.filter(function (p) { return p && typeof p.lat === 'number' && typeof p.lng === 'number'; });
+    } catch (_) {}
+  }
+  function savePlaces() { var k = placesKey(); if (!k) return; try { localStorage.setItem(k, JSON.stringify(S.places)); } catch (_) {} }
+
+  // ---------- ekran ----------
+  var st = document.createElement('style');
+  st.textContent =
+    '#pldnLoveScreen{padding:0;align-items:stretch;overflow:hidden}' +
+    '.pldn-love-wrap{flex:1 1 0;min-height:0;display:flex;flex-direction:column;width:100%}' +
+    '.pldn-love-mapbox{position:relative;flex:0 0 46%;min-height:240px;overflow:hidden;background:#e8e6e1}' +
+    '.pldn-love-panel{flex:1 1 0;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 12px 28px;background:var(--bg-page)}' +
+    '.pldn-love-fabs{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:6px;z-index:3}' +
+    '.pldn-love-fab{width:38px;height:38px;border-radius:50%;border:0;background:var(--bg-elevated);color:var(--text-primary);font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;padding:0}' +
+    '.pldn-love-fab:active{opacity:.7}' +
+    '.pldn-love-attr{position:absolute;left:6px;bottom:4px;font-size:10px;color:#333;background:rgba(255,255,255,.75);padding:1px 6px;border-radius:6px;z-index:3;pointer-events:none}' +
+    '.pldn-love-banner{position:absolute;left:8px;right:56px;top:8px;background:rgba(255,149,0,.95);color:#fff;font-size:12px;line-height:1.3;padding:6px 10px;border-radius:10px;z-index:3;display:none}' +
+    '.pldn-love-card{background:var(--bg-card);border-radius:14px;padding:12px 14px;margin-bottom:10px;color:var(--text-primary)}' +
+    '.pldn-love-warn{background:rgba(255,149,0,.16);border-radius:12px;padding:9px 12px;margin-bottom:8px;font-size:14px;line-height:1.35;color:var(--text-primary)}' +
+    '.pldn-love-h{font-size:16px;font-weight:700;margin-bottom:4px;color:var(--text-primary);word-break:break-word}' +
+    '.pldn-love-t{font-size:14px;line-height:1.4;color:var(--text-secondary);margin-top:4px;word-break:break-word}' +
+    '.pldn-love-btn{border:0;border-radius:12px;padding:10px 14px;font-size:15px;font-weight:600;background:#2AABEE;color:#fff;margin:8px 8px 0 0}' +
+    '.pldn-love-btn.sec{background:var(--bg-elevated);color:#2AABEE}' +
+    '.pldn-love-btn.red{background:#ff3b30}.pldn-love-btn.pink{background:#ff4d6d}' +
+    '.pldn-love-btn:disabled{opacity:.5}' +
+    '.pldn-love-in{width:100%;border:1px solid var(--border-color-strong);background:var(--bg-elevated);color:var(--text-primary);border-radius:12px;padding:10px 12px;font-size:16px;margin-top:8px;outline:none}' +
+    '.pldn-love-ov{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100000;display:flex;align-items:flex-end}' +
+    '.pldn-love-sheet{width:100%;max-height:82%;overflow-y:auto;background:var(--bg-elevated);color:var(--text-primary);border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px))}' +
+    '.pldn-love-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:8px 0}' +
+    '.pldn-love-st{aspect-ratio:1;border:2px solid transparent;border-radius:12px;background:var(--bg-card);font-size:22px;padding:0}' +
+    '.pldn-love-st.on{border-color:#2AABEE}' +
+    '.pldn-love-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--divider-color);cursor:pointer}' +
+    '.pldn-love-row .e{font-size:22px;width:30px;text-align:center}' +
+    '.pldn-love-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff3b30;margin-left:6px}';
+  document.head.appendChild(st);
+
+  var BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>';
+  var scr = h('div', 'screen'); scr.id = 'pldnLoveScreen';
+  scr.innerHTML = '<div class="chat-detail-header"><button class="chat-back-btn" id="pldnLoveBack">' + BACK + '</button>' +
+    '<div class="chat-detail-info"><div class="chat-detail-name" id="pldnLoveTitle"></div></div></div>' +
+    '<div class="pldn-love-wrap"><div class="pldn-love-mapbox" id="pldnLoveMap"></div><div class="pldn-love-panel" id="pldnLovePanel"></div></div>';
+  var anchorScreen = $('chatDetailScreen') || $('pldnSettingsScreen');
+  if (!anchorScreen || !anchorScreen.parentNode) return;
+  anchorScreen.parentNode.appendChild(scr);
+  $('pldnLoveBack').addEventListener('click', function () { goToScreen('pldnSettingsScreen'); });
+
+  var mapBox = $('pldnLoveMap'), panel = $('pldnLovePanel');
+  var elStatus = h('div'), elLink = h('div'), elCards = h('div'), elPlaces = h('div');
+  panel.append(elStatus, elLink, elCards, elPlaces);
+
+  // sozlamalardagi qator
+  var rowEl = h('div', 'settings-item'); rowEl.id = 'pldnLoveRow';
+  var rowLabel = h('span', 'settings-label', 'Sevgi rejimi');
+  rowEl.append(h('span', 'settings-icon', '❤️'), rowLabel, h('span', 'settings-arrow', '›'));
+  var after = $('pldnSavedVideosRow');
+  if (after && after.parentNode) after.parentNode.insertBefore(rowEl, after.nextSibling);
+  else { var grp = document.querySelector('#pldnSettingsScreen .settings-group'); if (grp) grp.appendChild(rowEl); else return; }
+
+  function updateRow() {
+    rowLabel.textContent = T('Sevgi rejimi', 'Режим любви');
+    $('pldnLoveTitle').textContent = '❤️ ' + T('Sevgi rejimi', 'Режим любви');
+    var old = rowLabel.querySelector('.pldn-love-dot'); if (old) old.remove();
+    if (S.state === 'in') rowLabel.appendChild(h('span', 'pldn-love-dot'));
+  }
+
+  // ---------- xarita ----------
+  var banner = h('div', 'pldn-love-banner');
+  function buildMap() {
+    if (map) return;
+    map = new LoveMap(mapBox);
+    map.onTileState = function (failed) {
+      banner.textContent = T("Xarita yuklanmadi (internet?). Belgilar va koordinatalar ko'rsatilmoqda.", 'Карта не загрузилась (интернет?). Показаны метки и координаты.');
+      banner.style.display = failed ? 'block' : 'none';
+    };
+    map.onTap = function (m) { if (m) markerInfo(m); };
+    map.onLongPress = function (ll) { placeSheet({ lat: ll.lat, lng: ll.lng }); };
+    var fabs = h('div', 'pldn-love-fabs');
+    function fab(txt, title, fn) { var b = h('button', 'pldn-love-fab', txt); b.title = title; b.addEventListener('click', fn); fabs.appendChild(b); }
+    fab('➕', T("Joy qo'shish", 'Добавить место'), function () { var c = map.getCenter(); placeSheet({ lat: c.lat, lng: c.lng }); });
+    fab('🎯', T('Men', 'Я'), function () {
+      if (S.myLoc) map.setView(S.myLoc.lat, S.myLoc.lng, Math.max(map.z, 16));
+      else { toast(T('Joylashuv hali aniqlanmadi', 'Местоположение пока не определено')); startGeo(); }
+    });
+    fab('👥', T('Ikkalamiz', 'Оба'), fitAll);
+    fab('+', 'Zoom in', function () { map.zoomBy(1); });
+    fab('−', 'Zoom out', function () { map.zoomBy(-1); });
+    mapBox.append(banner, fabs, h('div', 'pldn-love-attr', '© OpenStreetMap'));
+  }
+  function visiblePeer() { var v = peerView(); return (v.k === 'live' || v.k === 'stale') ? v : null; }
+  function fitAll() {
+    var pts = [];
+    if (S.myLoc) pts.push(S.myLoc);
+    var pv = visiblePeer(); if (pv) pts.push({ lat: pv.lat, lng: pv.lng });
+    if (!pts.length) S.places.forEach(function (p) { pts.push(p); });
+    if (pts.length) map.fitPoints(pts); else toast(T("Ko'rsatadigan joylashuv yo'q", 'Нет местоположений для показа'));
+  }
+  function syncMarkers() {
+    if (!map) return;
+    var arr = S.places.map(function (p) { return { kind: 'place', id: p.id, lat: p.lat, lng: p.lng, emoji: p.emoji, label: p.name }; });
+    var pv = visiblePeer();
+    if (pv) {
+      var pn = S.peer.name || (S.peer.username ? '@' + S.peer.username : T('Sherik', 'Партнёр'));
+      arr.push({ kind: 'peer', lat: pv.lat, lng: pv.lng, acc: pv.acc, color: COL_PEER, emoji: '❤', stale: pv.k === 'stale', label: pn + (pv.k === 'stale' ? ' · ' + T('oxirgi', 'последнее') : '') });
+    }
+    if (S.myLoc) {
+      var mst = P.isStale(S.myLoc.ts, Date.now());
+      arr.push({ kind: 'me', lat: S.myLoc.lat, lng: S.myLoc.lng, acc: S.myLoc.acc, color: COL_ME, emoji: '●', stale: mst, label: T('Siz', 'Вы') + (mst ? ' · ' + T('oxirgi', 'последнее') : '') });
+    }
+    map.setMarkers(arr);
+  }
+
+  // ---------- oynalar (sheet) ----------
+  function openSheet(build) {
+    var ov = h('div', 'pldn-love-ov'), sh = h('div', 'pldn-love-sheet'); ov.appendChild(sh);
+    var api = { close: function () { ov.remove(); }, el: sh };
+    ov.addEventListener('click', function (e) { if (e.target === ov) api.close(); });
+    build(sh, api);
+    document.body.appendChild(ov);
+    return api;
+  }
+  function stickerName(e) { for (var i = 0; i < STICKERS.length; i++) if (STICKERS[i][0] === e) return T(STICKERS[i][1], STICKERS[i][2]); return ''; }
+  function placeSheet(o) {
+    var editing = !!o.place, emoji = editing ? o.place.emoji : '📍';
+    var allNames = []; STICKERS.forEach(function (s) { allNames.push(s[1], s[2]); });
+    openSheet(function (sh, api) {
+      sh.appendChild(h('div', 'pldn-love-h', editing ? T('Joyni tahrirlash', 'Изменить место') : T("Yangi joy qo'shish", 'Новое место')));
+      var grid = h('div', 'pldn-love-grid'), cells = [];
+      var input = h('input', 'pldn-love-in'); input.maxLength = 40; input.placeholder = T('Joy nomi', 'Название места');
+      input.value = editing ? o.place.name : '';
+      STICKERS.forEach(function (s) {
+        var c = h('button', 'pldn-love-st' + (s[0] === emoji ? ' on' : ''), s[0]); c.title = T(s[1], s[2]);
+        c.addEventListener('click', function () {
+          emoji = s[0]; cells.forEach(function (x) { x.classList.toggle('on', x === c); });
+          var cur = input.value.trim(); if (!cur || allNames.indexOf(cur) >= 0) input.value = T(s[1], s[2]);
+        });
+        cells.push(c); grid.appendChild(c);
+      });
+      sh.appendChild(grid); sh.appendChild(input);
+      var lat = editing ? o.place.lat : o.lat, lng = editing ? o.place.lng : o.lng;
+      sh.appendChild(h('div', 'pldn-love-t', '📌 ' + P.coord(lat) + ', ' + P.coord(lng)));
+      var save = btn(T('Saqlash', 'Сохранить'), '', function () {
+        var name = input.value.trim().slice(0, 40) || stickerName(emoji) || T('Joy', 'Место');
+        if (editing) { o.place.emoji = emoji; o.place.name = name; }
+        else S.places.push({ id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), emoji: emoji, name: name, lat: lat, lng: lng });
+        savePlaces(); syncMarkers(); renderPlaces(); api.close();
+      });
+      sh.appendChild(save);
+      sh.appendChild(btn(T('Bekor qilish', 'Отмена'), 'sec', api.close));
+      if (editing) sh.appendChild(btn(T("O'chirish", 'Удалить'), 'red', function () { api.close(); deletePlace(o.place); }));
+    });
+  }
+  async function deletePlace(p) {
+    var ok = await pldnConfirm(T("«" + p.name + "» o'chirilsinmi?", '«' + p.name + '» удалить?'));
+    if (!ok) return;
+    S.places = S.places.filter(function (x) { return x.id !== p.id; });
+    savePlaces(); syncMarkers(); renderPlaces();
+  }
+  function markerInfo(m) {
+    if (m.kind === 'place') {
+      var p = S.places.filter(function (x) { return x.id === m.id; })[0]; if (!p) return;
+      openSheet(function (sh, api) {
+        sh.appendChild(h('div', 'pldn-love-h', p.emoji + ' ' + p.name));
+        sh.appendChild(h('div', 'pldn-love-t', '📌 ' + P.coord(p.lat) + ', ' + P.coord(p.lng)));
+        sh.appendChild(btn(T('Tahrirlash', 'Изменить'), '', function () { api.close(); placeSheet({ place: p }); }));
+        sh.appendChild(btn(T("O'chirish", 'Удалить'), 'red', function () { api.close(); deletePlace(p); }));
+        sh.appendChild(btn(T('Yopish', 'Закрыть'), 'sec', api.close));
+      });
+      return;
+    }
+    openSheet(function (sh, api) {
+      var isMe = m.kind === 'me', now = Date.now();
+      var ts = isMe ? (S.myLoc && S.myLoc.ts) : (peerView().ts);
+      var nm = isMe ? T('Siz', 'Вы') : (S.peer.name || (S.peer.username ? '@' + S.peer.username : T('Sherik', 'Партнёр')));
+      sh.appendChild(h('div', 'pldn-love-h', (isMe ? '🔵 ' : '❤️ ') + nm + (m.stale ? ' · ' + T("Oxirgi ma'lum joylashuv", 'Последнее известное местоположение') : '')));
+      sh.appendChild(h('div', 'pldn-love-t', '📌 ' + P.coord(m.lat) + ', ' + P.coord(m.lng)));
+      sh.appendChild(h('div', 'pldn-love-t', T('Aniqlik: ±', 'Точность: ±') + Math.round(m.acc || 0) + ' m'));
+      if (ts) sh.appendChild(h('div', 'pldn-love-t', T('Yangilandi: ', 'Обновлено: ') + clock(ts, true) + ' (' + ageText(now - ts) + ')'));
+      sh.appendChild(btn(T('Yopish', 'Закрыть'), 'sec', api.close));
+    });
+  }
+
+  // ---------- panel: holat qatorlari ----------
+  var GEO_MSG = {
+    denied: ["PLDN ilovasiga joylashuvni olish uchun ruxsat berilmagan", 'Приложению PLDN не разрешено получать местоположение'],
+    off: ["Qurilmada joylashuv xizmati o'chirilgan", 'На устройстве отключена служба геолокации'],
+    nosignal: ["Aniq joylashuvni olish imkoni bo'lmayapti", 'Не удаётся получить точное местоположение'],
+    error: ['Joylashuvni yangilashda texnik muammo yuz berdi', 'Техническая проблема при обновлении местоположения'],
+    unsupported: ["Bu qurilmada joylashuv qo'llab-quvvatlanmaydi", 'Это устройство не поддерживает геолокацию']
+  };
+  function renderStatus() {
+    elStatus.innerHTML = '';
+    function warn(txt) { elStatus.appendChild(h('div', 'pldn-love-warn', '⚠️ ' + txt)); }
+    if (S.linkErr === 'permission-denied') warn(T("Sevgi rejimi serverda hali sozlanmagan: Firestore qoidalariga loveLinks va loveLoc bloklarini qo'shing.", 'Режим любви ещё не настроен на сервере: добавьте блоки loveLinks и loveLoc в правила Firestore.'));
+    if (!S.online) {
+      var lt = S.lastOkAt || (S.myLoc && S.myLoc.ts) || 0;
+      if (S.sharing) warn(T("Internet aloqasi yo'q. Joylashuv hozir yangilanmayapti. Oxirgi ma'lumot: ", 'Нет подключения к интернету. Местоположение сейчас не обновляется. Последние данные: ') + (lt ? clock(lt) : '—'));
+      else warn(T("Internet aloqasi yo'q.", 'Нет подключения к интернету.'));
+    }
+    var g = GEO_MSG[S.geoStatus]; if (g) warn(T(g[0], g[1]));
+    if (S.sharing && S.online && S.pubFails >= 2) {
+      if (S.pubErr === 'permission-denied') warn(T("Joylashuvni yuborishga server ruxsat bermadi (Firestore qoidalari).", 'Сервер не разрешил отправку местоположения (правила Firestore).'));
+      else warn(T('Joylashuvni yangilashda texnik muammo yuz berdi', 'Техническая проблема при обновлении местоположения'));
+    }
+  }
+
+  // ---------- panel: rozilik va ulashish ----------
+  function peerLabel() { return S.peer.username ? '@' + S.peer.username : T('Foydalanuvchi', 'Пользователь'); }
+  function renderLink() {
+    elLink.innerHTML = '';
+    var c = h('div', 'pldn-love-card'); elLink.appendChild(c);
+    if (S.state === 'none') {
+      c.appendChild(h('div', 'pldn-love-h', '❤️ ' + T('Sevgi rejimi', 'Режим любви')));
+      c.appendChild(h('div', 'pldn-love-t', T("Ikki kishi o'zaro rozilik bilan joylashuvini bir-biriga ko'rsatadi. Rozilik ikkala tomondan bo'lmaguncha hech narsa ulashilmaydi, istalgan vaqtda to'xtatish mumkin.", 'Двое людей по взаимному согласию показывают друг другу местоположение. Пока нет согласия обеих сторон, ничего не передаётся; остановить можно в любой момент.')));
+      var le = S.lastEnd;
+      if (le) {
+        var txt = '';
+        if (le.status === 'declined') txt = le.by === S.uid ? peerLabel() + T(' taklifingizni rad etdi', ' отклонил(а) ваше предложение') : T('Siz taklifni rad etdingiz', 'Вы отклонили предложение');
+        else if (le.endedBy) txt = le.endedBy === S.uid ? T("Siz joylashuv ulashishni to'xtatdingiz", 'Вы остановили передачу местоположения') : T("Foydalanuvchi joylashuv ulashishni to'xtatdi", 'Пользователь остановил передачу местоположения');
+        else txt = le.by === S.uid ? T('Taklifni qaytarib oldingiz', 'Вы отозвали предложение') : T('Foydalanuvchi taklifni qaytarib oldi', 'Пользователь отозвал предложение');
+        c.appendChild(h('div', 'pldn-love-t', 'ℹ️ ' + txt));
+      }
+      var inp = h('input', 'pldn-love-in'); inp.maxLength = 12; inp.placeholder = T('Sherigingiz foydalanuvchi nomi (a-z, 0-9)', 'Имя пользователя партнёра (a-z, 0-9)');
+      inp.setAttribute('autocapitalize', 'none'); inp.setAttribute('autocomplete', 'off');
+      inp.addEventListener('input', function () { inp.value = inp.value.toLowerCase().replace(/[^a-z0-9]/g, ''); });
+      var msg = h('div', 'pldn-love-t', '');
+      var go = btn(T('Taklif yuborish', 'Отправить предложение'), 'pink', async function () {
+        var u = inp.value.trim();
+        if (u.length < 4) { msg.textContent = T('Kamida 4 ta belgi kiriting', 'Введите минимум 4 символа'); return; }
+        go.disabled = true; msg.textContent = T('Qidirilmoqda...', 'Поиск...');
+        try { msg.textContent = await sendOffer(u) || ''; } catch (e) { msg.textContent = (typeof fbErrMsg === 'function') ? fbErrMsg(e) : String(e && e.message || e); }
+        go.disabled = false;
+      });
+      c.append(inp, go, msg);
+    } else if (S.state === 'out') {
+      c.appendChild(h('div', 'pldn-love-h', '⏳ ' + T('Taklif yuborildi', 'Предложение отправлено')));
+      c.appendChild(h('div', 'pldn-love-t', peerLabel() + T(' javobini kutyapmiz. U rozilik bermaguncha hech narsa ulashilmaydi.', ': ждём ответа. Пока нет согласия, ничего не передаётся.')));
+      c.appendChild(btn(T('Taklifni qaytarib olish', 'Отозвать предложение'), 'sec', function () { setLinkStatus({ status: 'cancelled' }); }));
+    } else if (S.state === 'in') {
+      c.appendChild(h('div', 'pldn-love-h', '❤️ ' + peerLabel() + T(' sizga Sevgi rejimini taklif qildi', ' предлагает вам режим любви')));
+      c.appendChild(h('div', 'pldn-love-t', T("Qabul qilsangiz, siz xohlagan paytda joylashuvingizni ulashishni yoqasiz va to'xtatasiz. Qabul qilishning o'zi joylashuvingizni ko'rsatmaydi.", 'Если примете, вы сами включаете и останавливаете передачу местоположения. Само принятие ничего не показывает.')));
+      c.appendChild(btn(T('Qabul qilish', 'Принять'), 'pink', function () { setLinkStatus({ status: 'accepted' }); }));
+      c.appendChild(btn(T('Rad etish', 'Отклонить'), 'sec', function () { setLinkStatus({ status: 'declined' }); }));
+    } else if (S.state === 'on') {
+      c.appendChild(h('div', 'pldn-love-h', '❤️ ' + T(peerLabel() + ' bilan Sevgi rejimi', 'Режим любви с ' + peerLabel())));
+      c.appendChild(h('div', 'pldn-love-t', S.sharing
+        ? T("Joylashuvingiz hozir sherigingizga ko'rsatilmoqda (ilova ochiq paytda).", 'Ваше местоположение сейчас показывается партнёру (пока приложение открыто).')
+        : T("Siz ulashishni yoqmaguningizcha sherigingiz joylashuvingizni ko'rmaydi.", 'Пока вы не включите передачу, партнёр не видит ваше местоположение.')));
+      c.appendChild(S.sharing
+        ? btn('⏹ ' + T("Ulashishni to'xtatish", 'Остановить передачу'), 'red', stopSharing)
+        : btn('📡 ' + T('Joylashuvimni ulashish', 'Делиться местоположением'), 'pink', startSharing));
+      c.appendChild(btn(T('Rozilikni bekor qilish', 'Отозвать согласие'), 'sec', async function () {
+        var ok = await pldnConfirm(T("Sevgi rejimi to'xtatilsinmi? Joylashuv ulashish tugaydi va sherigingizga xabar beriladi.", 'Остановить режим любви? Передача завершится, партнёр получит уведомление.'));
+        if (ok) setLinkStatus({ status: 'cancelled', endedBy: S.uid });
+      }));
+      c.appendChild(btn('🗑 ' + T("Joylashuvimni serverdan o'chirish", 'Удалить моё местоположение с сервера'), 'sec', async function () {
+        S.sharing = false; await ownLocDelete(); renderLink(); renderCards(); toast(T("Joylashuvingiz serverdan o'chirildi", 'Ваше местоположение удалено с сервера'));
+      }));
+    }
+    updateRow();
+  }
+
+  // ---------- panel: kartochkalar ----------
+  function peerView() {
+    var d = S.peerDoc;
+    if (!d || S.state !== 'on') return { k: 'none' };
+    if (d.sharing === false) return { k: 'stopped' };
+    if (typeof d.lat !== 'number' || typeof d.lng !== 'number') return { k: 'none' };
+    var ts = typeof d.ts === 'number' ? d.ts : (d.at && d.at.toMillis ? d.at.toMillis() : 0);
+    if (!ts) return { k: 'none' };
+    return { k: P.isStale(ts, Date.now()) ? 'stale' : 'live', lat: d.lat, lng: d.lng, acc: d.acc, ts: ts };
+  }
+  function renderCards() {
+    elCards.innerHTML = '';
+    var now = Date.now();
+    var me = h('div', 'pldn-love-card'), L = S.myLoc, mStale = L && P.isStale(L.ts, now);
+    me.appendChild(h('div', 'pldn-love-h', '🔵 ' + T('Siz', 'Вы') + (mStale ? ' · ' + T("Oxirgi ma'lum joylashuv", 'Последнее известное местоположение') : '')));
+    if (L) {
+      me.appendChild(h('div', 'pldn-love-t', '📌 ' + P.coord(L.lat) + ', ' + P.coord(L.lng)));
+      me.appendChild(h('div', 'pldn-love-t', T('Aniqlik: ±', 'Точность: ±') + Math.round(L.acc || 0) + ' m · ' + T('Yangilandi: ', 'Обновлено: ') + clock(L.ts, true) + ' (' + ageText(now - L.ts) + ')'));
+    } else me.appendChild(h('div', 'pldn-love-t', T('Joylashuv hali aniqlanmadi.', 'Местоположение пока не определено.')));
+    elCards.appendChild(me);
+    if (S.state !== 'on') return;
+    var pc = h('div', 'pldn-love-card'), pv = peerView();
+    var pn = S.peer.name || peerLabel();
+    pc.appendChild(h('div', 'pldn-love-h', '❤️ ' + pn + (pv.k === 'stale' ? ' · ' + T("Oxirgi ma'lum joylashuv", 'Последнее известное местоположение') : '')));
+    if (pv.k === 'live' || pv.k === 'stale') {
+      pc.appendChild(h('div', 'pldn-love-t', '📌 ' + P.coord(pv.lat) + ', ' + P.coord(pv.lng)));
+      pc.appendChild(h('div', 'pldn-love-t', T('Aniqlik: ±', 'Точность: ±') + Math.round(pv.acc || 0) + ' m · ' + (pv.k === 'stale' ? T("Oxirgi ma'lumot: ", 'Последние данные: ') : T('Yangilandi: ', 'Обновлено: ')) + clock(pv.ts, true) + ' (' + ageText(now - pv.ts) + ')'));
+      if (pv.k === 'stale') pc.appendChild(h('div', 'pldn-love-t', T('Joylashuv hozir yangilanmayapti.', 'Местоположение сейчас не обновляется.')));
+    } else if (pv.k === 'stopped') pc.appendChild(h('div', 'pldn-love-t', T("Foydalanuvchi joylashuv ulashishni to'xtatdi", 'Пользователь остановил передачу местоположения')));
+    else pc.appendChild(h('div', 'pldn-love-t', T('Sherigingiz hozircha joylashuvini ulashmayapti.', 'Партнёр пока не передаёт местоположение.')));
+    elCards.appendChild(pc);
+  }
+
+  // ---------- panel: joylar ro'yxati ----------
+  function renderPlaces() {
+    elPlaces.innerHTML = '';
+    var c = h('div', 'pldn-love-card'); elPlaces.appendChild(c);
+    c.appendChild(h('div', 'pldn-love-h', '📍 ' + T('Joylarim', 'Мои места')));
+    c.appendChild(h('div', 'pldn-love-t', T("Xaritada uzoq bosib yoki ➕ tugmasi bilan yangi joy qo'shing (uy, maktab, ish...). Joylar faqat shu telefonda saqlanadi.", 'Долгое нажатие на карте или кнопка ➕ добавляет место (дом, школа, работа...). Места хранятся только на этом телефоне.')));
+    S.places.forEach(function (p) {
+      var r = h('div', 'pldn-love-row');
+      var mid = h('div'); mid.style.cssText = 'flex:1;min-width:0';
+      var nmEl = h('div', 'pldn-love-h', p.name); nmEl.style.marginBottom = '0'; mid.appendChild(nmEl);
+      mid.appendChild(h('div', 'pldn-love-t', P.coord(p.lat) + ', ' + P.coord(p.lng)));
+      r.append(h('div', 'e', p.emoji), mid);
+      r.addEventListener('click', function () { if (map) { map.setView(p.lat, p.lng, Math.max(map.z, 16)); } markerInfo({ kind: 'place', id: p.id }); });
+      c.appendChild(r);
+    });
+  }
+  function renderAll() { renderStatus(); renderLink(); renderCards(); renderPlaces(); syncMarkers(); }
+
+  // ---------- joylashuv (GPS) ----------
+  var geoWatch = null, geoNativeOn = false, geoStarting = false;
+  function nativeGeo() {
+    try { var C = window.Capacitor; if (C && C.isNativePlatform && C.isNativePlatform() && C.Plugins && C.Plugins.Geolocation) return C.Plugins.Geolocation; } catch (_) {}
+    return null;
+  }
+  function setGeo(s) { if (S.geoStatus === s) return; S.geoStatus = s; renderStatus(); }
+  function onPos(pos) {
+    var c = pos && pos.coords; if (!c || typeof c.latitude !== 'number' || typeof c.longitude !== 'number') return;
+    var ts = pos.timestamp > 1e12 ? pos.timestamp : Date.now();
+    S.myLoc = { lat: c.latitude, lng: c.longitude, acc: c.accuracy || 0, ts: ts };
+    setGeo('ok'); S.geoStatus = 'ok';
+    if (map && !S.centered && scr.classList.contains('active')) { S.centered = true; map.setView(S.myLoc.lat, S.myLoc.lng, 16); }
+    maybePublish(false);
+    renderStatus(); renderCards(); syncMarkers();
+  }
+  function geoFail(e) {
+    var code = e && e.code, msg = String((e && e.message) || e || '');
+    var s = 'error';
+    if (/not enabled|disabled|services|turned off/i.test(msg) && !/permission/i.test(msg)) s = 'off';
+    else if (code === 1 || /permission|denied|not authorized/i.test(msg)) s = 'denied';
+    else if (code === 2 || code === 3 || /unavailable|timeout|time out|timed out/i.test(msg)) s = 'nosignal';
+    setGeo(s);
+  }
+  async function startGeo() {
+    if (geoWatch !== null || geoStarting) return;
+    geoStarting = true;
+    try {
+      var G = nativeGeo();
+      if (G) {
+        var perm = null;
+        try { perm = await G.checkPermissions(); } catch (_) {}
+        var okPerm = function (p) { return p && (p.location === 'granted' || p.coarseLocation === 'granted'); };
+        if (!okPerm(perm)) { try { perm = await G.requestPermissions({ permissions: ['location'] }); } catch (e) { geoFail(e); return; } }
+        if (!okPerm(perm)) { setGeo('denied'); return; }
+        geoNativeOn = true;
+        geoWatch = await G.watchPosition({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }, function (pos, err) {
+          if (err) geoFail(err); else if (pos) onPos(pos);
+        });
+      } else if (typeof navigator !== 'undefined' && navigator.geolocation) {
+        geoNativeOn = false;
+        geoWatch = navigator.geolocation.watchPosition(onPos, geoFail, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+      } else setGeo('unsupported');
+    } catch (e) { geoFail(e); }
+    finally { geoStarting = false; }
+  }
+  function stopGeo() {
+    if (geoWatch === null) return;
+    try {
+      if (geoNativeOn) { var G = nativeGeo(); if (G) G.clearWatch({ id: geoWatch }); }
+      else navigator.geolocation.clearWatch(geoWatch);
+    } catch (_) {}
+    geoWatch = null;
+  }
+
+  // ---------- ulashish (faqat rozilik berilgan sherikka) ----------
+  function maybePublish(force) {
+    if (!S.sharing || S.state !== 'on' || !S.myLoc || !S.peer.uid || !fbDb) return;
+    var now = Date.now(), L = S.myLoc;
+    if (!force) {
+      if (now - S.lastPubAt < PUB_MIN_MS) return;
+      var moved = S.lastPubLoc ? P.dist(S.lastPubLoc, L) : 1e9;
+      if (moved < PUB_MIN_DIST && now - S.lastPubAt < PUB_HEARTBEAT_MS) return;
+    }
+    S.lastPubAt = now; S.lastPubLoc = { lat: L.lat, lng: L.lng };
+    fbDb.collection('loveLoc').doc(S.uid).set({ peer: S.peer.uid, lat: L.lat, lng: L.lng, acc: Math.round(L.acc || 0), ts: L.ts, sharing: true, at: serverTs() })
+      .then(function () { S.pubFails = 0; S.pubErr = ''; S.lastOkAt = Date.now(); renderStatus(); })
+      .catch(function (e) { S.pubFails++; S.pubErr = (e && e.code) || 'error'; renderStatus(); });
+  }
+  async function startSharing() {
+    if (S.state !== 'on') return;
+    var ok = await pldnConfirm(T("Joylashuvingiz " + peerLabel() + " ga ko'rsatiladi (ilova ochiq paytda). Istalgan vaqtda to'xtatishingiz mumkin. Davom etilsinmi?", 'Ваше местоположение будет показано ' + peerLabel() + ' (пока приложение открыто). Остановить можно в любой момент. Продолжить?'));
+    if (!ok || S.state !== 'on') return;
+    S.sharing = true; S.lastPubAt = 0; S.lastPubLoc = null; S.pubFails = 0;
+    await startGeo();
+    maybePublish(true);
+    renderLink(); renderCards(); renderStatus();
+  }
+  function stopSharing() {
+    var was = S.sharing; S.sharing = false;
+    if (was && S.uid && S.peer.uid && S.state === 'on' && fbDb) {
+      fbDb.collection('loveLoc').doc(S.uid).set({ peer: S.peer.uid, sharing: false, at: serverTs() }).catch(function () {});
+    }
+    renderLink(); renderCards(); renderStatus();
+  }
+  function ownLocDelete() {
+    if (!fbDb || !S.uid) return Promise.resolve();
+    return fbDb.collection('loveLoc').doc(S.uid).delete().catch(function () {});
+  }
+
+  // ---------- taklif / rozilik (loveLinks) ----------
+  async function sendOffer(username) {
+    if (!fbDb || !S.uid) return T('Avval hisobga kiring', 'Сначала войдите в аккаунт');
+    var snap = await fbDb.collection('users').where('username', '==', username).limit(1).get();
+    if (snap.empty) return T('Bunday foydalanuvchi topilmadi', 'Пользователь не найден');
+    var doc = snap.docs[0];
+    if (doc.id === S.uid) return T('Bu sizning hisobingiz', 'Это ваш аккаунт');
+    var id = P.linkId(S.uid, doc.id), ref = fbDb.collection('loveLinks').doc(id), cur = await ref.get();
+    if (cur.exists) {
+      var v = cur.data() || {};
+      if (v.status === 'pending' || v.status === 'accepted') return T('Bu foydalanuvchi bilan allaqachon bog‘langansiz', 'Вы уже связаны с этим пользователем');
+      await ref.update({ by: S.uid, status: 'pending', endedBy: firebase.firestore.FieldValue.delete(), updatedAt: serverTs() });
+    } else {
+      await ref.set({ members: [S.uid, doc.id], by: S.uid, status: 'pending', at: serverTs(), updatedAt: serverTs() });
+    }
+    toast('✅ ' + T('Taklif yuborildi', 'Предложение отправлено'));
+    return '';
+  }
+  async function setLinkStatus(patch) {
+    if (!S.link || S.busy) return;
+    S.busy = true;
+    try {
+      var data = { updatedAt: serverTs() }; Object.keys(patch).forEach(function (k) { data[k] = patch[k]; });
+      await fbDb.collection('loveLinks').doc(S.link.id).update(data);
+    } catch (e) { alert((typeof fbErrMsg === 'function') ? fbErrMsg(e) : String(e && e.message || e)); }
+    S.busy = false;
+  }
+
+  function loadPeerProfile(uid) {
+    if (!uid || !fbDb) return;
+    fbDb.collection('users').doc(uid).get().then(function (s) {
+      if (S.peer.uid !== uid) return;
+      var v = (s && s.data && s.data()) || {};
+      var nm = ''; try { nm = (typeof fbDisplayName === 'function') ? fbDisplayName(v) : ''; } catch (_) {}
+      S.peer.name = nm || ''; S.peer.username = v.username || '';
+      renderAll();
+    }).catch(function () {});
+  }
+  function listenPeerLoc(uid) {
+    if (peerUnsub && peerUnsubUid === uid) return;
+    if (peerUnsub) { try { peerUnsub(); } catch (_) {} peerUnsub = null; peerUnsubUid = ''; }
+    if (!uid) return;
+    peerUnsubUid = uid;
+    peerUnsub = fbDb.collection('loveLoc').doc(uid).onSnapshot(function (snap) {
+      S.peerDoc = snap.exists ? snap.data() : null;
+      var live = !!(S.peerDoc && S.peerDoc.sharing !== false && typeof S.peerDoc.lat === 'number');
+      if (S.peerWasLive && S.peerDoc && S.peerDoc.sharing === false) toast(T("Foydalanuvchi joylashuv ulashishni to'xtatdi", 'Пользователь остановил передачу местоположения'));
+      S.peerWasLive = live;
+      renderCards(); renderStatus(); syncMarkers();
+    }, function (e) { S.linkErr = (e && e.code) || 'error'; renderStatus(); });
+  }
+
+  function onLinks(snap) {
+    S.linkErr = '';
+    var best = null;
+    snap.forEach(function (d) {
+      var v = d.data() || {};
+      if (!v.status || !Array.isArray(v.members)) return;
+      var ms = v.updatedAt && v.updatedAt.toMillis ? v.updatedAt.toMillis() : 0;
+      var it = { id: d.id, status: v.status, by: v.by, endedBy: v.endedBy || '', peer: v.members.filter(function (u) { return u !== S.uid; })[0] || '', ms: ms, live: (v.status === 'pending' || v.status === 'accepted') ? 1 : 0 };
+      if (!best || it.live > best.live || (it.live === best.live && it.ms > best.ms)) best = it;
+    });
+    var prev = S.state, next = 'none', lastEnd = null;
+    if (best) {
+      if (best.status === 'accepted') next = 'on';
+      else if (best.status === 'pending') next = best.by === S.uid ? 'out' : 'in';
+      else lastEnd = best;
+    }
+    var peerChanged = !best || S.peer.uid !== best.peer;
+    S.link = best; S.state = next; S.lastEnd = lastEnd;
+    if (peerChanged) { S.peer = { uid: best ? best.peer : '', name: '', username: '' }; S.peerDoc = null; S.peerWasLive = false; if (best) loadPeerProfile(best.peer); }
+    if (S.linkReady) {
+      if (prev === 'none' && next === 'in') toast('❤️ ' + peerLabel() + T(' sizga Sevgi rejimini taklif qildi', ' предлагает вам режим любви'));
+      else if (prev === 'out' && next === 'on') toast('❤️ ' + peerLabel() + T(' taklifni qabul qildi', ' принял(а) предложение'));
+      else if (prev === 'out' && next === 'none' && lastEnd && lastEnd.status === 'declined') toast(peerLabel() + T(' taklifni rad etdi', ' отклонил(а) предложение'));
+      else if (prev === 'on' && next === 'none' && lastEnd && lastEnd.endedBy && lastEnd.endedBy !== S.uid) toast(T("Foydalanuvchi joylashuv ulashishni to'xtatdi", 'Пользователь остановил передачу местоположения'));
+    }
+    if (next === 'on') listenPeerLoc(S.peer.uid);
+    else {
+      listenPeerLoc('');
+      if (prev === 'on') { S.sharing = false; ownLocDelete(); }
+      S.peerDoc = null; S.peerWasLive = false;
+    }
+    if (!S.linkReady) {
+      S.linkReady = true;
+      if (next !== 'on') fbDb.collection('loveLoc').doc(S.uid).get().then(function (s) { if (s.exists && S.state !== 'on') ownLocDelete(); }).catch(function () {});
+    }
+    renderAll();
+  }
+
+  function startFor(uid) {
+    if (!fbDb || S.uid === uid) return;
+    stopAll(); S.uid = uid; loadPlaces();
+    linkUnsub = fbDb.collection('loveLinks').where('members', 'array-contains', uid).onSnapshot(onLinks, function (e) {
+      S.linkErr = (e && e.code) || 'error'; S.linkReady = true; renderStatus();
+    });
+    renderPlaces();
+  }
+  function stopAll() {
+    if (linkUnsub) { try { linkUnsub(); } catch (_) {} linkUnsub = null; }
+    listenPeerLoc('');
+    stopGeo();
+    S.uid = ''; S.link = null; S.state = 'none'; S.lastEnd = null; S.linkReady = false; S.linkErr = '';
+    S.peer = { uid: '', name: '', username: '' }; S.peerDoc = null; S.peerWasLive = false;
+    S.myLoc = null; S.sharing = false; S.centered = false; S.places = []; S.geoStatus = '';
+    renderAll();
+  }
+
+  // ---------- ochish ----------
+  function openLove() {
+    buildMap();
+    goToScreen('pldnLoveScreen');
+    updateRow(); renderAll();
+    startGeo();
+    var apply = function () {
+      map.resize();
+      if (firstOpen) {
+        firstOpen = false;
+        var pts = [];
+        if (S.myLoc) pts.push(S.myLoc);
+        var pv = visiblePeer(); if (pv) pts.push({ lat: pv.lat, lng: pv.lng });
+        if (!pts.length) S.places.forEach(function (p) { pts.push(p); });
+        if (pts.length) map.fitPoints(pts); else map.setView(41.3, 64.5, 5);
+      }
+      map.invalidate();
+    };
+    requestAnimationFrame(apply); setTimeout(apply, 120);
+  }
+  rowEl.addEventListener('click', openLove);
+
+  // ---------- tarmoq holati va davriy yangilash ----------
+  window.addEventListener('offline', function () { S.online = false; renderStatus(); });
+  window.addEventListener('online', function () {
+    S.online = true; renderStatus();
+    if (S.sharing) { toast(T('Internet aloqasi tiklandi. Joylashuv yangilanishi davom etmoqda', 'Подключение к интернету восстановлено. Обновление местоположения продолжается')); }
+  });
+  setInterval(function () {
+    if (scr.classList.contains('active')) { renderCards(); renderStatus(); syncMarkers(); }
+    else if (!S.sharing && geoWatch !== null) stopGeo();
+  }, 5000);
+
+  if (typeof fbAuth !== 'undefined' && fbAuth && fbDb) {
+    fbAuth.onAuthStateChanged(function (u) { if (u && u.uid) startFor(u.uid); else stopAll(); });
+  }
+  updateRow(); renderAll();
+})();
+
 </script>
 <script>
 // ===== ANDROID "ORQAGA" TUGMASI: BIR QADAM ORQAGA ===== VERSION: back-all-v1
