@@ -1,4 +1,4 @@
-<!-- VERSION: 158 -->
+<!-- VERSION: 160 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -9133,6 +9133,7 @@
               b = window.pldnVideoBubble(m, dir, md, doc.id);
             } else {
               b = isText ? addBubble(m.text, dir, md, !!m.editedAt) : addImageBubble(m.image, dir, md);
+              if (m.real && !isText && b && window.pldnRealMark) window.pldnRealMark(b, m);
             }
             if (m.sticker) b.classList.add('sticker-bubble');
             b.dataset.msgId = doc.id;
@@ -9363,7 +9364,7 @@
   }
 
   // src: File yoki data-URL (string)
-  async function fbSendImageFile(src) {
+  async function fbSendImageFile(src, extra) {
     const me = fbAuth && fbAuth.currentUser;
     const chat = fbCurrentChat;
     if (!me || !chat) return;
@@ -9377,10 +9378,12 @@
     const chatRef = fbDb.collection('chats').doc(chat.id);
     const ts = firebase.firestore.FieldValue.serverTimestamp();
     const batch = fbDb.batch();
-    batch.set(chatRef.collection('messages').doc(), Object.assign({ from: me.uid, type: 'image', image: dataUrl, createdAt: ts }, fbTakeReply()));
-    batch.set(chatRef, fbChatUpdate(chat, me.uid, fbT('📷 Rasm', '📷 Фото'), ts), { merge: true });
+    batch.set(chatRef.collection('messages').doc(), Object.assign({ from: me.uid, type: 'image', image: dataUrl, createdAt: ts }, extra || {}, fbTakeReply()));
+    batch.set(chatRef, fbChatUpdate(chat, me.uid, (extra && extra.real) ? fbT('📸 Real foto', '📸 Реальное фото') : fbT('📷 Rasm', '📷 Фото'), ts), { merge: true });
     try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
   }
+
+  window.fbSendImageFile = fbSendImageFile;
 
   // ----- Username bo'yicha topish ekrani -----
   (() => {
@@ -14140,6 +14143,7 @@
       const t = toast(T('Video yuklanmoqda…', 'Загрузка видео…'), 60000);
       try { play(await fetchBlob(c.id, id, m.mime)); } catch (e) { alert(fbErrMsg(e)); } finally { t.remove(); }
     });
+    if (m.real && window.pldnRealMark) window.pldnRealMark(b, m);
     messagesArea.appendChild(b);
     if (typeof attachBubbleInteractions === 'function') attachBubbleInteractions(b, dir);
     return b;
@@ -14156,16 +14160,16 @@
     });
   }
   const b64 = function (blob) { return new Promise(function (r) { const fr = new FileReader(); fr.onload = function () { r(String(fr.result).split(',')[1] || ''); }; fr.readAsDataURL(blob); }); };
-  async function sendVideo(f) {
+  async function sendVideo(f, opts) {
     const me = fbAuth && fbAuth.currentUser, chat = fbCurrentChat; if (!me || !chat) return;
     let mref = null;
     try {
       if (!window.pldnPrepVideo) throw new Error(T('Video moduli tayyor emas', 'Модуль видео не готов'));
-      const pr = await window.pldnPrepVideo(f), thumb = await thumbOf(pr.blob), n = Math.max(1, Math.ceil(pr.blob.size / CH));
+      const pr = (opts && opts.pr) ? opts.pr : await window.pldnPrepVideo(f), thumb = (opts && opts.thumb) ? opts.thumb : await thumbOf(pr.blob), n = Math.max(1, Math.ceil(pr.blob.size / CH));
       const ref = fbDb.collection('chats').doc(chat.id); mref = ref.collection('messages').doc();
       const ts = firebase.firestore.FieldValue.serverTimestamp(), bt = fbDb.batch();
-      bt.set(mref, Object.assign({ from: me.uid, type: 'video', dur: pr.dur, mime: pr.blob.type || 'video/webm', n: n, thumb: thumb, ready: false, createdAt: ts }, fbTakeReply()));
-      bt.set(ref, fbChatUpdate(chat, me.uid, T('🎥 Video', '🎥 Видео'), ts), { merge: true });
+      bt.set(mref, Object.assign({ from: me.uid, type: 'video', dur: pr.dur, mime: pr.blob.type || 'video/webm', n: n, thumb: thumb, ready: false, createdAt: ts }, (opts && opts.extra) || {}, fbTakeReply()));
+      bt.set(ref, fbChatUpdate(chat, me.uid, (opts && opts.extra && opts.extra.real) ? T('📸 Real video', '📸 Реальное видео') : T('🎥 Video', '🎥 Видео'), ts), { merge: true });
       await bt.commit();
       const tt = toast('', 600000);
       for (let i = 0; i < n; i++) {
@@ -14178,6 +14182,7 @@
       if (mref) { await window.pldnVideoCleanup(chat.id, mref.id); mref.delete().catch(function () {}); }
     }
   }
+  window.pldnSendVideo = sendVideo;
   const vin = document.createElement('input'); vin.type = 'file'; vin.accept = 'video/*'; vin.id = 'pldnVidIn'; vin.style.display = 'none'; document.body.appendChild(vin);
   vin.addEventListener('change', function () { const f = vin.files && vin.files[0]; vin.value = ''; if (f) sendVideo(f); });
   const ab = document.getElementById('attachImageBtn');
@@ -15013,7 +15018,7 @@
 })();
 </script>
 <script>
-// ===== SEVGI REJIMI ❤️📍 (5-g'oya, 1-bosqich) ===== VERSION: love-v2
+// ===== SEVGI REJIMI ❤️📍 (5-g'oya, 1-bosqich) ===== VERSION: love-v3
 // Xarita (o'z canvas xaritamiz, OpenStreetMap plitkalari), stikerli joylar, ikki tomonlama rozilik, jonli joylashuv.
 // Hozircha Firestore orqali (sinov); keyin o'z serveriga ko'chiriladi.
 (function () {
@@ -15644,7 +15649,7 @@
         if (ok) setLinkStatus({ status: 'cancelled', endedBy: S.uid });
       }));
       c.appendChild(btn('🗑 ' + T("Joylashuvimni serverdan o'chirish", 'Удалить моё местоположение с сервера'), 'sec', async function () {
-        S.sharing = false; await ownLocDelete(); renderLink(); renderCards(); toast(T("Joylashuvingiz serverdan o'chirildi", 'Ваше местоположение удалено с сервера'));
+        S.sharing = false; await ownLocDelete(); notifyHistDel(true); S.hist = []; saveHist(); renderLink(); renderCards(); toast(T("Joylashuvingiz serverdan o'chirildi", 'Ваше местоположение удалено с сервера'));
       }));
     }
     updateRow();
@@ -15766,11 +15771,35 @@
       var origClose = api.close;
       api.close = function () { if (ticker) { clearInterval(ticker); ticker = 0; } origClose(); };
       var head = h('div', 'pldn-love-h', '🕘 ' + T('Tarix', 'История'));
-      var note = h('div', 'pldn-love-t', T("Tarix 24 soat saqlanadi, keyin avtomatik o'chadi. Sherigingiz tarixi faqat u joylashuvini ulashganda yoziladi.", 'История хранится 24 часа, затем удаляется. История партнёра пишется только пока он передаёт местоположение.'));
+      var note = h('div', 'pldn-love-t', T("Tarix 24 soat saqlanadi, keyin avtomatik o'chadi. O'chirish uchun o'z yozuvingizni bosib turing. Sherigingiz tarixi faqat u joylashuvini ulashganda yoziladi.", 'История хранится 24 часа, затем удаляется. Чтобы удалить, удерживайте свою запись. История партнёра пишется только пока он передаёт местоположение.'));
       var tabs = h('div', 'pldn-love-tabs'), body = h('div');
       var tMe = h('button', 'pldn-love-tab', T('Mening tarixim', 'Моя история')), tPe = h('button', 'pldn-love-tab', peerLabel() + T(' tarixi', ': история'));
       tabs.append(tMe, tPe); sh.append(head, note, tabs, body);
       var loading = false, perr = '';
+      function lp(el, a, b) {
+        var tm = 0, sx = 0, sy = 0, fired = false;
+        function clr() { if (tm) { clearTimeout(tm); tm = 0; } }
+        el.addEventListener('pointerdown', function (e) {
+          fired = false; sx = e.clientX; sy = e.clientY; clr();
+          tm = setTimeout(function () { tm = 0; fired = true; if (navigator.vibrate) { try { navigator.vibrate(15); } catch (_) {} } delMenu(a, b); }, 600);
+        });
+        el.addEventListener('pointermove', function (e) { if (Math.abs(e.clientX - sx) > 10 || Math.abs(e.clientY - sy) > 10) clr(); });
+        ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (n) { el.addEventListener(n, clr); });
+        el.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+        el.addEventListener('click', function (e) { if (fired) { fired = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+      }
+      function delMenu(a, b) {
+        openSheet(function (s2, api2) {
+          s2.appendChild(h('div', 'pldn-love-h', '🗑 ' + T("Tarixni o'chirish", 'Удалить историю')));
+          s2.appendChild(h('div', 'pldn-love-t', T("O'chirilgan tarix qaytmaydi. Sherigingizga «tarix o‘chirildi» deb xabar beriladi.", 'Удалённую историю не вернуть. Партнёр получит уведомление, что история удалена.')));
+          s2.appendChild(btn(T("Shu nuqta(lar)ni o'chirish", 'Удалить эту точку'), 'red', async function () { api2.close(); await deleteMyHist(a, b); render(); toast('🗑 ' + T("O'chirildi", 'Удалено')); }));
+          s2.appendChild(btn(T("Butun tarixni o'chirish", 'Удалить всю историю'), 'red', async function () {
+            var ok = await pldnConfirm(T("Butun tarixingiz o'chirilsinmi? Qaytarib bo'lmaydi.", 'Удалить всю вашу историю? Это нельзя отменить.'));
+            if (!ok) return; api2.close(); await deleteMyHist(); render(); toast('🗑 ' + T("Butun tarix o'chirildi", 'Вся история удалена'));
+          }));
+          s2.appendChild(btn(T('Bekor qilish', 'Отмена'), 'sec', function () { api2.close(); }));
+        });
+      }
       function render() {
         tMe.className = 'pldn-love-tab' + (tab === 'me' ? ' on' : ''); tPe.className = 'pldn-love-tab' + (tab === 'peer' ? ' on' : '');
         body.textContent = '';
@@ -15794,7 +15823,7 @@
             mid.appendChild(h('div', 'pldn-love-h', clock(sp.from) + ' – ' + clock(sp.to) + ' · ' + durText(sp.to - sp.from))).style.marginBottom = '0';
             mid.appendChild(h('div', 'pldn-love-t', P.coord(sp.lat) + ', ' + P.coord(sp.lng)));
             var lf = h('div', 'pldn-love-left', leftText(sp.to)); lf.setAttribute('data-ts', sp.to);
-            r.append(e, mid, lf); r.addEventListener('click', function () { map.setView(sp.lat, sp.lng, Math.max(map.z, 17)); api.close(); });
+            r.append(e, mid, lf); if (isMe) lp(r, sp.from, sp.to); r.addEventListener('click', function () { map.setView(sp.lat, sp.lng, Math.max(map.z, 17)); api.close(); });
             body.appendChild(r);
           });
         }
@@ -15804,7 +15833,7 @@
           mid.appendChild(h('div', 'pldn-love-h', clock(p.ts, true))).style.marginBottom = '0';
           mid.appendChild(h('div', 'pldn-love-t', P.coord(p.lat) + ', ' + P.coord(p.lng)));
           var lf = h('div', 'pldn-love-left', leftText(p.ts)); lf.setAttribute('data-ts', p.ts);
-          r.append(e, mid, lf); r.addEventListener('click', function () { map.setView(p.lat, p.lng, Math.max(map.z, 17)); api.close(); });
+          r.append(e, mid, lf); if (isMe) lp(r, p.ts, p.ts); r.addEventListener('click', function () { map.setView(p.lat, p.lng, Math.max(map.z, 17)); api.close(); });
           body.appendChild(r);
         });
       }
@@ -15821,6 +15850,49 @@
       }, 15000);
     });
   }
+
+  // ---------- tarixni o'chirish (faqat egasi, bosib turib) va sherikka xabar ----------
+  function notifyHistDel(all) {
+    if (!fbDb || !S.uid || !S.peer.uid || S.state !== 'on') return;
+    fbDb.collection('loveHistDel').doc(S.uid).set({ peer: S.peer.uid, all: !!all, at: serverTs() }).catch(function () {});
+  }
+  // a,b bo'lmasa — hammasi; bo'lsa shu vaqt oralig'idagi nuqtalar
+  async function deleteMyHist(a, b) {
+    var all = (a == null);
+    S.hist = all ? [] : S.hist.filter(function (p) { return p.ts < a || p.ts > b; });
+    saveHist();
+    if (all) S.lastHistLoc = null;
+    if (fbDb && S.uid) {
+      try {
+        if (all) await cleanServerHist(true);
+        else {
+          var snap = await fbDb.collection('loveHist').doc(S.uid).collection('pts').where('ts', '>=', a).where('ts', '<=', b).limit(400).get();
+          if (!snap.empty) { var bt = fbDb.batch(); snap.forEach(function (d) { bt.delete(d.ref); }); await bt.commit(); }
+        }
+      } catch (_) {}
+    }
+    notifyHistDel(all);
+    syncMarkers();
+  }
+  var histDelUnsub = null, histDelUid = '';
+  function listenHistDel(uid) {
+    if (histDelUnsub && histDelUid === uid) return;
+    if (histDelUnsub) { try { histDelUnsub(); } catch (_) {} histDelUnsub = null; histDelUid = ''; }
+    if (!uid || !fbDb) return;
+    histDelUid = uid;
+    histDelUnsub = fbDb.collection('loveHistDel').doc(uid).onSnapshot(function (snap) {
+      if (!snap.exists) return;
+      var v = snap.data() || {}, ms = v.at && v.at.toMillis ? v.at.toMillis() : 0;
+      if (!ms || v.peer !== S.uid) return;
+      var k = ''; try { k = pldnUk('pldn_love_histdel_' + uid); } catch (_) {}
+      var seen = 0; try { seen = k ? parseInt(localStorage.getItem(k) || '0', 10) || 0 : 0; } catch (_) {}
+      if (ms <= seen) return;
+      try { if (k) localStorage.setItem(k, String(ms)); } catch (_) {}
+      S.peerHist = []; S.showPeer = false; syncMarkers();
+      toast('🗑 ' + peerLabel() + T(v.all ? ' tarixini o‘chirdi' : ' tarixidan nuqtalarni o‘chirdi', v.all ? ': история удалена' : ': часть истории удалена'));
+    }, function () {});
+  }
+
   // ---------- ⋮ menyu ----------
   $('pldnLoveMore').addEventListener('click', function (e) {
     e.stopPropagation();
@@ -15968,6 +16040,7 @@
     }).catch(function () {});
   }
   function listenPeerLoc(uid) {
+    listenHistDel(uid);
     if (peerUnsub && peerUnsubUid === uid) return;
     if (peerUnsub) { try { peerUnsub(); } catch (_) {} peerUnsub = null; peerUnsubUid = ''; }
     if (!uid) return;
@@ -16188,6 +16261,259 @@
   window.pldnBack = function () {
     try { return !!handle(); } catch (e) { console.error('orqaga', e); return false; }
   };
+})();
+</script>
+
+<script>
+// ===== REAL FOTO VA VIDEO 📸 ===== VERSION: real-v1
+// Faqat kamera (galereya yo'q). ⋮ menyu -> "Real foto va video". Yuborilgan media qalin pushti ramka bilan ko'rinadi.
+(function () {
+  'use strict';
+  if (typeof fbT !== 'function') return;
+  var T = function (a, b) { return fbT(a, b); };
+  var MAX_SEC = 60, VBPS = 900000;
+
+  // ---------- ramka va belgi (pufakchada) ----------
+  var css = document.createElement('style');
+  css.textContent =
+    '.message-bubble.image-bubble.pldn-real{position:relative;padding:7px;background:linear-gradient(135deg,#ff2d87,#ff8cc2 50%,#ff2d87);box-shadow:0 0 0 2px rgba(255,45,135,.28),0 4px 16px rgba(255,45,135,.45)}' +
+    '.message-bubble.image-bubble.pldn-real.has-rx{padding:7px 7px 32px}' +
+    '.message-bubble.image-bubble.pldn-real img{border-radius:10px}' +
+    '.pldn-real-tag{position:absolute;left:14px;top:14px;z-index:2;background:#ff2d87;color:#fff;font-size:11px;font-weight:800;letter-spacing:.4px;padding:3px 8px;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.35);pointer-events:none}' +
+    '#pldnRealOv{position:fixed;inset:0;z-index:100020;background:#000;color:#fff;display:none;flex-direction:column;font-family:inherit}' +
+    '#pldnRealOv.open{display:flex}' +
+    '.pldn-rl-top{display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top,0px)) 10px 8px}' +
+    '.pldn-rl-top .t{flex:1;font-weight:700;font-size:16px;text-align:center}' +
+    '.pldn-rl-ib{width:42px;height:42px;border:0;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;font-size:20px;padding:0}' +
+    '.pldn-rl-stage{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;margin:0 8px}' +
+    '.pldn-rl-stage video,.pldn-rl-stage img{max-width:100%;max-height:100%;width:100%;height:100%;object-fit:contain;background:#000;border-radius:12px}' +
+    '.pldn-rl-stage.front video.live{transform:scaleX(-1)}' +
+    '.pldn-rl-stage.review{border:6px solid #ff2d87;border-radius:20px;box-shadow:0 0 18px rgba(255,45,135,.6)}' +
+    '.pldn-rl-msg{position:absolute;left:12px;right:12px;top:50%;transform:translateY(-50%);text-align:center;font-size:15px;line-height:1.4;background:rgba(0,0,0,.72);padding:14px;border-radius:14px}' +
+    '.pldn-rl-bot{padding:10px 12px calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;align-items:center;gap:12px}' +
+    '.pldn-rl-tabs{display:flex;gap:6px;background:rgba(255,255,255,.12);border-radius:20px;padding:3px}' +
+    '.pldn-rl-tab{border:0;background:transparent;color:#fff;font-size:15px;font-weight:600;padding:7px 20px;border-radius:17px}' +
+    '.pldn-rl-tab.on{background:#ff2d87}' +
+    '.pldn-rl-row{display:flex;align-items:center;justify-content:center;gap:14px;width:100%}' +
+    '.pldn-rl-shut{width:74px;height:74px;border-radius:50%;border:5px solid #ff2d87;background:#fff;padding:0}' +
+    '.pldn-rl-shut.rec{background:#ff3b30;border-color:#fff}' +
+    '.pldn-rl-act{flex:1;max-width:190px;border:0;border-radius:14px;padding:13px 10px;font-size:16px;font-weight:700;background:rgba(255,255,255,.16);color:#fff}' +
+    '.pldn-rl-act.send{background:#ff2d87}' +
+    '.pldn-rl-act:disabled{opacity:.5}' +
+    '.pldn-rl-timer{font-size:15px;font-weight:700;min-height:20px}';
+  document.head.appendChild(css);
+
+  window.pldnRealMark = function (b, m) {
+    try {
+      b.classList.add('pldn-real');
+      var tg = document.createElement('div'); tg.className = 'pldn-real-tag';
+      tg.textContent = '📸 REAL' + (m && m.type === 'video' ? ' · VIDEO' : '');
+      b.insertBefore(tg, b.firstChild);
+    } catch (_) {}
+  };
+
+  // ---------- yordamchilar ----------
+  function h(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
+  function toast(m, ms) {
+    var d = h('div', '', String(m));
+    d.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(0,0,0,.84);color:#fff;padding:10px 18px;border-radius:18px;z-index:100030;font-size:15px;max-width:84%;text-align:center';
+    document.body.appendChild(d); setTimeout(function () { d.remove(); }, ms || 3000);
+  }
+  function mmss(s) { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60); }
+  function errText(e) {
+    var n = (e && e.name) || '', msg = String((e && e.message) || e || '');
+    if (n === 'NotAllowedError' || n === 'PermissionDeniedError' || /permission|denied/i.test(msg))
+      return T("Kamera yoki mikrofon ruxsati berilmagan. Telefon sozlamalari → Ilovalar → PLDN → Ruxsatlar bo'limidan Kamera va Mikrofonni yoqing.", 'Нет доступа к камере или микрофону. Откройте Настройки → Приложения → PLDN → Разрешения и включите Камеру и Микрофон.');
+    if (n === 'NotFoundError' || n === 'DevicesNotFoundError') return T('Bu telefonda kamera topilmadi.', 'Камера на этом телефоне не найдена.');
+    if (n === 'NotReadableError' || n === 'TrackStartError' || n === 'AbortError') return T("Kamera hozir band (boshqa ilova ishlatyapti). Boshqa ilovani yopib, qayta urinib ko'ring.", 'Камера занята другим приложением. Закройте его и попробуйте снова.');
+    if (n === 'OverconstrainedError') return T("Kamera so'ralgan sozlamani qo'llamaydi. Qayta urinib ko'ring.", 'Камера не поддерживает запрошенные настройки. Попробуйте снова.');
+    return T('Kamera ochilmadi: ', 'Камера не открылась: ') + (n || msg);
+  }
+
+  // ---------- oyna ----------
+  var ov = h('div'); ov.id = 'pldnRealOv';
+  var top = h('div', 'pldn-rl-top'), bClose = h('button', 'pldn-rl-ib', '✕'), ttl = h('div', 't'), bFlip = h('button', 'pldn-rl-ib', '🔄');
+  top.append(bClose, ttl, bFlip);
+  var stage = h('div', 'pldn-rl-stage');
+  var live = h('video', 'live'); live.muted = true; live.autoplay = true; live.setAttribute('playsinline', ''); live.playsInline = true;
+  var shot = h('img'); shot.style.display = 'none';
+  var rev = h('video'); rev.style.display = 'none'; rev.controls = true; rev.loop = true; rev.setAttribute('playsinline', ''); rev.playsInline = true;
+  var msgEl = h('div', 'pldn-rl-msg'); msgEl.style.display = 'none';
+  stage.append(live, shot, rev, msgEl);
+  var bot = h('div', 'pldn-rl-bot');
+  var timer = h('div', 'pldn-rl-timer');
+  var tabs = h('div', 'pldn-rl-tabs'), tPhoto = h('button', 'pldn-rl-tab', '📷 ' + 'Foto'), tVideo = h('button', 'pldn-rl-tab', '🎥 ' + 'Video');
+  tabs.append(tPhoto, tVideo);
+  var shutRow = h('div', 'pldn-rl-row'), shut = h('button', 'pldn-rl-shut'); shutRow.appendChild(shut);
+  var revRow = h('div', 'pldn-rl-row'), bRetry = h('button', 'pldn-rl-act', '🔁'), bSend = h('button', 'pldn-rl-act send', '➤');
+  revRow.append(bRetry, bSend);
+  bot.append(timer, tabs, shutRow, revRow);
+  ov.append(top, stage, bot);
+  document.body.appendChild(ov);
+
+  // holat: live | rec | review | busy
+  var S = { open: false, mode: 'photo', facing: 'environment', stream: null, state: 'live', chat: null, rec: null, chunks: [], sec: 0, iv: 0, blob: null, dur: 0, thumb: '', photo: '', url: '', starting: false };
+
+  function labels() {
+    ttl.textContent = '📸 ' + T('Real foto va video', 'Реальное фото и видео');
+    tPhoto.textContent = '📷 ' + T('Foto', 'Фото'); tVideo.textContent = '🎥 ' + T('Video', 'Видео');
+    bRetry.textContent = '🔁 ' + T('Qayta olish', 'Переснять'); bSend.textContent = '➤ ' + T('Yuborish', 'Отправить');
+  }
+  function stopStream() {
+    if (S.stream) { try { S.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (_) {} S.stream = null; }
+    try { live.srcObject = null; } catch (_) {}
+  }
+  function clearReview() {
+    if (S.url) { try { URL.revokeObjectURL(S.url); } catch (_) {} S.url = ''; }
+    try { rev.pause(); } catch (_) {} rev.removeAttribute('src'); try { rev.load(); } catch (_) {}
+    shot.removeAttribute('src'); S.blob = null; S.photo = ''; S.thumb = '';
+  }
+  function showMsg(t) { if (t) { msgEl.textContent = t; msgEl.style.display = 'block'; } else msgEl.style.display = 'none'; }
+  function paint() {
+    var isLive = S.state === 'live' || S.state === 'rec', isRev = S.state === 'review' || S.state === 'busy';
+    live.style.display = isLive ? 'block' : 'none';
+    shot.style.display = (isRev && S.mode === 'photo') ? 'block' : 'none';
+    rev.style.display = (isRev && S.mode === 'video') ? 'block' : 'none';
+    stage.classList.toggle('review', isRev);
+    stage.classList.toggle('front', S.facing === 'user');
+    tabs.style.display = S.state === 'live' ? 'flex' : 'none';
+    shutRow.style.display = isLive ? 'flex' : 'none';
+    revRow.style.display = isRev ? 'flex' : 'none';
+    bFlip.style.visibility = S.state === 'live' ? 'visible' : 'hidden';
+    tPhoto.classList.toggle('on', S.mode === 'photo'); tVideo.classList.toggle('on', S.mode === 'video');
+    shut.classList.toggle('rec', S.state === 'rec');
+    bSend.disabled = bRetry.disabled = S.state === 'busy';
+    timer.textContent = S.state === 'rec' ? '🔴 ' + mmss(S.sec) + ' / ' + mmss(MAX_SEC) : (S.state === 'live' && S.mode === 'video' ? T('Yozish uchun bosing (eng ko\'pi ' + MAX_SEC + ' soniya)', 'Нажмите для записи (максимум ' + MAX_SEC + ' с)') : '');
+  }
+
+  async function startStream() {
+    if (S.starting || !S.open) return;
+    S.starting = true; showMsg(''); stopStream();
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw { name: 'NotFoundError' };
+      var P = (window.Capacitor && window.Capacitor.Plugins) || {};
+      try { if (P.Camera && P.Camera.requestPermissions) await P.Camera.requestPermissions({ permissions: ['camera'] }); } catch (_) {}
+      if (S.mode === 'video') {
+        try { if (P.VoiceRecorder) { var hp = await P.VoiceRecorder.hasAudioRecordingPermission(); if (!hp || hp.value === false) await P.VoiceRecorder.requestAudioRecordingPermission(); } } catch (_) {}
+      }
+      var st;
+      try {
+        st = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: S.facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+          audio: S.mode === 'video' ? { echoCancellation: true, noiseSuppression: true } : false
+        });
+      } catch (e1) {
+        if (e1 && (e1.name === 'OverconstrainedError' || e1.name === 'NotFoundError')) {
+          st = await navigator.mediaDevices.getUserMedia({ video: true, audio: S.mode === 'video' });
+        } else throw e1;
+      }
+      if (!S.open) { st.getTracks().forEach(function (t) { t.stop(); }); return; }
+      S.stream = st; live.srcObject = st; live.play().catch(function () {});
+    } catch (e) { showMsg(errText(e)); }
+    finally { S.starting = false; paint(); }
+  }
+
+  function grabFrame(maxDim, q) {
+    var w = live.videoWidth, hh = live.videoHeight;
+    if (!w || !hh) return '';
+    var k = Math.min(1, maxDim / Math.max(w, hh)), cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(hh * k));
+    cv.getContext('2d').drawImage(live, 0, 0, cv.width, cv.height);
+    return cv.toDataURL('image/jpeg', q);
+  }
+
+  function takePhoto() {
+    if (S.state !== 'live' || !S.stream) { if (!S.stream) startStream(); return; }
+    var d = grabFrame(1600, 0.88);
+    if (!d) { toast(T("Kamera hali tayyor emas, bir soniya kuting", 'Камера ещё не готова, подождите секунду')); return; }
+    S.photo = d; shot.src = d; stopStream(); S.state = 'review'; paint();
+  }
+  function startRec() {
+    if (S.state !== 'live' || !S.stream) { if (!S.stream) startStream(); return; }
+    if (typeof MediaRecorder === 'undefined') { showMsg(T('Bu telefonda video yozish ishlamaydi.', 'Запись видео на этом телефоне не работает.')); return; }
+    var mt = ['video/webm;codecs=vp8,opus', 'video/webm'].find(function (t) { try { return MediaRecorder.isTypeSupported(t); } catch (_) { return false; } }) || '';
+    try { S.rec = new MediaRecorder(S.stream, mt ? { mimeType: mt, videoBitsPerSecond: VBPS, audioBitsPerSecond: 48000 } : { videoBitsPerSecond: VBPS }); }
+    catch (e) { showMsg(T('Video yozishni boshlab bo\'lmadi: ', 'Не удалось начать запись: ') + ((e && e.name) || e)); return; }
+    S.chunks = []; S.sec = 0; S.thumb = grabFrame(320, 0.7);
+    S.rec.ondataavailable = function (e) { if (e.data && e.data.size) S.chunks.push(e.data); };
+    S.rec.onstop = function () {
+      clearInterval(S.iv); S.iv = 0;
+      var rc = S.rec; S.rec = null;
+      if (!S.open) return;
+      var blob = new Blob(S.chunks, { type: ((rc && rc.mimeType) || 'video/webm').split(';')[0] });
+      if (blob.size < 1000) { S.state = 'live'; paint(); showMsg(T('Video yozilmadi, qayta urinib ko\'ring.', 'Видео не записалось, попробуйте снова.')); return; }
+      S.blob = blob; S.dur = Math.max(1, S.sec);
+      stopStream(); S.url = URL.createObjectURL(blob); rev.src = S.url; rev.play().catch(function () {});
+      S.state = 'review'; paint();
+    };
+    try { S.rec.start(1000); } catch (e) { showMsg(String((e && e.name) || e)); return; }
+    S.state = 'rec'; paint();
+    S.iv = setInterval(function () { S.sec++; paint(); if (S.sec >= MAX_SEC) stopRec(); }, 1000);
+  }
+  function stopRec() { if (S.rec && S.rec.state !== 'inactive') { try { S.rec.stop(); } catch (_) {} } }
+
+  function closeAll() {
+    if (S.iv) { clearInterval(S.iv); S.iv = 0; }
+    if (S.rec) { try { S.rec.onstop = null; if (S.rec.state !== 'inactive') S.rec.stop(); } catch (_) {} S.rec = null; }
+    stopStream(); clearReview();
+    S.open = false; S.state = 'live'; S.chunks = []; showMsg('');
+    ov.classList.remove('open');
+  }
+
+  async function send() {
+    if (S.state !== 'review') return;
+    var cur = (typeof fbCurrentChat !== 'undefined') ? fbCurrentChat : null;
+    if (!cur || !S.chat || cur.id !== S.chat.id) { toast(T('Chat o\'zgargan. Qaytadan oching.', 'Чат изменился. Откройте заново.'), 3500); closeAll(); return; }
+    S.state = 'busy'; paint();
+    var mode = S.mode, photo = S.photo, blob = S.blob, dur = S.dur, thumb = S.thumb;
+    closeAll();
+    try {
+      if (mode === 'photo') {
+        if (typeof window.fbSendImageFile !== 'function') throw new Error('rasm moduli tayyor emas');
+        await window.fbSendImageFile(photo, { real: true, cap: Date.now() });
+      } else {
+        if (typeof window.pldnSendVideo !== 'function') throw new Error('video moduli tayyor emas');
+        await window.pldnSendVideo(null, { pr: { blob: blob, dur: dur }, thumb: thumb, extra: { real: true, cap: Date.now() } });
+      }
+    } catch (e) { alert(T('Yuborilmadi: ', 'Не отправлено: ') + String((e && (e.message || e.code)) || e)); }
+  }
+
+  function openReal() {
+    var cur = (typeof fbCurrentChat !== 'undefined') ? fbCurrentChat : null;
+    if (!cur) { toast(T('Avval chatni oching', 'Сначала откройте чат')); return; }
+    S.chat = cur; S.open = true; S.state = 'live'; S.mode = 'photo'; S.facing = 'environment'; clearReview();
+    labels(); paint(); ov.classList.add('open');
+    startStream();
+  }
+
+  bClose.addEventListener('click', closeAll);
+  bFlip.addEventListener('click', function () { if (S.state !== 'live') return; S.facing = S.facing === 'user' ? 'environment' : 'user'; paint(); startStream(); });
+  tPhoto.addEventListener('click', function () { if (S.state !== 'live' || S.mode === 'photo') return; S.mode = 'photo'; paint(); startStream(); });
+  tVideo.addEventListener('click', function () { if (S.state !== 'live' || S.mode === 'video') return; S.mode = 'video'; paint(); startStream(); });
+  shut.addEventListener('click', function () {
+    if (S.state === 'rec') { stopRec(); return; }
+    if (S.mode === 'photo') takePhoto(); else startRec();
+  });
+  bRetry.addEventListener('click', function () { if (S.state !== 'review') return; clearReview(); S.state = 'live'; paint(); startStream(); });
+  bSend.addEventListener('click', send);
+  // ilova fonga o'tsa kamera o'chadi (resurs tejash); qaytganda qayta yoqiladi
+  document.addEventListener('visibilitychange', function () {
+    if (!S.open) return;
+    if (document.hidden) { if (S.state === 'rec') stopRec(); else if (S.state === 'live') stopStream(); }
+    else if (S.state === 'live' && !S.stream) startStream();
+  });
+
+  // ---------- ⋮ menyuga qo'shish (shaxsiy chat, guruh, kanal) ----------
+  var origItems = window.pldnWpItems;
+  window.pldnWpItems = function () {
+    var a = [];
+    try { a = origItems ? (origItems.apply(this, arguments) || []) : []; } catch (_) { a = []; }
+    var bar = document.querySelector('#chatDetailScreen .chat-input-bar');
+    var canWrite = !bar || bar.style.display !== 'none';
+    if (canWrite) a.push({ icon: '📸', label: T('Real foto va video', 'Реальное фото и видео'), fn: openReal });
+    return a;
+  };
+  window.pldnRealOpen = openReal;
 })();
 </script>
 </body>
