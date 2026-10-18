@@ -1,4 +1,4 @@
-<!-- VERSION: 160 -->
+<!-- VERSION: 163 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -759,6 +759,8 @@
   .pldn-call-ov.mode-in .cb-red.cb-decline, .pldn-call-ov.mode-in .cb-green { display: flex; }
   .pldn-call-ov.mode-out .cb-end, .pldn-call-ov.mode-active .cb-end, .pldn-call-ov.mode-out .cb-ctl.cb-mute, .pldn-call-ov.mode-active .cb-ctl.cb-mute { display: flex; }
   .pldn-call-ov.is-video.mode-out .cb-cam, .pldn-call-ov.is-video.mode-active .cb-cam { display: flex; }
+  .pldn-call-ov.is-video.mode-out .cb-mir, .pldn-call-ov.is-video.mode-active .cb-mir { display: flex; }
+  .cb-mir.on { background: #ff2d87; }
   /* Qo'ng'iroqni yozib olish */
   .pldn-call-more { position: absolute; top: calc(16px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 4; width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255,255,255,.18); color: #fff; font-size: 24px; display: none; align-items: center; justify-content: center; }
   .pldn-call-ov.connected .pldn-call-more { display: flex; }
@@ -3724,6 +3726,7 @@
   </div>
   <div class="pldn-call-bar">
     <button class="cb cb-ctl cb-mute" id="pldnCallMute">🎤</button>
+    <button class="cb cb-ctl cb-mir" id="pldnCallMir">🪞</button>
     <button class="cb cb-ctl cb-cam" id="pldnCallCam">📹</button>
     <button class="cb cb-red cb-decline" id="pldnCallDecline">✖</button>
     <button class="cb cb-green" id="pldnCallAccept">📞</button>
@@ -9854,6 +9857,7 @@
     setMode(null);
     $('pldnCallRemote').srcObject = null;
     $('pldnCallLocal').srcObject = null;
+    $('pldnCallRemote').style.transform = 'none';
   }
 
   // ----- media -----
@@ -9901,6 +9905,7 @@
     const rv = $('pldnCallRemote');
     rv.srcObject = c.remote;
     $('pldnCallLocal').srcObject = c.stream;
+    applyMir(c, null);
     c.stream.getTracks().forEach(function (tr) { pc.addTrack(tr, c.stream); });
     pc.ontrack = function (e) {
       const tr = e.track;
@@ -9932,6 +9937,7 @@
     ringStop();
     if (c.timeout) { clearTimeout(c.timeout); c.timeout = null; }
     $('pldnCallOv').classList.add('connected');
+    pushMir(c); applyMir(c, c.lastDoc);
     setMode('active');
     const t0 = Date.now();
     const tick = function () {
@@ -9976,8 +9982,21 @@
     } else if (!call) hideUi();
   }
 
+  // ----- ko'zgu tanlovi: o'zim qanday ko'rsam, sherik ham shunday ko'radi -----
+  let mirOn = false; try { mirOn = localStorage.getItem('pldn_real_mir') === '1'; } catch (_) {}
+  function applyMir(c, d) {
+    $('pldnCallLocal').style.transform = mirOn ? 'scaleX(-1)' : 'none';
+    $('pldnCallRemote').style.transform = (d && d.mir && c && d.mir[c.peer] === true) ? 'scaleX(-1)' : 'none';
+    const b = $('pldnCallMir'); if (b) b.classList.toggle('on', mirOn);
+  }
+  function pushMir(c) {
+    if (!c || !c.ref || c.ended || !c.connected) return;
+    const o = {}; o[c.me] = mirOn;
+    c.ref.set({ mir: o }, { merge: true }).catch(function () {});
+  }
   function onCallDoc(c, d) {
     if (c.ended) return;
+    c.lastDoc = d; applyMir(c, d);
     const pr = !!(d.rec && d.rec[c.peer]);
     if (pr !== !!c.peerRec) { c.peerRec = pr; recUi(); }
     if (c.role === 'caller' && d.answer && c.pc && !c.pc.currentRemoteDescription && !c.settingRemote) {
@@ -10266,6 +10285,10 @@
     const tr = c.stream.getAudioTracks(); if (!tr.length) return;
     const on = !tr[0].enabled; tr.forEach(function (x) { x.enabled = on; });
     this.classList.toggle('off', !on); this.textContent = on ? '🎤' : '🔇';
+  });
+  $('pldnCallMir').addEventListener('click', function () {
+    mirOn = !mirOn; try { localStorage.setItem('pldn_real_mir', mirOn ? '1' : '0'); } catch (_) {}
+    const c = call; applyMir(c, c && c.lastDoc); pushMir(c);
   });
   $('pldnCallCam').addEventListener('click', function () {
     const c = call; if (!c || !c.stream) return;
