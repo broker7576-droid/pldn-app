@@ -1,4 +1,4 @@
-<!-- VERSION: 157 -->
+<!-- VERSION: 158 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -15013,7 +15013,7 @@
 })();
 </script>
 <script>
-// ===== SEVGI REJIMI ❤️📍 (5-g'oya, 1-bosqich) ===== VERSION: love-v1
+// ===== SEVGI REJIMI ❤️📍 (5-g'oya, 1-bosqich) ===== VERSION: love-v2
 // Xarita (o'z canvas xaritamiz, OpenStreetMap plitkalari), stikerli joylar, ikki tomonlama rozilik, jonli joylashuv.
 // Hozircha Firestore orqali (sinov); keyin o'z serveriga ko'chiriladi.
 (function () {
@@ -15053,7 +15053,34 @@
       if (h < 24) return ['h', h];
       return ['d', Math.floor(h / 24)];
     },
-    isStale: function (ts, now) { return (now - ts) > STALE_MS; }
+    isStale: function (ts, now) { return (now - ts) > STALE_MS; },
+    // Tarix 24 soat saqlanadi. Qolgan vaqt: 24,23..2,1 soat -> 50,40,30,20,10 minut -> 5 -> 1 minut
+    HIST_MS: 24 * 3600 * 1000,
+    remain: function (ms) {
+      if (ms <= 0) return ['x', 0];
+      var m = ms / 60000;
+      if (m > 60) return ['h', Math.ceil(m / 60)];
+      if (m > 10) { var k = Math.ceil(m / 10) * 10; return k >= 60 ? ['h', 1] : ['m', k]; }
+      if (m > 5) return ['m', 10];
+      if (m > 1) return ['m', 5];
+      return ['m', 1];
+    },
+    // to'xtash joylari: 40 m ichida 5 daqiqadan uzoq turilgan joy (pts: ts bo'yicha o'sish tartibida)
+    stops: function (pts) {
+      var out = [], i = 0, n = pts.length;
+      while (i < n) {
+        var j = i + 1;
+        while (j < n && P.dist(pts[i], pts[j]) <= 40) j++;
+        var last = pts[j - 1];
+        if (j - 1 > i && last.ts - pts[i].ts >= 5 * 60000) {
+          var sa = 0, so = 0, c = 0, k;
+          for (k = i; k < j; k++) { sa += pts[k].lat; so += pts[k].lng; c++; }
+          out.push({ lat: sa / c, lng: so / c, from: pts[i].ts, to: last.ts });
+          i = j;
+        } else i++;
+      }
+      return out;
+    }
   };
 
   // ---------- O'z xaritamiz: canvas, pan / pinch / zoom, plitkalar, belgilar ----------
@@ -15066,7 +15093,7 @@
     var W = 0, H = 0, dpr = 1, raf = 0, retryTimer = 0, failed = false;
     var MINZ = 2, MAXZ = 19;
     self.z = 3; self.cx = P.lngToX(0, 3); self.cy = P.latToY(20, 3);
-    self.markers = [];
+    self.markers = []; self.paths = [];
     self.onTap = null; self.onLongPress = null; self.onTileState = null;
     var tiles = new Map();
 
@@ -15113,6 +15140,13 @@
     function drawMarkers(dark) {
       fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       fctx.clearRect(0, 0, W, H);
+      self.paths.forEach(function (pa) {
+        if (!pa.pts || pa.pts.length < 2) return;
+        fctx.save(); fctx.lineJoin = 'round'; fctx.lineCap = 'round'; fctx.lineWidth = 4; fctx.strokeStyle = pa.color; fctx.globalAlpha = 0.85;
+        fctx.beginPath();
+        pa.pts.forEach(function (q, ix) { var sp = toScreen(q.lat, q.lng); if (ix) fctx.lineTo(sp.x, sp.y); else fctx.moveTo(sp.x, sp.y); });
+        fctx.stroke(); fctx.restore();
+      });
       var order = { place: 0, peer: 1, me: 2 };
       var list = self.markers.slice().sort(function (a, b) { return order[a.kind] - order[b.kind]; });
       list.forEach(function (m) {
@@ -15204,6 +15238,7 @@
     };
     self.zoomBy = function (dz) { self.zoomAt(W / 2, H / 2, dz); };
     self.setMarkers = function (arr) { self.markers = arr || []; self.invalidate(); };
+    self.setPaths = function (arr) { self.paths = arr || []; self.invalidate(); };
     self.fitPoints = function (pts) {
       if (!pts || !pts.length) return;
       if (pts.length === 1) { self.setView(pts[0].lat, pts[0].lng, 16); return; }
@@ -15328,7 +15363,8 @@
     peer: { uid: '', name: '', username: '' }, peerDoc: null, peerWasLive: false,
     myLoc: null, sharing: false, geoStatus: '', centered: false,
     places: [], online: (typeof navigator === 'undefined') || navigator.onLine !== false,
-    lastPubAt: 0, lastPubLoc: null, lastOkAt: 0, pubFails: 0, pubErr: '', busy: false
+    lastPubAt: 0, lastPubLoc: null, lastOkAt: 0, pubFails: 0, pubErr: '', busy: false,
+    hist: [], peerHist: [], showMe: false, showPeer: false, lastHistUp: 0, lastHistLoc: null
   };
   P._S = S; // faqat sinov uchun
   var linkUnsub = null, peerUnsub = null, peerUnsubUid = '', map = null, firstOpen = true;
@@ -15372,13 +15408,23 @@
     '.pldn-love-st.on{border-color:#2AABEE}' +
     '.pldn-love-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--divider-color);cursor:pointer}' +
     '.pldn-love-row .e{font-size:22px;width:30px;text-align:center}' +
+    '.pldn-love-more{margin-left:auto;width:40px;height:40px;border:0;border-radius:50%;background:transparent;color:var(--text-primary);font-size:24px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center;padding:0}' +
+    '.pldn-love-more:active{background:var(--bg-card)}' +
+    '.pldn-love-menu{position:fixed;right:10px;top:56px;background:var(--bg-elevated);color:var(--text-primary);border-radius:12px;box-shadow:0 4px 18px rgba(0,0,0,.3);min-width:170px;padding:4px 0;z-index:100001}' +
+    '.pldn-love-mi{padding:12px 16px;font-size:16px;cursor:pointer}' +
+    '.pldn-love-mi:active{background:var(--bg-card)}' +
+    '.pldn-love-tabs{display:flex;gap:8px;margin:10px 0 4px}' +
+    '.pldn-love-tab{flex:1;border:0;border-radius:10px;padding:9px 6px;font-size:14px;font-weight:600;background:var(--bg-card);color:var(--text-primary)}' +
+    '.pldn-love-tab.on{background:#2AABEE;color:#fff}' +
+    '.pldn-love-left{margin-left:auto;font-size:12px;font-weight:600;color:#ff9500;white-space:nowrap;padding-left:8px}' +
     '.pldn-love-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff3b30;margin-left:6px}';
   document.head.appendChild(st);
 
   var BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>';
   var scr = h('div', 'screen'); scr.id = 'pldnLoveScreen';
   scr.innerHTML = '<div class="chat-detail-header"><button class="chat-back-btn" id="pldnLoveBack">' + BACK + '</button>' +
-    '<div class="chat-detail-info"><div class="chat-detail-name" id="pldnLoveTitle"></div></div></div>' +
+    '<div class="chat-detail-info"><div class="chat-detail-name" id="pldnLoveTitle"></div></div>' +
+    '<button class="pldn-love-more" id="pldnLoveMore" aria-label="Menu">&#8942;</button></div>' +
     '<div class="pldn-love-wrap"><div class="pldn-love-mapbox" id="pldnLoveMap"></div><div class="pldn-love-panel" id="pldnLovePanel"></div></div>';
   var anchorScreen = $('chatDetailScreen') || $('pldnSettingsScreen');
   if (!anchorScreen || !anchorScreen.parentNode) return;
@@ -15448,6 +15494,10 @@
       arr.push({ kind: 'me', lat: S.myLoc.lat, lng: S.myLoc.lng, acc: S.myLoc.acc, color: COL_ME, emoji: '●', stale: mst, label: T('Siz', 'Вы') + (mst ? ' · ' + T('oxirgi', 'последнее') : '') });
     }
     map.setMarkers(arr);
+    var paths = [];
+    if (S.showMe && S.hist.length > 1) paths.push({ color: COL_ME, pts: S.hist });
+    if (S.showPeer && S.peerHist.length > 1) paths.push({ color: COL_PEER, pts: S.peerHist });
+    map.setPaths(paths);
   }
 
   // ---------- oynalar (sheet) ----------
@@ -15651,6 +15701,143 @@
   }
   function renderAll() { renderStatus(); renderLink(); renderCards(); renderPlaces(); syncMarkers(); }
 
+
+  // ---------- TARIX (2-bosqich): 24 soat saqlanadi, qolgan vaqt kamayib boradi ----------
+  function histKey() { try { return pldnUk('pldn_love_hist'); } catch (_) { return ''; } }
+  function fresh(a) { var c = Date.now() - P.HIST_MS; return a.filter(function (p) { return p && typeof p.lat === 'number' && typeof p.lng === 'number' && typeof p.ts === 'number' && p.ts > c; }); }
+  function loadHist() {
+    S.hist = []; var k = histKey(); if (!k) return;
+    try { var a = JSON.parse(localStorage.getItem(k) || '[]'); if (Array.isArray(a)) S.hist = fresh(a); } catch (_) {}
+  }
+  function saveHist() { var k = histKey(); if (!k) return; try { localStorage.setItem(k, JSON.stringify(S.hist.slice(-1500))); } catch (_) {} }
+  function recordMine(L) {
+    if (!L || !S.uid) return;
+    var last = S.hist[S.hist.length - 1];
+    if (last && L.ts - last.ts < 60000 && P.dist(last, L) < 25) return;
+    if (last && L.ts <= last.ts) return;
+    S.hist.push({ lat: L.lat, lng: L.lng, acc: Math.round(L.acc || 0), ts: L.ts });
+    S.hist = fresh(S.hist); saveHist();
+  }
+  function uploadHist(L) {
+    if (!fbDb || !S.uid || !S.peer.uid || !L) return;
+    var now = Date.now();
+    if (S.lastHistLoc && now - S.lastHistUp < 60000 && P.dist(S.lastHistLoc, L) < 25) return;
+    S.lastHistUp = now; S.lastHistLoc = { lat: L.lat, lng: L.lng };
+    fbDb.collection('loveHist').doc(S.uid).collection('pts').doc(String(L.ts))
+      .set({ peer: S.peer.uid, lat: L.lat, lng: L.lng, acc: Math.round(L.acc || 0), ts: L.ts }).catch(function () {});
+  }
+  // all=true: hammasini o'chirish; aks holda faqat 24 soatdan eskilarini
+  async function cleanServerHist(all) {
+    if (!fbDb || !S.uid) return;
+    try {
+      var q = fbDb.collection('loveHist').doc(S.uid).collection('pts');
+      if (!all) q = q.where('ts', '<', Date.now() - P.HIST_MS);
+      for (var rounds = 0; rounds < 6; rounds++) {
+        var snap = await q.limit(200).get();
+        if (snap.empty) break;
+        var b = fbDb.batch(); snap.forEach(function (d) { b.delete(d.ref); }); await b.commit();
+        if (snap.size < 200) break;
+      }
+    } catch (_) {}
+  }
+  async function loadPeerHist() {
+    if (!fbDb || S.state !== 'on' || !S.peer.uid) { S.peerHist = []; return; }
+    try {
+      var snap = await fbDb.collection('loveHist').doc(S.peer.uid).collection('pts').where('ts', '>', Date.now() - P.HIST_MS).orderBy('ts').limit(1500).get();
+      var a = []; snap.forEach(function (d) { var v = d.data() || {}; if (typeof v.lat === 'number' && typeof v.lng === 'number' && typeof v.ts === 'number') a.push({ lat: v.lat, lng: v.lng, acc: v.acc || 0, ts: v.ts }); });
+      S.peerHist = a;
+    } catch (e) { S.peerHist = []; throw e; }
+  }
+  function leftText(ts) {
+    var r = P.remain(ts + P.HIST_MS - Date.now());
+    if (r[0] === 'x') return T('muddati tugadi', 'срок истёк');
+    if (r[0] === 'h') return T(r[1] + ' soat qoldi', 'осталось ' + r[1] + ' ч.');
+    return T(r[1] + ' minut qoldi', 'осталось ' + r[1] + ' мин.');
+  }
+  function durText(ms) {
+    var m = Math.max(1, Math.round(ms / 60000));
+    if (m < 60) return T(m + ' daqiqa', m + ' мин.');
+    var hh = Math.floor(m / 60), mm = m % 60;
+    return T(hh + ' soat' + (mm ? ' ' + mm + ' daqiqa' : ''), hh + ' ч.' + (mm ? ' ' + mm + ' мин.' : ''));
+  }
+  function openHistory() {
+    var tab = 'me', ticker = 0;
+    openSheet(function (sh, api) {
+      var origClose = api.close;
+      api.close = function () { if (ticker) { clearInterval(ticker); ticker = 0; } origClose(); };
+      var head = h('div', 'pldn-love-h', '🕘 ' + T('Tarix', 'История'));
+      var note = h('div', 'pldn-love-t', T("Tarix 24 soat saqlanadi, keyin avtomatik o'chadi. Sherigingiz tarixi faqat u joylashuvini ulashganda yoziladi.", 'История хранится 24 часа, затем удаляется. История партнёра пишется только пока он передаёт местоположение.'));
+      var tabs = h('div', 'pldn-love-tabs'), body = h('div');
+      var tMe = h('button', 'pldn-love-tab', T('Mening tarixim', 'Моя история')), tPe = h('button', 'pldn-love-tab', peerLabel() + T(' tarixi', ': история'));
+      tabs.append(tMe, tPe); sh.append(head, note, tabs, body);
+      var loading = false, perr = '';
+      function render() {
+        tMe.className = 'pldn-love-tab' + (tab === 'me' ? ' on' : ''); tPe.className = 'pldn-love-tab' + (tab === 'peer' ? ' on' : '');
+        body.textContent = '';
+        var isMe = tab === 'me', pts = fresh(isMe ? S.hist : S.peerHist);
+        if (!isMe && S.state !== 'on') { body.appendChild(h('div', 'pldn-love-t', T("Sevgi rejimi yoqilmagan.", 'Режим любви не включён.'))); return; }
+        if (!isMe && loading) { body.appendChild(h('div', 'pldn-love-t', T('Yuklanmoqda...', 'Загрузка...'))); return; }
+        if (!isMe && perr) { body.appendChild(h('div', 'pldn-love-warn', '⚠️ ' + (perr === 'permission-denied' ? T("Tarix serverda hali sozlanmagan: Firestore qoidalariga loveHist blokini qo'shing.", 'История ещё не настроена на сервере: добавьте блок loveHist в правила Firestore.') : T('Tarixni yuklab bo‘lmadi', 'Не удалось загрузить историю')))); return; }
+        if (!pts.length) { body.appendChild(h('div', 'pldn-love-t', isMe ? T("Hozircha yozuv yo'q. Joylashuv yoqilganda nuqtalar shu yerda paydo bo'ladi.", 'Пока записей нет. Точки появятся при включённом местоположении.') : T("Hozircha yozuv yo'q. Sherigingiz joylashuvini ulashganda paydo bo'ladi.", 'Пока записей нет. Появятся, когда партнёр передаёт местоположение.'))); return; }
+        var shown = isMe ? S.showMe : S.showPeer;
+        var tg = btn((shown ? '🙈 ' + T("Yo'lni yashirish", 'Скрыть путь') : '🛣 ' + T("Yo'lni xaritada ko'rsatish", 'Показать путь на карте')), 'sec', function () {
+          if (isMe) S.showMe = !S.showMe; else S.showPeer = !S.showPeer;
+          syncMarkers();
+          if (!shown) { map.fitPoints(pts.map(function (p) { return { lat: p.lat, lng: p.lng }; })); api.close(); } else render();
+        });
+        body.appendChild(tg);
+        var stops = P.stops(pts).reverse();
+        if (stops.length) {
+          body.appendChild(h('div', 'pldn-love-h', '🛑 ' + T("To'xtagan joylar", 'Остановки'))).style.marginTop = '12px';
+          stops.forEach(function (sp) {
+            var r = h('div', 'pldn-love-row'), e = h('div', 'e', '🛑'), mid = h('div'); mid.style.flex = '1';
+            mid.appendChild(h('div', 'pldn-love-h', clock(sp.from) + ' – ' + clock(sp.to) + ' · ' + durText(sp.to - sp.from))).style.marginBottom = '0';
+            mid.appendChild(h('div', 'pldn-love-t', P.coord(sp.lat) + ', ' + P.coord(sp.lng)));
+            var lf = h('div', 'pldn-love-left', leftText(sp.to)); lf.setAttribute('data-ts', sp.to);
+            r.append(e, mid, lf); r.addEventListener('click', function () { map.setView(sp.lat, sp.lng, Math.max(map.z, 17)); api.close(); });
+            body.appendChild(r);
+          });
+        }
+        body.appendChild(h('div', 'pldn-love-h', '📍 ' + T('Nuqtalar', 'Точки') + ' (' + pts.length + ')')).style.marginTop = '12px';
+        pts.slice().reverse().slice(0, 150).forEach(function (p) {
+          var r = h('div', 'pldn-love-row'), e = h('div', 'e', isMe ? '🔵' : '❤️'), mid = h('div'); mid.style.flex = '1';
+          mid.appendChild(h('div', 'pldn-love-h', clock(p.ts, true))).style.marginBottom = '0';
+          mid.appendChild(h('div', 'pldn-love-t', P.coord(p.lat) + ', ' + P.coord(p.lng)));
+          var lf = h('div', 'pldn-love-left', leftText(p.ts)); lf.setAttribute('data-ts', p.ts);
+          r.append(e, mid, lf); r.addEventListener('click', function () { map.setView(p.lat, p.lng, Math.max(map.z, 17)); api.close(); });
+          body.appendChild(r);
+        });
+      }
+      tMe.addEventListener('click', function () { tab = 'me'; render(); });
+      tPe.addEventListener('click', async function () {
+        tab = 'peer'; loading = true; perr = ''; render();
+        try { await loadPeerHist(); } catch (e) { perr = (e && e.code) || 'error'; }
+        loading = false; if (sh.isConnected) render();
+      });
+      render();
+      ticker = setInterval(function () {
+        if (!sh.isConnected) { clearInterval(ticker); ticker = 0; return; }
+        Array.prototype.forEach.call(body.querySelectorAll('.pldn-love-left'), function (el) { el.textContent = leftText(parseInt(el.getAttribute('data-ts'), 10)); });
+      }, 15000);
+    });
+  }
+  // ---------- ⋮ menyu ----------
+  $('pldnLoveMore').addEventListener('click', function (e) {
+    e.stopPropagation();
+    var old = document.getElementById('pldnLoveMenu'); if (old) { old.remove(); return; }
+    var m = h('div', 'pldn-love-menu'); m.id = 'pldnLoveMenu';
+    var it = h('div', 'pldn-love-mi', '🕘 ' + T('Tarix', 'История'));
+    it.addEventListener('click', function () { m.remove(); openHistory(); });
+    m.appendChild(it); document.body.appendChild(m);
+    setTimeout(function () { document.addEventListener('click', function cl() { m.remove(); document.removeEventListener('click', cl); }); }, 0);
+  });
+  // 24 soatdan o'tgan yozuvlarni davriy tozalash
+  setInterval(function () {
+    if (!S.uid) return;
+    var n = S.hist.length; S.hist = fresh(S.hist); if (S.hist.length !== n) saveHist();
+    S.peerHist = fresh(S.peerHist);
+  }, 5 * 60000);
+
   // ---------- joylashuv (GPS) ----------
   var geoWatch = null, geoNativeOn = false, geoStarting = false;
   function nativeGeo() {
@@ -15663,6 +15850,7 @@
     var ts = pos.timestamp > 1e12 ? pos.timestamp : Date.now();
     S.myLoc = { lat: c.latitude, lng: c.longitude, acc: c.accuracy || 0, ts: ts };
     setGeo('ok'); S.geoStatus = 'ok';
+    recordMine(S.myLoc);
     if (map && !S.centered && scr.classList.contains('active')) { S.centered = true; map.setView(S.myLoc.lat, S.myLoc.lng, 16); }
     maybePublish(false);
     renderStatus(); renderCards(); syncMarkers();
@@ -15717,7 +15905,7 @@
     }
     S.lastPubAt = now; S.lastPubLoc = { lat: L.lat, lng: L.lng };
     fbDb.collection('loveLoc').doc(S.uid).set({ peer: S.peer.uid, lat: L.lat, lng: L.lng, acc: Math.round(L.acc || 0), ts: L.ts, sharing: true, at: serverTs() })
-      .then(function () { S.pubFails = 0; S.pubErr = ''; S.lastOkAt = Date.now(); renderStatus(); })
+      .then(function () { S.pubFails = 0; S.pubErr = ''; S.lastOkAt = Date.now(); uploadHist(L); renderStatus(); })
       .catch(function (e) { S.pubFails++; S.pubErr = (e && e.code) || 'error'; renderStatus(); });
   }
   async function startSharing() {
@@ -15738,7 +15926,7 @@
   }
   function ownLocDelete() {
     if (!fbDb || !S.uid) return Promise.resolve();
-    return fbDb.collection('loveLoc').doc(S.uid).delete().catch(function () {});
+    return Promise.all([fbDb.collection('loveLoc').doc(S.uid).delete().catch(function () {}), cleanServerHist(true)]);
   }
 
   // ---------- taklif / rozilik (loveLinks) ----------
@@ -15833,7 +16021,7 @@
 
   function startFor(uid) {
     if (!fbDb || S.uid === uid) return;
-    stopAll(); S.uid = uid; loadPlaces();
+    stopAll(); S.uid = uid; loadPlaces(); loadHist();
     linkUnsub = fbDb.collection('loveLinks').where('members', 'array-contains', uid).onSnapshot(onLinks, function (e) {
       S.linkErr = (e && e.code) || 'error'; S.linkReady = true; renderStatus();
     });
@@ -15846,6 +16034,7 @@
     S.uid = ''; S.link = null; S.state = 'none'; S.lastEnd = null; S.linkReady = false; S.linkErr = '';
     S.peer = { uid: '', name: '', username: '' }; S.peerDoc = null; S.peerWasLive = false;
     S.myLoc = null; S.sharing = false; S.centered = false; S.places = []; S.geoStatus = '';
+    S.hist = []; S.peerHist = []; S.showMe = false; S.showPeer = false; S.lastHistUp = 0; S.lastHistLoc = null;
     renderAll();
   }
 
@@ -15853,6 +16042,7 @@
   function openLove() {
     buildMap();
     goToScreen('pldnLoveScreen');
+    cleanServerHist(false);
     updateRow(); renderAll();
     startGeo();
     var apply = function () {
