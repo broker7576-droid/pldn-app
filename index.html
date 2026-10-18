@@ -1,4 +1,4 @@
-<!-- VERSION: 159 -->
+<!-- VERSION: 162 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -16265,7 +16265,7 @@
 </script>
 
 <script>
-// ===== REAL FOTO VA VIDEO 📸 ===== VERSION: real-v1
+// ===== REAL FOTO VA VIDEO 📸 ===== VERSION: real-v3 (old kamera: standart ko'zgusiz, 🪞 tugma bilan yoqiladi)
 // Faqat kamera (galereya yo'q). ⋮ menyu -> "Real foto va video". Yuborilgan media qalin pushti ramka bilan ko'rinadi.
 (function () {
   'use strict';
@@ -16332,8 +16332,8 @@
 
   // ---------- oyna ----------
   var ov = h('div'); ov.id = 'pldnRealOv';
-  var top = h('div', 'pldn-rl-top'), bClose = h('button', 'pldn-rl-ib', '✕'), ttl = h('div', 't'), bFlip = h('button', 'pldn-rl-ib', '🔄');
-  top.append(bClose, ttl, bFlip);
+  var top = h('div', 'pldn-rl-top'), bClose = h('button', 'pldn-rl-ib', '✕'), ttl = h('div', 't'), bMir = h('button', 'pldn-rl-ib', '🪞'), bFlip = h('button', 'pldn-rl-ib', '🔄');
+  top.append(bClose, ttl, bMir, bFlip);
   var stage = h('div', 'pldn-rl-stage');
   var live = h('video', 'live'); live.muted = true; live.autoplay = true; live.setAttribute('playsinline', ''); live.playsInline = true;
   var shot = h('img'); shot.style.display = 'none';
@@ -16352,7 +16352,8 @@
   document.body.appendChild(ov);
 
   // holat: live | rec | review | busy
-  var S = { open: false, mode: 'photo', facing: 'environment', stream: null, state: 'live', chat: null, rec: null, chunks: [], sec: 0, iv: 0, blob: null, dur: 0, thumb: '', photo: '', url: '', starting: false };
+  var S = { open: false, mode: 'photo', facing: 'environment', stream: null, state: 'live', chat: null, rec: null, chunks: [], sec: 0, iv: 0, blob: null, dur: 0, thumb: '', photo: '', url: '', starting: false, mirror: false, raf: 0, mir: null };
+  try { S.mirror = localStorage.getItem('pldn_real_mir') === '1'; } catch (_) {}
 
   function labels() {
     ttl.textContent = '📸 ' + T('Real foto va video', 'Реальное фото и видео');
@@ -16375,7 +16376,9 @@
     shot.style.display = (isRev && S.mode === 'photo') ? 'block' : 'none';
     rev.style.display = (isRev && S.mode === 'video') ? 'block' : 'none';
     stage.classList.toggle('review', isRev);
-    stage.classList.toggle('front', S.facing === 'user');
+    stage.classList.toggle('front', S.facing === 'user' && S.mirror);
+    bMir.style.visibility = (S.state === 'live' && S.facing === 'user') ? 'visible' : 'hidden';
+    bMir.style.background = S.mirror ? '#ff2d87' : 'rgba(255,255,255,.14)';
     tabs.style.display = S.state === 'live' ? 'flex' : 'none';
     shutRow.style.display = isLive ? 'flex' : 'none';
     revRow.style.display = isRev ? 'flex' : 'none';
@@ -16418,8 +16421,25 @@
     if (!w || !hh) return '';
     var k = Math.min(1, maxDim / Math.max(w, hh)), cv = document.createElement('canvas');
     cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(hh * k));
-    cv.getContext('2d').drawImage(live, 0, 0, cv.width, cv.height);
+    var cx = cv.getContext('2d');
+    if (S.facing === 'user' && S.mirror) { cx.translate(cv.width, 0); cx.scale(-1, 1); }
+    cx.drawImage(live, 0, 0, cv.width, cv.height);
     return cv.toDataURL('image/jpeg', q);
+  }
+  // old kamerada videoni ham ko'rinishdagidek yozish: ko'zgu kadrlar canvas orqali (faqat yozish paytida)
+  function mirrorStream(src) {
+    var w = live.videoWidth || 720, hh = live.videoHeight || 1280, k = Math.min(1, 720 / Math.max(w, hh));
+    var cv = document.createElement('canvas'); cv.width = Math.max(2, Math.round(w * k / 2) * 2); cv.height = Math.max(2, Math.round(hh * k / 2) * 2);
+    var cx = cv.getContext('2d'); cx.translate(cv.width, 0); cx.scale(-1, 1);
+    var out = cv.captureStream(30), stop = false, last = 0;
+    function loop(t) {
+      if (stop) return;
+      if (t - last >= 33) { last = t; try { cx.drawImage(live, 0, 0, cv.width, cv.height); } catch (_) {} }
+      S.raf = requestAnimationFrame(loop);
+    }
+    S.raf = requestAnimationFrame(loop);
+    src.getAudioTracks().forEach(function (a) { out.addTrack(a); });
+    return { stream: out, stop: function () { stop = true; if (S.raf) { cancelAnimationFrame(S.raf); S.raf = 0; } out.getVideoTracks().forEach(function (t) { t.stop(); }); } };
   }
 
   function takePhoto() {
@@ -16432,12 +16452,15 @@
     if (S.state !== 'live' || !S.stream) { if (!S.stream) startStream(); return; }
     if (typeof MediaRecorder === 'undefined') { showMsg(T('Bu telefonda video yozish ishlamaydi.', 'Запись видео на этом телефоне не работает.')); return; }
     var mt = ['video/webm;codecs=vp8,opus', 'video/webm'].find(function (t) { try { return MediaRecorder.isTypeSupported(t); } catch (_) { return false; } }) || '';
-    try { S.rec = new MediaRecorder(S.stream, mt ? { mimeType: mt, videoBitsPerSecond: VBPS, audioBitsPerSecond: 48000 } : { videoBitsPerSecond: VBPS }); }
-    catch (e) { showMsg(T('Video yozishni boshlab bo\'lmadi: ', 'Не удалось начать запись: ') + ((e && e.name) || e)); return; }
+    var src = S.stream; S.mir = null;
+    if (S.facing === 'user' && S.mirror) { try { S.mir = mirrorStream(S.stream); src = S.mir.stream; } catch (_) { S.mir = null; src = S.stream; } }
+    try { S.rec = new MediaRecorder(src, mt ? { mimeType: mt, videoBitsPerSecond: VBPS, audioBitsPerSecond: 48000 } : { videoBitsPerSecond: VBPS }); }
+    catch (e) { if (S.mir) { S.mir.stop(); S.mir = null; } showMsg(T('Video yozishni boshlab bo\'lmadi: ', 'Не удалось начать запись: ') + ((e && e.name) || e)); return; }
     S.chunks = []; S.sec = 0; S.thumb = grabFrame(320, 0.7);
     S.rec.ondataavailable = function (e) { if (e.data && e.data.size) S.chunks.push(e.data); };
     S.rec.onstop = function () {
       clearInterval(S.iv); S.iv = 0;
+      if (S.mir) { S.mir.stop(); S.mir = null; }
       var rc = S.rec; S.rec = null;
       if (!S.open) return;
       var blob = new Blob(S.chunks, { type: ((rc && rc.mimeType) || 'video/webm').split(';')[0] });
@@ -16455,6 +16478,7 @@
   function closeAll() {
     if (S.iv) { clearInterval(S.iv); S.iv = 0; }
     if (S.rec) { try { S.rec.onstop = null; if (S.rec.state !== 'inactive') S.rec.stop(); } catch (_) {} S.rec = null; }
+    if (S.mir) { S.mir.stop(); S.mir = null; }
     stopStream(); clearReview();
     S.open = false; S.state = 'live'; S.chunks = []; showMsg('');
     ov.classList.remove('open');
@@ -16487,6 +16511,7 @@
   }
 
   bClose.addEventListener('click', closeAll);
+  bMir.addEventListener('click', function () { S.mirror = !S.mirror; try { localStorage.setItem('pldn_real_mir', S.mirror ? '1' : '0'); } catch (_) {} paint(); toast(S.mirror ? T('Ko\'zgu yoqildi: ko\'rinish va natija aylantiriladi', 'Зеркало включено') : T('Ko\'zgu o\'chirildi: yuz haqiqiy ko\'rinishda', 'Зеркало выключено'), 2200); });
   bFlip.addEventListener('click', function () { if (S.state !== 'live') return; S.facing = S.facing === 'user' ? 'environment' : 'user'; paint(); startStream(); });
   tPhoto.addEventListener('click', function () { if (S.state !== 'live' || S.mode === 'photo') return; S.mode = 'photo'; paint(); startStream(); });
   tVideo.addEventListener('click', function () { if (S.state !== 'live' || S.mode === 'video') return; S.mode = 'video'; paint(); startStream(); });
