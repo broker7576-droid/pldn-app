@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "659938247594",
+    "project_id": "pldn-35cd6",
+    "storage_bucket": "pldn-35cd6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:659938247594:android:75a986cf39a160710321d3",
+        "android_client_info": {
+          "package_name": "com.pldn.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBJvJenIq_8F0rEumqLjLdpDFDimZmS3nw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
