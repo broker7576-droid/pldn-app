@@ -1,4 +1,4 @@
-<!-- VERSION: 165 -->
+<!-- VERSION: 163 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -7931,10 +7931,17 @@
         });
         await PN.addListener('pushNotificationActionPerformed', async (a) => {
           const d = (a && a.notification && a.notification.data) || {};
-          if (!d.otherUid) return;
           try {
-            const u = await fbGetUser(d.otherUid);
-            fbOpenChat({ id: d.chatId, otherUid: u.uid, name: u.name, color: u.color, avatar: u.avatar });
+            if (d.otherUid) {
+              const u = await fbGetUser(d.otherUid);
+              fbOpenChat({ id: d.chatId, otherUid: u.uid, name: u.name, color: u.color, avatar: u.avatar });
+            } else if (d.chatId) {
+              const cs = await fbDb.collection('chats').doc(d.chatId).get();
+              if (!cs.exists) return;
+              const v = cs.data() || {};
+              fbOpenChat({ id: d.chatId, type: v.type, name: v.name || '', color: fbColorFor(d.chatId), avatar: fbSafeAvatar(v.avatar), members: v.members || [], owner: v.owner || '', admins: v.admins || [], username: v.username || '',
+                access: v.access || 'open', allowedReactions: Array.isArray(v.allowedReactions) ? v.allowedReactions : null, blocked: v.blocked || [], discussion: v.discussion || '', adminPerms: v.adminPerms || {}, restricted: v.restricted || {} });
+            }
           } catch (e) { console.error(e); }
         });
       }
