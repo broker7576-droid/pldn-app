@@ -1,4 +1,4 @@
-<!-- VERSION: 168 -->
+<!-- VERSION: 169 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -1655,6 +1655,10 @@
   .message-input::-webkit-input-placeholder { color: var(--placeholder-color); opacity: 1; }
   .message-input:-ms-input-placeholder { color: var(--placeholder-color); opacity: 1; }
   .message-input::-moz-placeholder { color: var(--placeholder-color); opacity: 1; }
+  div.message-input { white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; -webkit-tap-highlight-color: transparent; }
+  div.message-input:empty::before { content: attr(placeholder); color: var(--placeholder-color); pointer-events: none; }
+  .stk-inl { width: 1.5em; height: 1.5em; object-fit: contain; vertical-align: -0.35em; margin: 0 1px; -webkit-user-drag: none; }
+  div.message-input .stk-inl { width: 24px; height: 24px; vertical-align: -6px; }
 
   .send-btn {
     width: 40px;
@@ -3116,7 +3120,131 @@
     <div class="chat-input-bar">
       <button class="attach-btn" id="attachImageBtn">📎</button>
       <input type="file" id="chatImageInput" accept="image/*" style="display:none;">
-      <textarea class="message-input" id="messageInput" rows="1" data-i18n-placeholder="k49" placeholder="Xabar yozing..."></textarea>
+      <div class="message-input" id="messageInput" contenteditable="true" role="textbox" aria-multiline="true" data-i18n-placeholder="k49" placeholder="Xabar yozing..."></div>
+      <script>
+      // ===== MATN ORASIDAGI STIKERLAR (premium emoji kabi) ===== VERSION: inline-stk-v169
+      (function () {
+        var S = '\uE000', E = '\uE001';
+        var RE = /\uE000([0-9a-z]{3,24})\uE001/g;
+        var reg = {}, made = {}, saved = null;
+        var box = document.getElementById('messageInput');
+        function hash(str) { var h = 2166136261 >>> 0; for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(36) + (str.length % 1296).toString(36); }
+        function plain(t) { return String(t == null ? '' : t).replace(RE, '\uD83D\uDE42'); }
+        function has(t) { RE.lastIndex = 0; var r = RE.test(String(t == null ? '' : t)); RE.lastIndex = 0; return r; }
+        function ids(t) { var a = [], m; RE.lastIndex = 0; while ((m = RE.exec(String(t || '')))) if (a.indexOf(m[1]) < 0) a.push(m[1]); RE.lastIndex = 0; return a; }
+        function mkImg(id) { var im = document.createElement('img'); im.className = 'stk-inl'; im.setAttribute('data-sid', id); im.alt = '\uD83D\uDE42'; im.draggable = false; im.src = reg[id]; return im; }
+        function fill(parent, str) {
+          RE.lastIndex = 0; var last = 0, m;
+          while ((m = RE.exec(str))) {
+            if (m.index > last) parent.appendChild(document.createTextNode(str.slice(last, m.index)));
+            parent.appendChild(reg[m[1]] ? mkImg(m[1]) : document.createTextNode('\u25AB'));
+            last = m.index + m[0].length;
+          }
+          if (last < str.length) parent.appendChild(document.createTextNode(str.slice(last)));
+          RE.lastIndex = 0;
+        }
+        function setRich(el, text) {
+          text = String(text == null ? '' : text);
+          if (!has(text)) { el.textContent = text; return; }
+          el.textContent = ''; fill(el, text);
+        }
+        function getBox(el) {
+          var lines = [], cur = null;
+          function open() { if (cur === null) cur = ''; }
+          function close() { if (cur !== null) { lines.push(cur); cur = null; } }
+          function walk(n) {
+            for (var c = n.firstChild; c; c = c.nextSibling) {
+              if (c.nodeType === 3) { var v = c.nodeValue.replace(/\u200b/g, '').replace(/\u00a0/g, ' '); if (v !== '') { open(); cur += v; } }
+              else if (c.nodeType === 1) {
+                var t = c.tagName;
+                if (t === 'IMG') { var id = c.getAttribute('data-sid'); if (id) { open(); cur += S + id + E; } }
+                else if (t === 'BR') { if (cur === null) lines.push(''); else close(); }
+                else if (t === 'DIV' || t === 'P' || t === 'LI') { close(); walk(c); close(); }
+                else walk(c);
+              }
+            }
+          }
+          walk(el); close();
+          return lines.join('\n');
+        }
+        function setBox(el, text) {
+          text = String(text == null ? '' : text);
+          el.textContent = '';
+          if (text === '') return;
+          var parts = text.split('\n');
+          for (var i = 0; i < parts.length; i++) { if (i) el.appendChild(document.createElement('br')); if (parts[i]) fill(el, parts[i]); }
+          var lc = el.lastChild; if (lc && lc.nodeType === 1 && lc.tagName === 'IMG') el.appendChild(document.createTextNode('\u200b'));
+          try {
+            if (document.activeElement === el) {
+              var r = document.createRange(); r.selectNodeContents(el); r.collapse(false);
+              var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r); saved = r.cloneRange();
+            }
+          } catch (e) {}
+        }
+        function count() { return box ? box.querySelectorAll('img.stk-inl').length : 0; }
+        function insert(id, src) {
+          if (!box) return false;
+          reg[id] = src;
+          if (count() >= 30) return false;
+          var r = saved;
+          if (!r || !box.contains(r.startContainer)) { r = document.createRange(); r.selectNodeContents(box); r.collapse(false); }
+          r.deleteContents();
+          var im = mkImg(id);
+          r.insertNode(im);
+          var nx = im.nextSibling;
+          if (!nx || (nx.nodeType === 1 && nx.tagName === 'IMG')) im.parentNode.insertBefore(document.createTextNode('\u200b'), im.nextSibling);
+          var nr = document.createRange(); nr.setStartAfter(im); nr.collapse(true); saved = nr;
+          box.dispatchEvent(new Event('input', { bubbles: true }));
+          return true;
+        }
+        function make(d) {
+          var key = hash(d);
+          if (made[key]) return Promise.resolve(made[key]);
+          return new Promise(function (res, rej) {
+            var im = new Image();
+            im.onload = function () {
+              try {
+                var sw = im.naturalWidth || 512, sh = im.naturalHeight || 512, src = im;
+                while (Math.max(sw, sh) > 256) {
+                  var half = document.createElement('canvas'); half.width = Math.max(1, Math.round(sw / 2)); half.height = Math.max(1, Math.round(sh / 2));
+                  var hx = half.getContext('2d'); hx.imageSmoothingQuality = 'high'; hx.drawImage(src, 0, 0, half.width, half.height);
+                  src = half; sw = half.width; sh = half.height;
+                }
+                var f = 128 / Math.max(sw, sh);
+                var c = document.createElement('canvas'); c.width = Math.max(1, Math.round(sw * f)); c.height = Math.max(1, Math.round(sh * f));
+                var cx = c.getContext('2d'); cx.imageSmoothingQuality = 'high'; cx.drawImage(src, 0, 0, c.width, c.height);
+                var out = c.toDataURL('image/webp', 0.92); if (out.indexOf('data:image/webp') !== 0) out = c.toDataURL('image/png');
+                var r = { id: key, src: out }; made[key] = r; reg[key] = out; res(r);
+              } catch (e) { rej(e); }
+            };
+            im.onerror = function () { rej(new Error('rasm')); };
+            im.src = d;
+          });
+        }
+        function take(text) { var o = null; ids(text).forEach(function (id) { if (reg[id]) { o = o || {}; o[id] = reg[id]; } }); return o; }
+        function clip(text, n) { text = String(text == null ? '' : text); if (text.length <= n) return text; var t = text.slice(0, n), i = t.lastIndexOf(S); if (i > t.lastIndexOf(E)) t = t.slice(0, i); return t; }
+        function register(o) {
+          if (!o || typeof o !== 'object') return;
+          Object.keys(o).forEach(function (k) { if (/^[0-9a-z]{3,24}$/.test(k) && typeof o[k] === 'string' && o[k].indexOf('data:image/') === 0) reg[k] = o[k]; });
+        }
+        window.pldnInl = { plain: plain, has: has, set: setRich, get: getBox, setBox: setBox, take: take, clip: clip, register: register, make: make, insert: insert, count: count };
+        if (!box) return;
+        Object.defineProperty(box, 'placeholder', { get: function () { return box.getAttribute('placeholder') || ''; }, set: function (v) { box.setAttribute('placeholder', v); }, configurable: true });
+        Object.defineProperty(box, 'value', { get: function () { return getBox(box); }, set: function (v) { setBox(box, v); }, configurable: true });
+        document.addEventListener('selectionchange', function () {
+          var sel = window.getSelection();
+          if (sel && sel.rangeCount) { var r = sel.getRangeAt(0); if (box.contains(r.startContainer)) saved = r.cloneRange(); }
+        });
+        box.addEventListener('paste', function (e) {
+          e.preventDefault();
+          var t = (e.clipboardData || window.clipboardData).getData('text/plain');
+          if (t) document.execCommand('insertText', false, t);
+        });
+        box.addEventListener('input', function () {
+          if (!box.querySelector('img') && box.innerHTML !== '' && !box.textContent.replace(/[\u200b\n]/g, '').length) box.innerHTML = '';
+        });
+      })();
+      </script>
       <div class="voice-recording-indicator" id="voiceRecordingIndicator">
         <span class="voice-rec-dot"></span>
         <span class="voice-rec-timer" id="voiceRecTimer">0:00</span>
@@ -5977,7 +6105,7 @@
   function setBubbleText(bubble, text) {
     bubble.dataset.text = text;
     const tx = bubble.querySelector('.msg-text');
-    if (tx) tx.textContent = text; else bubble.textContent = text;
+    if (tx) { if (window.pldnInl) window.pldnInl.set(tx, text); else tx.textContent = text; } else bubble.textContent = text;
   }
 
   function addBubble(text, type, date, edited) {
@@ -5987,7 +6115,7 @@
     bubble.dataset.text = text;
     const tx = document.createElement('span');
     tx.className = 'msg-text';
-    tx.textContent = text;
+    if (window.pldnInl) window.pldnInl.set(tx, text); else tx.textContent = text;
     const tm = document.createElement('span');
     tm.className = 'msg-time';
     tm.textContent = (edited ? (currentLang === 'ru' ? 'изменено ' : 'tahrirlangan ') : '') + bubbleClock(date || new Date());
@@ -6412,6 +6540,7 @@
   // ===== TUGMA REJIMI: MIKROFON <-> YUBORISH =====
   let fbAsRaf = 0;
   function fbAutosizeInput() {
+    if (messageInput.tagName !== 'TEXTAREA') return; // contenteditable o'zi o'sadi
     const v = messageInput.value;
     if (v.length < 18 && v.indexOf('\n') < 0) { // qisqa bir qator: o'lchash shart emas
       if (messageInput.style.height) messageInput.style.height = '';
@@ -8857,7 +8986,7 @@
     let text;
     if (kind === 'image') text = '📷 ' + fbT('Rasm', 'Фото');
     else if (kind === 'voice') text = '🎤 ' + fbT('Ovozli xabar', 'Голосовое сообщение');
-    else text = String(bubble.dataset.text || '').slice(0, 100);
+    else text = (window.pldnInl ? window.pldnInl.plain(String(bubble.dataset.text || '')) : String(bubble.dataset.text || '')).slice(0, 100);
     const mine = bubble.classList.contains('outgoing');
     const myName = ((userData.firstName || '') + ' ' + (userData.lastName || '')).trim() || fbT('Men', 'Я');
     const name = mine ? myName : (fbCurrentChat.name || '');
@@ -9160,6 +9289,7 @@ async function fbOpenChat(info, ensure) {
           const isVoice = m.type === 'voice' && typeof m.audio === 'string' && m.audio.indexOf('data:audio/') === 0;
           const isCall = m.type === 'call' && typeof m.outcome === 'string';
           const isVideo = m.type === 'video' && typeof window.pldnVideoBubble === 'function';
+          if (isText && m.inl && window.pldnInl) window.pldnInl.register(m.inl);
           if (isText || isImage || isVoice || isCall || isVideo) {
             const md = (m.createdAt && m.createdAt.toDate) ? m.createdAt.toDate() : new Date();
             const dayKey = md.toDateString();
@@ -9261,8 +9391,11 @@ async function fbOpenChat(info, ensure) {
     const chatRef = fbDb.collection('chats').doc(chat.id);
     const ts = firebase.firestore.FieldValue.serverTimestamp();
     const batch = fbDb.batch();
-    batch.set(chatRef.collection('messages').doc(), Object.assign({ from: me.uid, text: text.slice(0, 2000), type: 'text', createdAt: ts }, fbTakeReply()));
-    batch.set(chatRef, fbChatUpdate(chat, me.uid, text.slice(0, 100), ts), { merge: true });
+    const I = window.pldnInl;
+    const clipped = I ? I.clip(text, 2000) : text.slice(0, 2000);
+    const inl = I ? I.take(clipped) : null;
+    batch.set(chatRef.collection('messages').doc(), Object.assign({ from: me.uid, text: clipped, type: 'text', createdAt: ts }, inl ? { inl: inl } : {}, fbTakeReply()));
+    batch.set(chatRef, fbChatUpdate(chat, me.uid, (I ? I.plain(clipped) : clipped).slice(0, 100), ts), { merge: true });
     try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e)); }
   }
 
@@ -9319,7 +9452,7 @@ async function fbOpenChat(info, ensure) {
       await chatRef.set({ lastText: '' }, { merge: true });
     } else {
       const m = snap.docs[0].data();
-      await chatRef.set({ lastText: (m.type === 'image' ? fbT('📷 Rasm', '📷 Фото') : m.type === 'voice' ? fbT('🎤 Ovozli xabar', '🎤 Голосовое') : m.type === 'video' ? fbT('🎥 Video', '🎥 Видео') : m.type === 'call' ? fbT("📞 Qo'ng'iroq", '📞 Звонок') : String(m.text || '')).slice(0, 100), lastFrom: m.from }, { merge: true });
+      await chatRef.set({ lastText: (m.type === 'image' ? fbT('📷 Rasm', '📷 Фото') : m.type === 'voice' ? fbT('🎤 Ovozli xabar', '🎤 Голосовое') : m.type === 'video' ? fbT('🎥 Video', '🎥 Видео') : m.type === 'call' ? fbT("📞 Qo'ng'iroq", '📞 Звонок') : (window.pldnInl ? window.pldnInl.plain(m.text || '') : String(m.text || ''))).slice(0, 100), lastFrom: m.from }, { merge: true });
     }
   }
 
@@ -9331,7 +9464,7 @@ async function fbOpenChat(info, ensure) {
       const ref = fbDb.collection('chats').doc(chat.id);
       const ms = await ref.collection('messages').doc(msgId).get();
       const d = ms.exists ? (ms.data() || {}) : {};
-      const label = d.type === 'image' ? '📷' : d.type === 'voice' ? '🎤' : d.type === 'video' ? '🎥' : String(d.text || '').slice(0, 300);
+      const label = d.type === 'image' ? '📷' : d.type === 'voice' ? '🎤' : d.type === 'video' ? '🎥' : (window.pldnInl ? window.pldnInl.plain(d.text || '') : String(d.text || '')).slice(0, 300);
       await ref.collection('actions').add({ kind: kind, msgId: msgId, by: u.uid, text: label, newText: newText ? String(newText).slice(0, 300) : '', at: firebase.firestore.FieldValue.serverTimestamp() });
     } catch (_) {}
   }
@@ -9342,8 +9475,13 @@ async function fbOpenChat(info, ensure) {
     if (!me || !chat) return;
     await fbLogChannelAction(chat, msgId, 'edit', text);
     try {
-      await fbDb.collection('chats').doc(chat.id).collection('messages').doc(msgId)
-        .update({ text: text.slice(0, 2000), editedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      const I = window.pldnInl;
+      const clipped = I ? I.clip(text, 2000) : text.slice(0, 2000);
+      const inl = I ? I.take(clipped) : null;
+      const mref = fbDb.collection('chats').doc(chat.id).collection('messages').doc(msgId);
+      const upd = { text: clipped, editedAt: firebase.firestore.FieldValue.serverTimestamp() };
+      try { await mref.update(inl ? Object.assign({ inl: inl }, upd) : upd); }
+      catch (e1) { if (inl && e1 && e1.code === 'permission-denied') await mref.update(upd); else throw e1; }
       await fbRefreshLastText(chat.id);
     } catch (e) { console.error(e); alert(fbErrMsg(e)); }
   }
@@ -11648,7 +11786,7 @@ async function fbOpenChat(info, ensure) {
       const msgs = [];
       snap.forEach(function (d) {
         const v = d.data() || {};
-        if (typeof v.text === 'string' && v.text && v.type !== 'call') msgs.push({ id: d.id, text: v.text, from: v.from, ms: tms(v.createdAt) });
+        if (typeof v.text === 'string' && v.text && v.type !== 'call') msgs.push({ id: d.id, text: (window.pldnInl ? window.pldnInl.plain(v.text) : v.text), from: v.from, ms: tms(v.createdAt) });
       });
       swCache[id] = { ts: Date.now(), msgs: msgs };
       return msgs;
@@ -13091,6 +13229,9 @@ async function fbOpenChat(info, ensure) {
   // stickerPacks/{id}: {name, username, owner, cover} + stickers/{sid}: {d, at}; stickerNames/{username}: {owner, packId}; users/{uid}/packs/{id}: {at}
   let legacy = [], libIds = [], packs = {}, cur = null, attached = null, curList = [], preview = null, curUnsub = null, legUnsub = null, libUnsub = null, uid = null;
   let q = '', results = null, target = null, sTimer = null, libLoaded = false, pending = null;
+  // VERSION: inline-stk-v169 — matn ichida stiker rejimi (🙂 tugmasini bosib turing)
+  let inlMode = false; try { inlMode = localStorage.getItem('pldn_inl_mode') === '1'; } catch (_) {}
+  const msgBox = document.getElementById('messageInput');
   const lenOf = function (s) { return Array.from(s).length; };
   const sbox = el('div', 'padding:0 0 8px;flex:none');
   const sIn = el('input', 'width:100%;box-sizing:border-box;padding:11px 14px;border:0;border-radius:12px;background:#f1f2f6;font-size:16px;color:#222;outline:none');
@@ -13100,6 +13241,24 @@ async function fbOpenChat(info, ensure) {
   const head = el('div'); head.className = 'stk-head';
   const grid = el('div'); grid.className = 'stk-body';
   pn.append(sbox, strip, head, grid);
+  const inlBar = el('div', 'display:none;align-items:center;gap:8px;flex:none;padding:0 0 8px');
+  const inlPrev = el('div', 'flex:1;min-width:0;height:40px;box-sizing:border-box;background:#f1f2f6;border-radius:12px;padding:8px 12px;color:#222;font-size:15px;line-height:24px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis');
+  inlBar.append(inlPrev, btnSm(T('Tayyor', 'Готово'), function () { bd.style.display = 'none'; }));
+  pn.insertBefore(inlBar, pn.firstChild);
+  function refreshInlBar() {
+    if (!inlMode) { inlBar.style.display = 'none'; return; }
+    inlBar.style.display = 'flex';
+    const t = (msgBox && window.pldnInl) ? window.pldnInl.get(msgBox) : '';
+    if (!t.trim()) { inlPrev.textContent = T('Yozish oynasi bo\'sh', 'Поле ввода пусто'); inlPrev.style.color = '#999'; return; }
+    inlPrev.style.color = '#222'; window.pldnInl.set(inlPrev, t.replace(/\n/g, ' '));
+  }
+  async function insertInline(d) {
+    try {
+      const r = await window.pldnInl.make(d);
+      if (!window.pldnInl.insert(r.id, r.src)) { flash(T('Bir xabarga 30 tagacha stiker qo\'shish mumkin.', 'В одно сообщение можно добавить до 30 стикеров.')); return; }
+      refreshInlBar();
+    } catch (e) { console.error(e); flash(T('Stiker qo\'shilmadi.', 'Не удалось добавить стикер.')); }
+  }
 
   function inLib(id) { return libIds.indexOf(id) >= 0; }
   function curPack() { return preview || (cur && cur !== 'legacy' ? packs[cur] : null); }
@@ -13326,7 +13485,7 @@ async function fbOpenChat(info, ensure) {
       c.addEventListener('click', function () { if (lp) { lp = false; return; } fn(); });
       strip.appendChild(c); return c;
     };
-    mk(el('span', 'font-size:26px;color:#2AABEE', '＋'), false, startCreate);
+    if (!inlMode) mk(el('span', 'font-size:26px;color:#2AABEE', '＋'), false, startCreate);
     mk(el('span', 'font-size:24px', '♥️'), cur === 'legacy' && !preview, function () { selectFolder('legacy'); });
     libIds.forEach(function (id) {
       const p = packs[id]; if (!p) return;
@@ -13386,7 +13545,7 @@ async function fbOpenChat(info, ensure) {
       }, { passive: true });
       ['touchend', 'touchmove', 'touchcancel'].forEach(function (ev) { c.addEventListener(ev, function () { clearTimeout(tm); }, { passive: true }); });
       c.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-      c.addEventListener('click', function () { if (lp) { lp = false; return; } bd.style.display = 'none'; send(s.d); });
+      c.addEventListener('click', function () { if (lp) { lp = false; return; } if (inlMode) { insertInline(s.d); return; } bd.style.display = 'none'; send(s.d); });
       g.appendChild(c);
     });
     grid.appendChild(g);
@@ -13394,6 +13553,7 @@ async function fbOpenChat(info, ensure) {
     else grid.appendChild(el('div', 'color:#888;padding:14px 4px;line-height:1.4', cur === 'legacy' ? T("Saralangan stiker yo'q. Istalgan stikerni bosib turib «Saqlash» ni tanlang.", 'Избранного пока нет. Удерживайте любой стикер и выберите «Сохранить».') : T("Bu papkada stiker yo'q.", 'В этой папке нет стикеров.')));
   }
   function renderPanel() {
+    refreshInlBar();
     const s = !!q;
     strip.style.display = s ? 'none' : ''; head.style.display = s ? 'none' : '';
     if (!s) { renderStrip(); renderHead(); }
@@ -13425,9 +13585,24 @@ async function fbOpenChat(info, ensure) {
 
   const ab = document.getElementById('attachImageBtn');
   if (ab) {
-    const btn = el('button'); btn.className = 'attach-btn'; btn.textContent = '🙂';
+    const btn = el('button'); btn.className = 'attach-btn';
+    const ICON_INL = '<svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5V14l-6 6H6.5A2.5 2.5 0 0 1 4 17.5z" fill="#2AABEE"/><path d="M20 14h-3.5a2.5 2.5 0 0 0-2.5 2.5V20z" fill="#9AD8F8"/><circle cx="9.5" cy="10" r="1.3" fill="#fff"/><circle cx="14.5" cy="10" r="1.3" fill="#fff"/><path d="M8.6 13.4c.9 1.2 2 1.8 3.4 1.8" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>';
+    const paint = function () { if (inlMode) btn.innerHTML = ICON_INL; else btn.textContent = '\uD83D\uDE42'; };
+    paint();
     ab.parentNode.insertBefore(btn, ab.nextSibling);
-    btn.addEventListener('click', openPanel);
+    let tm = null, lpm = false;
+    btn.addEventListener('touchstart', function () {
+      lpm = false;
+      tm = setTimeout(function () {
+        lpm = true; inlMode = !inlMode;
+        try { localStorage.setItem('pldn_inl_mode', inlMode ? '1' : '0'); } catch (_) {}
+        paint(); try { navigator.vibrate && navigator.vibrate(15); } catch (_) {}
+        flash(inlMode ? T('Matn ichida stiker rejimi', 'Режим стикеров в тексте') : T('Oddiy stiker rejimi', 'Обычный режим стикеров'));
+      }, 450);
+    }, { passive: true });
+    ['touchend', 'touchmove', 'touchcancel'].forEach(function (ev) { btn.addEventListener(ev, function () { clearTimeout(tm); }, { passive: true }); });
+    btn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    btn.addEventListener('click', function () { if (lpm) { lpm = false; return; } openPanel(); });
   }
 
   // ---------- muharrir ----------
@@ -13503,7 +13678,7 @@ async function fbOpenChat(info, ensure) {
     const me = fbAuth && fbAuth.currentUser; if (!me || saving) return;
     let o = compose(), data = '', sz = 512;
     for (let i = 0; i < 3; i++) {
-      data = o.toDataURL('image/webp', 0.85);
+      data = o.toDataURL('image/webp', 0.92);
       if (data.indexOf('data:image/webp') !== 0) data = o.toDataURL('image/png');
       if (data.length <= 450000) break;
       sz = Math.round(sz * 0.75);
@@ -13516,8 +13691,8 @@ async function fbOpenChat(info, ensure) {
     try {
       const ts = firebase.firestore.FieldValue.serverTimestamp();
       const thumb = function () {
-        const t = document.createElement('canvas'); t.width = t.height = 96;
-        t.getContext('2d').drawImage(o, 0, 0, 96, 96);
+        const t = document.createElement('canvas'); t.width = t.height = 160;
+        t.getContext('2d').drawImage(o, 0, 0, 160, 160);
         let th = t.toDataURL('image/webp', 0.8); if (th.indexOf('data:image/webp') !== 0) th = t.toDataURL('image/png');
         return th;
       };
@@ -13725,7 +13900,7 @@ async function fbOpenChat(info, ensure) {
       await bubble(['📞 ' + (m.callType === 'video' ? T("Video qo'ng'iroq", 'Видеозвонок') : T("Qo'ng'iroq", 'Звонок')) + ' · ' + o + (m.duration ? ' · ' + mmss(m.duration) : '')], mine, head, foot);
     } else {
       cx.font = F;
-      let lines = wrap(m.text, MAXW);
+      let lines = wrap(window.pldnInl ? window.pldnInl.plain(m.text) : m.text, MAXW);
       if (m.reply && m.reply.text) lines = wrap('↪ ' + String(m.reply.text).slice(0, 80), MAXW).slice(0, 1).concat(lines);
       await bubble(lines, mine, head, foot);
     }
