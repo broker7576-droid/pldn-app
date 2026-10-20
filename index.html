@@ -1,4 +1,4 @@
-<!-- VERSION: 170 -->
+<!-- VERSION: 171 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -16803,7 +16803,7 @@ async function fbOpenChat(info, ensure) {
 })();
 </script>
 <script>
-// ===== PLDN BOT — 1-BOSQICH ===== VERSION: bot-v1
+// ===== PLDN BOT — 2-BOSQICH ===== VERSION: bot-v2 (qidiruv VPS serverda)
 // Bilimlar bazasi asosidagi bot (tashqi AI yo'q). Bot kodi ma'lumotni FAQAT BotStore orqali oladi:
 // keyinroq boshqa bulutli xotiraga o'tish uchun faqat BotStore ichini almashtirish kifoya.
 (function () {
@@ -16814,10 +16814,21 @@ async function fbOpenChat(info, ensure) {
   function lang() { return (typeof currentLang !== 'undefined' && currentLang) || 'uz'; }
 
   // ---------- 1) MA'LUMOTLAR QATLAMI (almashtiriladi) ----------
+  var BOT_SEARCH_URL = 'https://134-255-228-146.sslip.io/search';
   var BotStore = (function () {
     var col = function () { return fbDb.collection('botKB'); };
     return {
       kind: 'firestore', // keyin: 'http' (VPS API) yoki boshqa baza
+      // O'xshash savolni VPS serverda qidiradi (3 soniya ichida javob bermasa xato tashlaydi)
+      search: async function (q) {
+        var ctl = new AbortController();
+        var tm = setTimeout(function () { ctl.abort(); }, 5000);
+        try {
+          var r = await fetch(BOT_SEARCH_URL + '?q=' + encodeURIComponent(q), { signal: ctl.signal });
+          if (!r.ok) throw new Error('http ' + r.status);
+          return await r.json();
+        } finally { clearTimeout(tm); }
+      },
       getAnswers: async function (key) {
         var s = await col().doc(key).get();
         if (!s.exists) return [];
@@ -16850,15 +16861,40 @@ async function fbOpenChat(info, ensure) {
       .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
   }
   function keyOf(s) { return norm(s).replace(/ /g, '_').slice(0, 200); }
+  var pending = null; // "Shuni nazarda tutdingizmi?" savoliga javob kutilmoqda
+  var YES = /^(ha|xa|ha shu|ha shuni|shu|shunday|togri|да|yes|ok)$/;
+  function pick(arr) {
+    var L = lang();
+    var same = arr.filter(function (a) { return !a.lang || a.lang === L; });
+    var use = same.length ? same : arr;
+    return use[Math.floor(Math.random() * use.length)].t;
+  }
+  function none() { return T('Bu savolga hali javob o‘rganilmagan.', 'На этот вопрос ответ ещё не выучен.'); }
   async function reply(text) {
-    var key = keyOf(text);
-    if (key) {
+    var n = norm(text);
+    if (pending) {
+      var p = pending; pending = null;
+      if (YES.test(n)) return pick(p.answers);
+    }
+    if (!n) return none();
+    var r = null;
+    try { r = await BotStore.search(text); } catch (e) { r = null; }
+    if (!r) { // server javob bermadi: faqat aynan mos savol bo'yicha mahalliy qidiruv
       try {
-        var a = await BotStore.getAnswers(key);
+        var a = await BotStore.getAnswers(keyOf(text));
         if (a.length) return a[Math.floor(Math.random() * a.length)];
       } catch (e) { return T('Bazaga ulanib bo‘lmadi. Keyinroq urinib ko‘ring.', 'Не удалось подключиться к базе. Попробуйте позже.'); }
+      return none();
     }
-    return T('Bu savolga hali javob o‘rganilmagan.', 'На этот вопрос ответ ещё не выучен.');
+    if (r.status === 'answer' && r.answers && r.answers.length) {
+      if (typeof r.second === 'number' && r.score - r.second < 0.1) r.status = 'suggest';
+      else return pick(r.answers);
+    }
+    if (r.status === 'suggest' && r.answers && r.answers.length) {
+      pending = { answers: r.answers };
+      return T('Shuni nazarda tutdingizmi: «', 'Вы имели в виду: «') + r.q + T('»? (ha / yo‘q)', '»? (да / нет)');
+    }
+    return none();
   }
 
   // ---------- 3) EKRAN ----------
