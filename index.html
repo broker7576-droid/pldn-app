@@ -1,4 +1,4 @@
-<!-- VERSION: 166 -->
+<!-- VERSION: 167 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -9050,7 +9050,20 @@
 
   function fbChatId(a, b) { return [a, b].sort().join('_'); }
 
-  async function fbOpenChat(info, ensure) {
+    // Chat ochilganda shu chatning bildirishnomalarini tozalash (VERSION: notif-group-v167)
+  async function fbClearChatNotifs(chatId) {
+    try {
+      const PN = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
+      if (!PN || !PN.getDeliveredNotifications) return;
+      const r = await PN.getDeliveredNotifications();
+      const list = ((r && r.notifications) || []).filter(function (n) {
+        return (n.data && n.data.chatId === chatId) || n.tag === chatId;
+      });
+      if (list.length) await PN.removeDeliveredNotifications({ notifications: list });
+    } catch (e) { console.error('Bildirishnoma tozalanmadi', e); }
+  }
+
+async function fbOpenChat(info, ensure) {
     const me = fbAuth && fbAuth.currentUser;
     if (!me) return;
     fbLeaveChat();
@@ -9060,6 +9073,7 @@
       type: isGrp ? info.type : 'dm', members: info.members || [], owner: info.owner || '', admins: info.admins || [], username: info.username || '',
       access: info.access || 'open', allowedReactions: Array.isArray(info.allowedReactions) ? info.allowedReactions : null, blocked: info.blocked || [], discussion: info.discussion || '', adminPerms: info.adminPerms || {}, restricted: info.restricted || {} };
     fbCurrentChat = myChat;
+    fbClearChatNotifs(chatId);
     if (!isGrp) fbWatchPeer(info.otherUid);
 
     document.getElementById('chatDetailName').textContent = info.name;
@@ -9806,7 +9820,8 @@
 (function () {
   const ICE = { iceServers: [
     { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-    { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' }
+    { urls: ['stun:134.255.228.146:3478'] },
+    { urls: ['turn:134.255.228.146:3478?transport=udp', 'turn:134.255.228.146:3478?transport=tcp'], username: 'pldn', credential: 'Pldn7Turn2026xK' }
   ] };
   const $ = function (id) { return document.getElementById(id); };
   const T = function (uz, ru) { return fbT(uz, ru); };
