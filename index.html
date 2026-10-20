@@ -1,4 +1,4 @@
-<!-- VERSION: 167 -->
+<!-- VERSION: 168 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -5948,6 +5948,8 @@
   };
   let fbTickUnread = 0;
   const fbPendingIds = new Set();
+  // VERSION: perf-v168 — ommaviy chizish paytida har pufakchada ekranni qayta o'lchamaslik
+  let fbBulk = false;
   function fbUpdateTicks() {
     const bs = messagesArea.querySelectorAll('.message-bubble[data-tick]');
     let k = fbTickUnread;
@@ -5992,7 +5994,7 @@
     bubble.appendChild(tx);
     bubble.appendChild(tm);
     messagesArea.appendChild(bubble);
-    messagesArea.scrollTop = messagesArea.scrollHeight;
+    if (!fbBulk) messagesArea.scrollTop = messagesArea.scrollHeight;
 
     attachBubbleInteractions(bubble, type);
     return bubble;
@@ -6125,7 +6127,7 @@
     tm.textContent = bubbleClock(date || new Date());
     bubble.appendChild(tm);
     messagesArea.appendChild(bubble);
-    messagesArea.scrollTop = messagesArea.scrollHeight;
+    if (!fbBulk) messagesArea.scrollTop = messagesArea.scrollHeight;
     return bubble;
   }
 
@@ -6144,7 +6146,7 @@
       bubble.appendChild(tm);
     }
     messagesArea.appendChild(bubble);
-    messagesArea.scrollTop = messagesArea.scrollHeight;
+    if (!fbBulk) messagesArea.scrollTop = messagesArea.scrollHeight;
 
     attachBubbleInteractions(bubble, type);
     return bubble;
@@ -6408,11 +6410,21 @@
   });
 
   // ===== TUGMA REJIMI: MIKROFON <-> YUBORISH =====
+  let fbAsRaf = 0;
   function fbAutosizeInput() {
-    messageInput.style.height = 'auto';
-    const sh = messageInput.scrollHeight;
-    if (sh < 20) { messageInput.style.height = ''; return; } // yashirin bo'lsa
-    messageInput.style.height = Math.min(sh + 3, 130) + 'px';
+    const v = messageInput.value;
+    if (v.length < 18 && v.indexOf('\n') < 0) { // qisqa bir qator: o'lchash shart emas
+      if (messageInput.style.height) messageInput.style.height = '';
+      return;
+    }
+    if (fbAsRaf) return;
+    fbAsRaf = requestAnimationFrame(function () {
+      fbAsRaf = 0;
+      messageInput.style.height = 'auto';
+      const sh = messageInput.scrollHeight;
+      if (sh < 20) { messageInput.style.height = ''; return; } // yashirin bo'lsa
+      messageInput.style.height = Math.min(sh + 3, 130) + 'px';
+    });
   }
 
   function updateSendBtnMode() {
@@ -6698,7 +6710,7 @@
     });
 
     messagesArea.appendChild(bubble);
-    messagesArea.scrollTop = messagesArea.scrollHeight;
+    if (!fbBulk) messagesArea.scrollTop = messagesArea.scrollHeight;
     attachBubbleInteractions(bubble, type);
     return bubble;
   }
@@ -8993,7 +9005,7 @@
   // ===== CHAT JOYINI ESLAB QOLISH: chatdan chiqib qaytsangiz, qolgan joyingizdan davom etadi =====
   let fbScrollMem = {};
   try { fbScrollMem = JSON.parse(localStorage.getItem('pldn_scroll_mem') || '{}') || {}; } catch (_) { fbScrollMem = {}; }
-  let fbScrReady = false, fbUserTouched = false;
+  let fbScrReady = false, fbUserTouched = false, fbMoreFn = null;
   function fbScrollSave() {
     const c = fbCurrentChat;
     if (!c || !fbScrReady || !messagesArea.clientHeight) return;
@@ -9014,6 +9026,16 @@
       localStorage.setItem('pldn_scroll_mem', JSON.stringify(fbScrollMem));
     } catch (_) {}
   }
+  function fbVisibleAnchor() {
+    const top = messagesArea.getBoundingClientRect().top, kids = messagesArea.children;
+    for (let i = 0; i < kids.length; i++) {
+      const k = kids[i];
+      if (!k.dataset || !k.dataset.msgId) continue;
+      const r = k.getBoundingClientRect();
+      if (r.bottom > top + 4) return { id: k.dataset.msgId, off: Math.round(r.top - top) };
+    }
+    return null;
+  }
   function fbPlaceAnchor(id, off) {
     const el = messagesArea.querySelector('[data-msg-id="' + String(id).replace(/[^A-Za-z0-9_-]/g, '') + '"]');
     if (!el) return false;
@@ -9031,13 +9053,14 @@
   (function () {
     let tm = null;
     messagesArea.addEventListener('scroll', function () { clearTimeout(tm); tm = setTimeout(fbScrollSave, 350); }, { passive: true });
+    messagesArea.addEventListener('scroll', function () { if (messagesArea.scrollTop < 150 && fbMoreFn) fbMoreFn(); }, { passive: true });
     messagesArea.addEventListener('touchstart', function () { fbUserTouched = true; }, { passive: true });
     messagesArea.addEventListener('wheel', function () { fbUserTouched = true; }, { passive: true });
   })();
 
   function fbLeaveChat() {
     try { fbScrollSave(); } catch (_) {}
-    fbScrReady = false;
+    fbScrReady = false; fbMoreFn = null;
     if (fbMsgUnsub) { fbMsgUnsub(); fbMsgUnsub = null; }
     if (fbTickUnsub) { fbTickUnsub(); fbTickUnsub = null; }
     fbVoiceCache.forEach(b => { if (b._audio) b._audio.pause(); });
@@ -9114,15 +9137,23 @@ async function fbOpenChat(info, ensure) {
       fbUpdateTicks();
     }, () => {});
     let fbRestore = fbScrollMem[chatId] || null; // oxirgi marta qolgan joy
-    fbMsgUnsub = fbDb.collection('chats').doc(chatId).collection('messages').orderBy('createdAt')
+    let fbLimit = 40, fbHasMore = false, fbMoreBusy = false;
+    const fbSubMsgs = () => {
+      if (fbMsgUnsub) { fbMsgUnsub(); fbMsgUnsub = null; }
+      fbMsgUnsub = fbDb.collection('chats').doc(chatId).collection('messages').orderBy('createdAt', 'desc').limit(fbLimit)
       .onSnapshot(snap => {
         if (fbCurrentChat !== myChat) return;
+        const docsAsc = snap.docs.slice().reverse();
+        fbHasMore = snap.size >= fbLimit;
+        const keepAnchor = fbScrLoaded ? fbVisibleAnchor() : null;
         const keepTop = messagesArea.scrollTop;
         const wasBottom = !fbScrLoaded || (messagesArea.scrollHeight - messagesArea.scrollTop - messagesArea.clientHeight) < 120;
+        fbBulk = true;
+        try {
         messagesArea.innerHTML = '';
         fbPendingIds.clear();
         let lastDayKey = '';
-        snap.forEach(doc => {
+        docsAsc.forEach(doc => {
           const m = doc.data({ serverTimestamps: 'estimate' });
           const isText = m.type === 'text' && typeof m.text === 'string';
           const isImage = m.type === 'image' && typeof m.image === 'string' && m.image.indexOf('data:image/') === 0;
@@ -9175,6 +9206,7 @@ async function fbOpenChat(info, ensure) {
             }
           }
         });
+        } finally { fbBulk = false; }
         fbUpdateTicks();
         // o'chirilgan ovozli xabarlarni keshdan olib tashlash
         const liveIds = new Set();
@@ -9184,22 +9216,31 @@ async function fbOpenChat(info, ensure) {
         });
         // Pastga tushirish: birinchi ochilganda, foydalanuvchi allaqachon pastda bo'lsa, yoki o'zi yangi xabar yuborganda.
         // Emotsiya, tahrirlash va boshqa o'zgarishlarda esa turgan joyida qoladi.
-        const lastDoc = snap.docs.length ? snap.docs[snap.docs.length - 1] : null;
+        const lastDoc = docsAsc.length ? docsAsc[docsAsc.length - 1] : null;
         const lastId = lastDoc ? lastDoc.id : '';
         let lastMine = false;
         try { lastMine = !!lastDoc && lastDoc.data().from === me.uid; } catch (_) {}
-        const isNewMsg = fbScrLoaded && (snap.size > fbScrSize || (lastId && lastId !== fbScrLast));
+        const isNewMsg = fbScrLoaded && !!lastId && lastId !== fbScrLast;
         let restored = false;
         if (fbRestore) {
           if (fbPlaceAnchor(fbRestore.id, fbRestore.off)) { restored = true; fbReapplyAnchor(fbRestore, myChat); fbRestore = null; }
+          else if (fbHasMore && fbLimit < 600) { fbLimit += 40; setTimeout(fbSubMsgs, 0); return; } // qolgan joy eskiroq xabarda: ko'proq yuklaymiz
           else if (!snap.metadata.fromCache) fbRestore = null; // xabar o'chirilgan: pastdan ochamiz
         }
         if (restored) { /* eslab qolingan joyga qaytarildi */ }
         else if (!fbScrLoaded || wasBottom || (isNewMsg && lastMine)) messagesArea.scrollTop = messagesArea.scrollHeight;
+        else if (keepAnchor && fbPlaceAnchor(keepAnchor.id, keepAnchor.off)) { /* turgan joyida qoldi */ }
         else messagesArea.scrollTop = keepTop;
-        fbScrLoaded = true; fbScrSize = snap.size; fbScrLast = lastId;
+        fbScrLoaded = true; fbScrSize = docsAsc.length; fbScrLast = lastId; fbMoreBusy = false;
         fbScrReady = !fbRestore;
       }, err => console.error('Xabarlar xatosi', err));
+    };
+    fbSubMsgs();
+    // Tepaga aylantirilganda eskiroq xabarlarni yuklash (har safar +40)
+    fbMoreFn = () => {
+      if (fbCurrentChat !== myChat || !fbHasMore || !fbScrLoaded || fbRestore || fbMoreBusy || fbLimit >= 600) return;
+      fbMoreBusy = true; fbLimit += 40; fbSubMsgs();
+    };
   }
 
   // Chat hujjatiga yoziladigan oxirgi xabar ma'lumoti (shaxsiy chat va guruh/kanal uchun)
