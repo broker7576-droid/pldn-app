@@ -1,4 +1,4 @@
-<!-- VERSION: 169 -->
+<!-- VERSION: 170 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -16800,6 +16800,183 @@ async function fbOpenChat(info, ensure) {
     return a;
   };
   window.pldnRealOpen = openReal;
+})();
+</script>
+<script>
+// ===== PLDN BOT — 1-BOSQICH ===== VERSION: bot-v1
+// Bilimlar bazasi asosidagi bot (tashqi AI yo'q). Bot kodi ma'lumotni FAQAT BotStore orqali oladi:
+// keyinroq boshqa bulutli xotiraga o'tish uchun faqat BotStore ichini almashtirish kifoya.
+(function () {
+  'use strict';
+  var T = function (a, b) { return typeof fbT === 'function' ? fbT(a, b) : a; };
+  var $ = function (id) { return document.getElementById(id); };
+  function me() { return (typeof fbAuth !== 'undefined' && fbAuth && fbAuth.currentUser) || null; }
+  function lang() { return (typeof currentLang !== 'undefined' && currentLang) || 'uz'; }
+
+  // ---------- 1) MA'LUMOTLAR QATLAMI (almashtiriladi) ----------
+  var BotStore = (function () {
+    var col = function () { return fbDb.collection('botKB'); };
+    return {
+      kind: 'firestore', // keyin: 'http' (VPS API) yoki boshqa baza
+      getAnswers: async function (key) {
+        var s = await col().doc(key).get();
+        if (!s.exists) return [];
+        return (s.data().answers || []).filter(function (a) { return a.status === 'approved'; })
+          .map(function (a) { return a.t; });
+      },
+      addAnswer: async function (q, key, text, lg, uid) {
+        await col().doc(key).set({
+          q: q, key: key, updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          answers: firebase.firestore.FieldValue.arrayUnion(
+            { t: text, lang: lg, status: 'approved', source: 'manual', by: uid, at: Date.now() })
+        }, { merge: true });
+      },
+      list: async function () {
+        var s = await col().orderBy('updatedAt', 'desc').limit(50).get();
+        return s.docs.map(function (d) { var x = d.data(); return { key: d.id, q: x.q, answers: x.answers || [] }; });
+      },
+      remove: async function (key) { await col().doc(key).delete(); },
+      isAdmin: async function (uid) {
+        try { return (await fbDb.collection('botAdmins').doc(uid).get()).exists; } catch (e) { return false; }
+      }
+    };
+  })();
+  window.PLDNBotStore = BotStore;
+
+  // ---------- 2) QIDIRUV: harf kattaligi, tinish belgilari, bo'shliqlar ----------
+  function norm(s) {
+    return String(s || '').toLowerCase()
+      .replace(/[\u2018\u2019\u02bb\u02bc\u0060\u00b4']/g, '')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function keyOf(s) { return norm(s).replace(/ /g, '_').slice(0, 200); }
+  async function reply(text) {
+    var key = keyOf(text);
+    if (key) {
+      try {
+        var a = await BotStore.getAnswers(key);
+        if (a.length) return a[Math.floor(Math.random() * a.length)];
+      } catch (e) { return T('Bazaga ulanib bo‘lmadi. Keyinroq urinib ko‘ring.', 'Не удалось подключиться к базе. Попробуйте позже.'); }
+    }
+    return T('Bu savolga hali javob o‘rganilmagan.', 'На этот вопрос ответ ещё не выучен.');
+  }
+
+  // ---------- 3) EKRAN ----------
+  var screen = document.createElement('div');
+  screen.className = 'screen'; screen.id = 'botScreen';
+  var IN = 'flex:1;border:0;outline:0;border-radius:20px;padding:10px 14px;font-size:15px;background:var(--bg-card);color:inherit;min-width:0';
+  var FLD = 'width:100%;box-sizing:border-box;border:1px solid var(--border-color);border-radius:12px;padding:10px 12px;font-size:15px;background:var(--bg-card);color:inherit;margin-bottom:10px;font-family:inherit';
+  screen.innerHTML =
+    '<div class="chat-detail-header">' +
+    '<button class="chat-back-btn" id="botBackBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>' +
+    '<div class="chat-detail-avatar" style="font-size:22px">🤖</div>' +
+    '<div class="chat-detail-info"><div class="chat-detail-name">PLDN Bot</div><div class="chat-detail-status">' + T('bilimlar bazasi', 'база знаний') + '</div></div>' +
+    '<button class="call-hdr-btn" id="botAdminBtn" style="display:none" aria-label="Bilim qo‘shish">＋</button>' +
+    '</div>' +
+    '<div class="messages-area" id="botMsgs"></div>' +
+    '<div class="chat-input-bar"><input id="botInput" style="' + IN + '" autocomplete="off" placeholder="' + T('Savol yozing...', 'Напишите вопрос...') + '">' +
+    '<button class="call-hdr-btn" id="botSend" aria-label="Yuborish">➤</button></div>' +
+    '<div id="botAdmin" style="display:none;position:fixed;inset:0;z-index:100010;background:var(--bg-page);color:inherit;flex-direction:column">' +
+    '<div class="chat-detail-header"><button class="chat-back-btn" id="botAdminBack"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>' +
+    '<div class="chat-detail-info"><div class="chat-detail-name">' + T('Bilimlar bazasi', 'База знаний') + '</div></div></div>' +
+    '<div style="padding:14px;overflow-y:auto;flex:1">' +
+    '<input id="botQ" style="' + FLD + '" placeholder="' + T('Savol', 'Вопрос') + '" maxlength="300">' +
+    '<textarea id="botA" rows="3" style="' + FLD + '" placeholder="' + T('Javob', 'Ответ') + '" maxlength="1500"></textarea>' +
+    '<button class="edit-profile-btn" id="botSave">' + T('Qo‘shish', 'Добавить') + '</button>' +
+    '<div id="botKBList" style="margin-top:16px"></div></div></div>';
+  var s4 = $('screen4');
+  if (!s4) return;
+  s4.parentNode.appendChild(screen);
+  var area = $('botMsgs'), input = $('botInput'), adminOv = $('botAdmin');
+
+  function bubble(text, type) {
+    var b = document.createElement('div'); b.className = 'message-bubble ' + type;
+    var t = document.createElement('span'); t.className = 'msg-text'; t.textContent = text;
+    var tm = document.createElement('span'); tm.className = 'msg-time';
+    var d = new Date(); tm.textContent = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    b.appendChild(t); b.appendChild(tm); area.appendChild(b);
+    area.scrollTop = area.scrollHeight;
+  }
+  var busy = false;
+  async function send() {
+    var text = input.value.trim();
+    if (!text || busy) return;
+    busy = true; input.value = '';
+    bubble(text, 'outgoing');
+    var r = await reply(text);
+    bubble(r, 'incoming');
+    busy = false;
+  }
+  $('botSend').addEventListener('click', send);
+  input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); send(); } });
+
+  // ---------- 4) ADMIN: savol-javob qo'shish / o'chirish ----------
+  async function refreshList() {
+    var box = $('botKBList'); box.textContent = '…';
+    try {
+      var rows = await BotStore.list();
+      box.textContent = '';
+      if (!rows.length) { box.textContent = T('Hali hech narsa yo‘q.', 'Пока ничего нет.'); return; }
+      rows.forEach(function (r) {
+        var it = document.createElement('div');
+        it.style.cssText = 'display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border-color)';
+        var tx = document.createElement('div'); tx.style.cssText = 'flex:1;min-width:0;word-wrap:break-word';
+        var q = document.createElement('b'); q.textContent = r.q || r.key;
+        tx.appendChild(q);
+        r.answers.forEach(function (a) { var p = document.createElement('div'); p.style.opacity = '.8'; p.textContent = '• ' + a.t; tx.appendChild(p); });
+        var del = document.createElement('button');
+        del.textContent = '🗑️'; del.style.cssText = 'border:0;background:none;font-size:20px';
+        del.addEventListener('click', async function () {
+          if (!confirm(T('Bu savol va barcha javoblari o‘chirilsinmi?', 'Удалить этот вопрос и все ответы?'))) return;
+          try { await BotStore.remove(r.key); refreshList(); } catch (e) { alert(e.message); }
+        });
+        it.appendChild(tx); it.appendChild(del); box.appendChild(it);
+      });
+    } catch (e) { box.textContent = e.message; }
+  }
+  $('botSave').addEventListener('click', async function () {
+    var q = $('botQ').value.trim(), a = $('botA').value.trim(), u = me();
+    if (!q || !a || !u) return;
+    var key = keyOf(q);
+    if (!key) { alert(T('Savolda harf yoki raqam bo‘lishi kerak.', 'В вопросе должны быть буквы или цифры.')); return; }
+    try {
+      await BotStore.addAnswer(q, key, a, lang(), u.uid);
+      $('botQ').value = ''; $('botA').value = ''; refreshList();
+    } catch (e) { alert(T('Saqlab bo‘lmadi: ', 'Не удалось сохранить: ') + e.message); }
+  });
+  function adminOpen(v) { adminOv.style.display = v ? 'flex' : 'none'; if (v) refreshList(); }
+  $('botAdminBtn').addEventListener('click', function () { adminOpen(true); });
+  $('botAdminBack').addEventListener('click', function () { adminOpen(false); });
+
+  // ---------- 5) CHATLAR RO'YXATI TEPASIDA "PLDN Bot" QATORI ----------
+  var row = document.createElement('div');
+  row.className = 'chat-item'; row.id = 'botRow';
+  row.innerHTML = '<div style="width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#3a8dff,#7c4dff);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0">🤖</div>' +
+    '<div style="min-width:0"><div style="font-weight:600">PLDN Bot</div><div style="opacity:.65;font-size:14px">' + T('Savolingizni yozing', 'Напишите свой вопрос') + '</div></div>';
+  var list = $('chatList');
+  list.parentNode.insertBefore(row, list);
+  var adminChecked = false;
+  function openBot() {
+    goToScreen('botScreen');
+    if (!area.children.length) bubble(T('Salom! Savolingizni yozing.', 'Привет! Напишите свой вопрос.'), 'incoming');
+    var u = me();
+    if (u && !adminChecked) {
+      adminChecked = true;
+      BotStore.isAdmin(u.uid).then(function (ok) { $('botAdminBtn').style.display = ok ? '' : 'none'; });
+    }
+  }
+  row.addEventListener('click', openBot);
+  $('botBackBtn').addEventListener('click', function () { goToScreen('screen4'); });
+
+  // ---------- 6) ANDROID "ORQAGA" ----------
+  var prev = window.pldnBack;
+  window.pldnBack = function () {
+    if (screen.classList.contains('active')) {
+      if (adminOv.style.display === 'flex') { adminOpen(false); return true; }
+      goToScreen('screen4'); return true;
+    }
+    return prev ? prev.apply(this, arguments) : false;
+  };
 })();
 </script>
 </body>
