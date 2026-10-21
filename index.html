@@ -17490,8 +17490,8 @@ async function fbOpenChat(info, ensure) {
     return false;
   }
   var HELP = {
-    uz: ['«Aziz bilan chatni och»', '«Azizga salom deb yoz» (yuborishdan oldin so‘raydi)', '«Oxirgi suhbatni och»', '«Keyingi / oldingi suhbat»', '«PLDN botini och»', '«Botga … deb yoz»', '«Sozlamalarni / kontaktlarni / profilni och»', '«Kontaktlardan Aziz ni qidir»', '«Orqaga»'],
-    ru: ['«Открой чат с Азиз»', '«Напиши Азиз привет» (перед отправкой спросит)', '«Открой последний чат»', '«Открой бот»', '«Открой настройки / контакты / профиль»', '«Назад»']
+    uz: ['«Aziz bilan chatni och»', '«Azizga salom deb yoz» (yuborishdan oldin so‘raydi)', '«Oxirgi suhbatni och»', '«Keyingi / oldingi suhbat»', '«PLDN botini och»', '«Botga … deb yoz»', '«Sozlamalarni / kontaktlarni / profilni och»', '«Kontaktlardan Aziz ni qidir»', '«Orqaga»', '«Azizga qo‘ng‘iroq qil»', '«Azizga sms yoz: salom» (yuborishdan oldin so‘raydi)', '«7:30 ga budilnik qo‘y»', '«5 daqiqaga taymer qo‘y»', '«Telegramni och»', '«Ovozni 50 foizga qo‘y» / «ovozni oshir»', '«Kamerani och»', '«Wi-Fi / Bluetooth sozlamalarini och»'],
+    ru: ['«Открой чат с Азиз»', '«Напиши Азиз привет» (перед отправкой спросит)', '«Открой последний чат»', '«Открой бот»', '«Открой настройки / контакты / профиль»', '«Назад»', '«Позвони Азиз»', '«Будильник на 7:30»', '«Таймер на 5 минут»', '«Открой Telegram»', '«Открой камеру»']
   };
 
   function run(cmd) {
@@ -17499,7 +17499,7 @@ async function fbOpenChat(info, ensure) {
     var c, r;
     switch (cmd.type) {
       case 'custom':
-        try { cmd.fn(cmd.m, cmd.s, { say: say, finish: finish, close: closePanel }); } catch (e) { say(T('Buyruqda xatolik.', 'Ошибка команды.'), { silent: true }); }
+        try { cmd.fn(cmd.m, cmd.s, { say: say, finish: finish, close: closePanel, confirm: askGeneric, choose: chooseFrom, dictate: dictateTo, T: T }); } catch (e) { say(T('Buyruqda xatolik.', 'Ошибка команды.'), { silent: true }); }
         return;
       case 'cancel': closePanel(); return;
       case 'help': say(T('Buyruqlar:', 'Команды:'), { silent: true });
@@ -17558,6 +17558,20 @@ async function fbOpenChat(info, ensure) {
     }
   }
 
+  // 2-bosqich uchun umumiy tasdiq va matn diktovkasi (stage-2 buyruqlari api orqali ishlatadi)
+  function askGeneric(text, onYes, yesLabel) {
+    S.pending = { run: onYes, yesLabel: yesLabel || '' };
+    S.mode = 'yesno';
+    clearActions();
+    setHeard('');
+    say(text);
+    showConfirmButtons();
+  }
+  function dictateTo(prompt, onText) {
+    S.ctx = { onText: onText };
+    say(prompt);
+    listen('dictate', S.ctx);
+  }
   function askConfirm(row, label, text) {
     S.pending = { row: row, label: label, text: text };
     S.mode = 'yesno';
@@ -17569,7 +17583,7 @@ async function fbOpenChat(info, ensure) {
   function showConfirmButtons() {
     if (!S.pending) return;
     clearActions();
-    addAction(T('✔ Yuborish', '✔ Отправить'), 'pri', confirmYes);
+    addAction(S.pending.yesLabel || T('✔ Yuborish', '✔ Отправить'), 'pri', confirmYes);
     addAction(T('✕ Bekor', '✕ Отмена'), 'bad', confirmNo);
     addAction(T('🎙️ Ovoz bilan (ha / yo‘q)', '🎙️ Голосом (да / нет)'), '', function () { listen('yesno', S.pending); });
   }
@@ -17577,6 +17591,7 @@ async function fbOpenChat(info, ensure) {
   function confirmYes() {
     var p = S.pending; if (!p) return;
     S.pending = null; clearActions(); stopListen();
+    if (p.run) { try { p.run(); } catch (e) { say(T('Bajarib bo‘lmadi.', 'Не удалось выполнить.'), { silent: true }); } return; }
     setReply(T('Yuborilmoqda…', 'Отправка…'));
     Promise.resolve(fbOpenChat(p.row, false)).then(function () { return fbSendText(p.text); }).then(function () {
       finish(T('Yuborildi ✓', 'Отправлено ✓'));
@@ -17598,6 +17613,7 @@ async function fbOpenChat(info, ensure) {
       S.mode = 'cmd'; S.ctx = null;
       var txt = String(texts[0]).replace(/\s+/g, ' ').trim();
       if (!txt) { say(T('Matnni eshitmadim.', 'Текст не услышан.'), { silent: true }); return; }
+      if (ctx.onText) { ctx.onText(txt); return; }
       askConfirm(ctx.row, ctx.label, txt);
       return;
     }
@@ -17644,6 +17660,374 @@ async function fbOpenChat(info, ensure) {
   } catch (e) { setInterval(updateFab, 500); }
   refreshStatic();
   updateFab();
+})();
+</script>
+
+<!-- ===== PLDN START: 2-bosqich — telefon amallari (qo‘ng‘iroq, SMS, budilnik, taymer, ilovalar, ovoz, kamera, Wi-Fi/Bluetooth) ===== -->
+<script>
+(function () {
+  'use strict';
+  if (!window.PLDNStart || typeof window.PLDNStart.register !== 'function' || !window.PLDNStart._t) return;
+  var NORM = window.PLDNStart._t.norm, SCORE = window.PLDNStart._t.nameScore;
+  var reg = window.PLDNStart.register;
+
+  function phone() { return window.PldnPhone || null; }
+  function jp(s, d) { try { return JSON.parse(s); } catch (e) { return d; } }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function rx(src) { return new RegExp(src, 'i'); }
+  function nativeOnly(api) { api.say(api.T('Bu buyruq faqat PLDN ilovasida (APK) ishlaydi.', 'Эта команда работает только в приложении PLDN (APK).'), { silent: true }); }
+  function tidy(n) { return String(n || '').replace(/^(?:iltimos|menga|marhamat|пожалуйста)\s+/i, '').replace(/\s+/g, ' ').trim(); }
+
+  // ---------- SON VA VAQTNI TUSHUNISH ----------
+  var NW = { nol: 0, bir: 1, ikki: 2, uch: 3, tort: 4, besh: 5, olti: 6, yetti: 7, sakkiz: 8, toqqiz: 9, on: 10, yigirma: 20, ottiz: 30, qirq: 40, ellik: 50, oltmish: 60, yetmish: 70, sakson: 80, toqson: 90 };
+  function items(n) {
+    var t = String(n || '').split(' '), out = [], cur = null, i, w, v;
+    function flush() { if (cur !== null) { out.push({ num: cur }); cur = null; } }
+    for (i = 0; i < t.length; i++) {
+      w = t[i];
+      if (!w) continue;
+      if (/^\d+$/.test(w)) { flush(); out.push({ num: parseInt(w, 10) }); }
+      else if (NW.hasOwnProperty(w)) {
+        v = NW[w];
+        if (cur !== null && cur >= 20 && cur % 10 === 0 && v > 0 && v < 10) { cur += v; }
+        else { flush(); cur = v; }
+      } else { flush(); out.push({ w: w }); }
+    }
+    flush();
+    return out;
+  }
+  function unitOf(w) {
+    if (/^(?:soat\w*|chas\w*)$/.test(w)) return 3600;
+    if (/^(?:daqiqa\w*|minut\w*|min)$/.test(w)) return 60;
+    if (/^(?:soniya\w*|sekund\w*|sek)$/.test(w)) return 1;
+    return 0;
+  }
+  function parseDur(n) {
+    var it = items(n), i, x, u, num = null, half = false, total = 0;
+    for (i = 0; i < it.length; i++) {
+      x = it[i];
+      if (x.num !== undefined) { num = x.num; continue; }
+      if (x.w === 'yarim' || x.w === 'polovina') { half = true; continue; }
+      u = unitOf(x.w);
+      if (u) {
+        if (num !== null) { total += num * u; if (half) total += u / 2; }
+        else if (half) { total += u / 2; }
+        num = null; half = false;
+      }
+    }
+    return { sec: Math.round(total), bare: num };
+  }
+  function parseClock(n) {
+    var it = items(n), nums = [], half = false, i, x, h, m;
+    for (i = 0; i < it.length; i++) {
+      x = it[i];
+      if (x.num !== undefined) nums.push(x.num);
+      else if (x.w === 'yarim') half = true;
+    }
+    if (!nums.length) return null;
+    var pm = /(?:^| )(?:kechqurun|kechasi|kech|kechki|tushdan keyin|tushdan songra|vechera|vecherom|dnya|dnem)(?: |$)/.test(n);
+    var am = /(?:^| )(?:ertalab|tongda|tong|erta|tunda|utra|utrom|nochi)(?: |$)/.test(n);
+    h = nums[0]; m = 0;
+    if (nums.length >= 2 && nums[1] < 60) { m = nums[1]; }
+    else if (nums.length === 1 && h >= 100 && h < 2400) { m = h % 100; h = Math.floor(h / 100); }
+    if (half) m = 30;
+    if (h > 23 || m > 59) return null;
+    if (pm && h < 12) h += 12;
+    if (am && h === 12) h = 0;
+    return { h: h, m: m };
+  }
+  function fmtDur(sec, T) {
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60, p = [];
+    if (h) p.push(h + T(' soat', ' ч'));
+    if (m) p.push(m + T(' daqiqa', ' мин'));
+    if (s) p.push(s + T(' soniya', ' сек'));
+    return p.join(' ') || ('0' + T(' soniya', ' сек'));
+  }
+  window.PLDNStart._t2 = { items: items, parseDur: parseDur, parseClock: parseClock };
+
+  // ---------- KONTAKTNI TOPISH ----------
+  function loadContacts() {
+    var P = phone();
+    if (!P) return null;
+    var r = P.contacts();
+    if (r === 'noperm') return 'noperm';
+    if (typeof r === 'string' && r.indexOf('err:') === 0) return 'err';
+    var a = jp(r, null);
+    return Array.isArray(a) ? a : 'err';
+  }
+  var HON = { aka: 1, oka: 1, opa: 1, uka: 1, singil: 1, amaki: 1, xola: 1, togha: 1, buva: 1, buvi: 1, dada: 1, ota: 1, ona: 1, ustoz: 1, domla: 1, akam: 1, opam: 1 };
+  function findContacts(q, noHon) {
+    var all = loadContacts();
+    if (!Array.isArray(all)) return all;
+    var byName = {}, out = [], i, j, sc, k, c, key;
+    for (i = 0; i < all.length; i++) {
+      c = all[i]; sc = SCORE(q, c.n);
+      if (sc < 45) continue;
+      key = NORM(c.n);
+      if (byName[key]) {
+        for (j = 0; j < c.p.length; j++) { if (byName[key].nums.indexOf(c.p[j]) < 0) byName[key].nums.push(c.p[j]); }
+      } else {
+        byName[key] = { label: c.n, score: sc, nums: c.p.slice() };
+        out.push(byName[key]);
+      }
+    }
+    out.sort(function (a, b) { return b.score - a.score; });
+    if (!out.length && !noHon) {
+      var parts = String(q).split(/\s+/), kept = parts.filter(function (w) { return !HON[NORM(w)]; });
+      if (kept.length && kept.length < parts.length) return findContacts(kept.join(' '), true);
+    }
+    return out;
+  }
+  function withContact(name, api, cont) {
+    var T = api.T, P = phone(), c = findContacts(name);
+    if (c === 'noperm') { try { P.ask('contacts'); } catch (e) {} api.say(T('Kontaktlarga ruxsat bering, so‘ng buyruqni qaytaring.', 'Дайте доступ к контактам и повторите команду.'), { silent: true }); return; }
+    if (c === 'err' || !c) { api.say(T('Kontaktlarni o‘qib bo‘lmadi.', 'Не удалось прочитать контакты.'), { silent: true }); return; }
+    if (!c.length) { api.say(T('«' + name + '» kontaktlarda topilmadi. Ismni qayta ayting.', '«' + name + '» не найден в контактах.'), { silent: true }); return; }
+    function afterPick(cd) {
+      if (cd.nums.length === 1) { cont(cd, cd.nums[0]); }
+      else if (cd.nums.length > 1) {
+        api.choose(cd.nums.map(function (n) { return { label: n, num: n }; }), function (x) { cont(cd, x.num); }, T(cd.label + ': qaysi raqam?', cd.label + ': какой номер?'));
+      } else { api.say(T(cd.label + ' da telefon raqami yo‘q.', 'У ' + cd.label + ' нет номера.'), { silent: true }); }
+    }
+    if (c.length === 1 || c[0].score - c[1].score >= 15) { afterPick(c[0]); }
+    else { api.choose(c, afterPick, T('Qaysi kontakt?', 'Какой контакт?')); }
+  }
+
+  // ---------- QO‘NG‘IROQ ----------
+  function doCall(name, api) {
+    var T = api.T, P = phone();
+    if (!P) { nativeOnly(api); return; }
+    name = tidy(name);
+    if (!name) { api.dictate(T('Kimga qo‘ng‘iroq qilay?', 'Кому позвонить?'), function (t) { doCall(t, api); }); return; }
+    withContact(name, api, function (cd, num) {
+      try { if (!P.has('call')) P.ask('call'); } catch (e) {}
+      api.confirm(T('«' + cd.label + '» (' + num + ') ga qo‘ng‘iroq qilaymi?', 'Позвонить «' + cd.label + '» (' + num + ')?'), function () {
+        var r = P.call(num);
+        if (r === 'ok') { api.finish(T('Qo‘ng‘iroq qilinmoqda ✓', 'Звоню ✓')); }
+        else if (r === 'dial') { api.finish(T('Raqam terildi — yashil tugmani bosing (qo‘ng‘iroq ruxsati yo‘q).', 'Номер набран — нажмите зелёную кнопку (нет разрешения на звонки).')); }
+        else { api.say(T('Qo‘ng‘iroq qilib bo‘lmadi.', 'Не удалось позвонить.'), { silent: true }); }
+      }, T('✔ Qo‘ng‘iroq qilish', '✔ Позвонить'));
+    });
+  }
+  var CALLV = "(?:qo'?ng'?iroq|telefon|tel|zvonok|call)";
+  var VQ = "(?:\\s+(?:qil\\w*|et\\w*|qilib\\s+ber|chaqir\\w*))?";
+  var SFX = "(?:\\s*(?:ga|ka|qa|ni|ning))?";
+  reg(rx('^' + CALLV + VQ + '$'), function (m, s, api) { doCall('', api); });
+  reg(rx('^(.+?)' + SFX + '\\s+' + CALLV + VQ + '$'), function (m, s, api) { doCall(m[1], api); });
+  reg(rx('^' + CALLV + '\\s+(?:qil\\w*|et\\w*)\\s+(.+?)(?:\\s*(?:ga|ka|qa))?$'), function (m, s, api) { doCall(m[1], api); });
+  reg(rx('^(.+?)(?:\\s*(?:ni|ga))?\\s+chaqir\\w*$'), function (m, s, api) { doCall(m[1], api); });
+  reg(rx('^(?:позвони|звони|набери|вызови)\\s+(.+)$'), function (m, s, api) { doCall(m[1], api); });
+
+  // ---------- SMS ----------
+  var smsWait = null;
+  var SMS_ERR = {
+    1: ['SMS yuborilmadi (umumiy xato).', 'SMS не отправлено (общая ошибка).'],
+    2: ['Samolyot rejimi yoqilgan.', 'Включён режим полёта.'],
+    3: ['Xabar formati xato.', 'Неверный формат сообщения.'],
+    4: ['Aloqa yo‘q (SIM yoki tarmoqni tekshiring).', 'Нет связи (проверьте SIM или сеть).'],
+    5: ['SMS limiti oshib ketdi.', 'Превышен лимит SMS.']
+  };
+  window.pldnPhoneEvent = function (e) {
+    if (!e || e.type !== 'sms' || !smsWait) return;
+    var w = smsWait; smsWait = null; clearTimeout(w.t);
+    var T = w.api.T;
+    if (e.ok) { w.api.finish(T('SMS yuborildi ✓', 'SMS отправлено ✓')); return; }
+    var m = SMS_ERR[e.code];
+    w.api.say(m ? T(m[0], m[1]) : T('SMS yuborilmadi (kod ' + e.code + ').', 'SMS не отправлено (код ' + e.code + ').'), { silent: true });
+  };
+  function sendSms(P, num, msg, api) {
+    var T = api.T, r = P.sms(num, msg);
+    if (r === 'ok') {
+      api.say(T('SMS yuborilmoqda…', 'SMS отправляется…'), { silent: true });
+      if (smsWait) clearTimeout(smsWait.t);
+      smsWait = { api: api, t: setTimeout(function () {
+        var w = smsWait; smsWait = null;
+        if (w) w.api.say(T('SMS holati noma’lum. SMS ilovasidan tekshiring.', 'Статус SMS неизвестен. Проверьте в приложении SMS.'), { silent: true });
+      }, 30000) };
+    } else if (r === 'noperm') {
+      if (P.smsCompose(num, msg) === 'ok') { api.finish(T('SMS ruxsati yo‘q — SMS ilovasi ochildi, yuborish tugmasini o‘zingiz bosing.', 'Нет разрешения на SMS — открыто приложение SMS, нажмите отправить сами.')); }
+      else { api.say(T('SMS yuborib bo‘lmadi.', 'Не удалось отправить SMS.'), { silent: true }); }
+    } else {
+      api.say(T('SMS yuborib bo‘lmadi.', 'Не удалось отправить SMS.'), { silent: true });
+    }
+  }
+  function doSms(name, text, api) {
+    var T = api.T, P = phone();
+    if (!P) { nativeOnly(api); return; }
+    name = tidy(name); text = String(text || '').trim();
+    if (!name) { api.dictate(T('Kimga SMS yozay?', 'Кому написать SMS?'), function (t) { doSms(t, text, api); }); return; }
+    withContact(name, api, function (cd, num) {
+      function go(msg) {
+        msg = String(msg || '').trim();
+        if (!msg) { api.say(T('Matnni eshitmadim.', 'Текст не услышан.'), { silent: true }); return; }
+        try { if (!P.has('sms')) P.ask('sms'); } catch (e) {}
+        api.confirm(T('«' + cd.label + '» (' + num + ') ga SMS yuboraymi: «' + msg + '»?', 'Отправить SMS «' + cd.label + '» (' + num + '): «' + msg + '»?'), function () { sendSms(P, num, msg, api); }, T('✔ SMS yuborish', '✔ Отправить SMS'));
+      }
+      if (text) { go(text); }
+      else { api.dictate(T(cd.label + ' ga SMS da nima deb yozay?', 'Что написать в SMS для ' + cd.label + '?'), go); }
+    });
+  }
+  var SENDV = "(?:yoz\\w*|yubor\\w*|jo'?nat\\w*)";
+  reg(rx('^(.+?)\\s*(?:ga|ka|qa)\\s+(.+?)\\s+deb\\s+sms\\s*' + SENDV + '$'), function (m, s, api) { doSms(m[1], m[2], api); });
+  reg(rx('^(.+?)\\s*(?:ga|ka|qa)\\s+sms\\w*\\s+' + SENDV + '(?:\\s*[:,]?\\s*(.*))?$'), function (m, s, api) { doSms(m[1], m[2], api); });
+  reg(rx('^sms\\w*\\s+' + SENDV + '\\s+(.+?)\\s*(?:ga|ka|qa)(?:\\s+(.+))?$'), function (m, s, api) { doSms(m[1], m[2], api); });
+  reg(rx('^(.+?)\\s*(?:ga|ka|qa)\\s+sms\\w*$'), function (m, s, api) { doSms(m[1], '', api); });
+  reg(rx('^(?:напиши|отправь)\\s+смс\\s+(\\S+)\\s+(.+)$'), function (m, s, api) { doSms(m[1], m[2], api); });
+  reg(rx('^смс\\s+(\\S+)\\s+(.+)$'), function (m, s, api) { doSms(m[1], m[2], api); });
+
+  // ---------- BUDILNIK ----------
+  function doAlarm(s, api, tries) {
+    var T = api.T, P = phone(), n = NORM(s), t, rel, d;
+    if (!P) { nativeOnly(api); return; }
+    if (/(?:^| )(?:ochir\w*|bekor|royxat\w*|korsat\w*|och|ochib|udali\w*|otmen\w*|pokaji\w*)(?: |$)/.test(n)) {
+      P.showAlarms(); api.finish(T('Budilniklar ro‘yxati ochildi.', 'Список будильников открыт.')); return;
+    }
+    rel = parseDur(n);
+    if (rel.sec > 0 && /(?:^| )(?:keyin\w*|songra|song|cherez)(?: |$)/.test(n)) {
+      d = new Date(Date.now() + rel.sec * 1000 + 59000);
+      t = { h: d.getHours(), m: d.getMinutes() };
+    } else { t = parseClock(n); }
+    if (!t) {
+      if (tries >= 1) { api.say(T('Vaqtni tushunmadim. Masalan: «7:30 ga budilnik qo‘y».', 'Не понял время. Например: «будильник на 7:30».'), { silent: true }); return; }
+      api.dictate(T('Budilnik soat nechiga?', 'На сколько поставить будильник?'), function (x) { doAlarm('budilnik ' + x, api, tries + 1); });
+      return;
+    }
+    var r = P.alarm(t.h, t.m, 'PLDN');
+    if (r === 'ok') { api.finish(T('Budilnik ' + pad(t.h) + ':' + pad(t.m) + ' ga qo‘yildi ✓', 'Будильник на ' + pad(t.h) + ':' + pad(t.m) + ' ✓')); }
+    else { api.say(T('Budilnik qo‘yib bo‘lmadi.', 'Не удалось поставить будильник.'), { silent: true }); }
+  }
+  reg(rx('^(?=.*(?:budilnik|будильник))(.+)$'), function (m, s, api) { doAlarm(s, api, 0); });
+
+  // ---------- TAYMER ----------
+  function doTimer(s, api, tries) {
+    var T = api.T, P = phone(), n = NORM(s), d, sec;
+    if (!P) { nativeOnly(api); return; }
+    if (/(?:^| )(?:ochir\w*|bekor|toxtat\w*|royxat\w*|korsat\w*|och|ochib|otmen\w*|ostanov\w*)(?: |$)/.test(n)) {
+      P.showTimers(); api.finish(T('Taymerlar ochildi.', 'Таймеры открыты.')); return;
+    }
+    d = parseDur(n); sec = d.sec;
+    if (!sec && d.bare !== null) sec = d.bare * 60;
+    if (!sec) {
+      if (tries >= 1) { api.say(T('Vaqtni tushunmadim. Masalan: «5 daqiqaga taymer qo‘y».', 'Не понял время. Например: «таймер на 5 минут».'), { silent: true }); return; }
+      api.dictate(T('Taymer necha daqiqaga?', 'На сколько поставить таймер?'), function (x) { doTimer('taymer ' + x, api, tries + 1); });
+      return;
+    }
+    if (sec > 86400) { api.say(T('Taymer 24 soatdan oshmasligi kerak.', 'Таймер не может быть больше 24 часов.'), { silent: true }); return; }
+    var r = P.timer(sec, 'PLDN');
+    if (r === 'ok') { api.finish(T('Taymer ' + fmtDur(sec, T) + 'ga qo‘yildi ✓', 'Таймер на ' + fmtDur(sec, T) + ' ✓')); }
+    else { api.say(T('Taymer qo‘yib bo‘lmadi.', 'Не удалось поставить таймер.'), { silent: true }); }
+  }
+  reg(rx('^(?=.*(?:taymer|таймер|timer))(.+)$'), function (m, s, api) { doTimer(s, api, 0); });
+
+  // ---------- OVOZ BALANDLIGI ----------
+  function doVolume(s, api, tries) {
+    var T = api.T, P = phone(), n = NORM(s), it, i, pct = null, stream = 'music', op = null, r;
+    if (!P) { nativeOnly(api); return; }
+    if (/(?:^| )(?:qongiroq\w*|rington|zvonok\w*|zvonka)(?: |$)/.test(n)) stream = 'ring';
+    else if (/(?:^| )budilnik\w*(?: |$)/.test(n)) stream = 'alarm';
+    it = items(n);
+    for (i = 0; i < it.length; i++) { if (it[i].num !== undefined && it[i].num <= 100) { pct = it[i].num; break; } }
+    if (pct !== null) { op = 'set'; }
+    else if (/(?:^| )(?:ochir\w*|jim|mute|ovozsiz|vyklyuch\w*)(?: |$)/.test(n)) { op = 'mute'; pct = 0; }
+    else if (/(?:^| )(?:toliq|maksimal\w*|eng baland|full|maksimum)(?: |$)/.test(n)) { op = 'set'; pct = 100; }
+    else if (/(?:^| )(?:kamaytir\w*|pasayt\w*|past\w*|tushir\w*|kamay\w*|pasay\w*|tishe|ubavy\w*|umensh\w*)(?: |$)/.test(n)) { op = 'down'; pct = 0; }
+    else if (/(?:^| )(?:oshir\w*|baland\w*|kotar\w*|kuchaytir\w*|gromche|pribav\w*|uvelich\w*)(?: |$)/.test(n)) { op = 'up'; pct = 0; }
+    else if (/(?:^| )yoq\w*(?: |$)/.test(n)) { op = 'set'; pct = 50; }
+    if (!op) {
+      if (tries >= 1) { api.say(T('Tushunmadim. Masalan: «ovozni 50 foizga qo‘y» yoki «ovozni oshir».', 'Не понял. Например: «громкость 50 процентов».'), { silent: true }); return; }
+      api.dictate(T('Ovozni qanday o‘zgartiray? (masalan: 50 foiz, oshir, kamaytir)', 'Как изменить громкость? (например: 50 процентов)'), function (x) { doVolume('ovoz ' + x, api, tries + 1); });
+      return;
+    }
+    r = P.volume(stream, op, pct === null ? 0 : pct);
+    if (typeof r === 'string' && r.indexOf('ok|') === 0) { api.finish(T('Ovoz ' + r.split('|')[1] + '% ✓', 'Громкость ' + r.split('|')[1] + '% ✓')); }
+    else { api.say(T('Ovozni o‘zgartirib bo‘lmadi (Bezovta qilmang rejimi yoqilgan bo‘lishi mumkin).', 'Не удалось изменить громкость (возможно, включён режим «Не беспокоить»).'), { silent: true }); }
+  }
+  reg(rx('^(?!.*(?:ovozli|xabar|habar|голосов))(?=.*(?:ovoz|tovush|zvuk|звук|громкост))(.+)$'), function (m, s, api) { doVolume(s, api, 0); });
+
+  // ---------- KAMERA ----------
+  function doCamera(video, api) {
+    var T = api.T, P = phone();
+    if (!P) { nativeOnly(api); return; }
+    if (P.camera(!!video) === 'ok') { api.finish(video ? T('Video kamera ochildi ✓', 'Видеокамера открыта ✓') : T('Kamera ochildi ✓', 'Камера открыта ✓')); }
+    else { api.say(T('Kamerani ochib bo‘lmadi.', 'Не удалось открыть камеру.'), { silent: true }); }
+  }
+  reg(rx("^video\\s*kamera\\w*(?:\\s+ni)?\\s*(?:och\\w*|yoq\\w*)$"), function (m, s, api) { doCamera(true, api); });
+  reg(rx("^(?:videoga|video)\\s*(?:ol|yoz)\\w*$"), function (m, s, api) { doCamera(true, api); });
+  reg(rx("^kamera\\w*(?:\\s+ni)?\\s*(?:och\\w*|yoq\\w*)$"), function (m, s, api) { doCamera(false, api); });
+  reg(rx("^(?:rasm|surat|foto|selfi)(?:ga)?\\s*ol\\w*$"), function (m, s, api) { doCamera(false, api); });
+  reg(rx('^(?:открой|включи)\\s+камеру$'), function (m, s, api) { doCamera(false, api); });
+
+  // ---------- WI-FI / BLUETOOTH / TELEFON SOZLAMALARI ----------
+  function doSettings(which, api) {
+    var T = api.T, P = phone();
+    if (!P) { nativeOnly(api); return; }
+    if (P.settings(which) === 'ok') {
+      var nm = which === 'wifi' ? 'Wi‑Fi' : which === 'bluetooth' ? 'Bluetooth' : T('Telefon', 'Телефон');
+      if (which === 'main') { api.finish(T('Telefon sozlamalari ochildi ✓', 'Настройки телефона открыты ✓')); }
+      else { api.finish(T(nm + ' sozlamalari ochildi. (Android ilovaga Wi‑Fi/Bluetooth’ni o‘zi yoqishga ruxsat bermaydi — tugmani o‘zingiz bosing.)', 'Настройки ' + nm + ' открыты. (Android не позволяет приложению включать Wi‑Fi/Bluetooth — нажмите переключатель сами.)')); }
+    } else { api.say(T('Sozlamalarni ochib bo‘lmadi.', 'Не удалось открыть настройки.'), { silent: true }); }
+  }
+  var WIFI = "(?:wi[\\s-]*fi|wifi|vay[\\s-]*fay|вай[\\s-]*фай)";
+  var BT = "(?:blu[\\s-]*tuz|bluetooth|bluetuz|блютуз|блютус)";
+  var ACT = "(?:\\s+sozlama\\w*)?(?:\\s*ni)?\\s*(?:och\\w*|yoq\\w*|o'?chir\\w*|ula\\w*|sozla\\w*)";
+  reg(rx('^(?:.*\\s)?' + WIFI + '\\w*' + ACT + '$'), function (m, s, api) { doSettings('wifi', api); });
+  reg(rx('^(?:открой|включи|выключи)\\s+' + WIFI + '\\w*(?:\\s+настройк\\w*)?$'), function (m, s, api) { doSettings('wifi', api); });
+  reg(rx('^(?:.*\\s)?' + BT + '\\w*' + ACT + '$'), function (m, s, api) { doSettings('bluetooth', api); });
+  reg(rx('^(?:открой|включи|выключи)\\s+' + BT + '\\w*(?:\\s+настройк\\w*)?$'), function (m, s, api) { doSettings('bluetooth', api); });
+  reg(rx("^(?:telefon|android)\\s+sozlama\\w*(?:\\s*ni)?\\s*(?:och\\w*)?$"), function (m, s, api) { doSettings('main', api); });
+  reg(rx('^открой\\s+настройки\\s+телефона$'), function (m, s, api) { doSettings('main', api); });
+
+  // ---------- ILOVALARNI OCHISH ----------
+  var ALIAS = {
+    yutub: 'youtube', yutube: 'youtube', iutub: 'youtube', yutuv: 'youtube',
+    vatsap: 'whatsapp', uotsap: 'whatsapp', vatsapp: 'whatsapp', votsap: 'whatsapp',
+    xrom: 'chrome', hrom: 'chrome', krom: 'chrome', brauzer: 'chrome',
+    kalkulyator: 'calculator', galereya: 'gallery', galeriya: 'gallery',
+    xarita: 'maps', karta: 'maps', pochta: 'gmail', soat: 'clock', budilnik: 'clock',
+    kalendar: 'calendar', fayllar: 'files', telefon: 'phone', tiktok: 'tiktok', instagram: 'instagram', facebook: 'facebook'
+  };
+  var APPNOT = "(?!.*(?:sozlama|kontakt|profil|(?:^|\\s)bot|chat|suhbat|yozishma|oxirgi|so'?nggi|xabar|habar|bilan|настройк|контакт|профиль|чат|(?:^|\\s)бот|последн|диалог))";
+  function loadApps() {
+    var P = phone();
+    if (!P) return null;
+    var a = jp(P.apps(), null);
+    return Array.isArray(a) ? a : null;
+  }
+  function findApps(q) {
+    var apps = loadApps(), out = [], i, sc, s2, qn, al, key, pk;
+    if (!apps) return null;
+    qn = NORM(q);
+    al = ALIAS[qn] || ALIAS[qn.replace(/(?:ni|ga|dan)$/, '')] || '';
+    for (i = 0; i < apps.length; i++) {
+      sc = SCORE(q, apps[i].n);
+      pk = String(apps[i].p || '').toLowerCase();
+      if (al) {
+        s2 = Math.max(SCORE(al, apps[i].n), pk.indexOf(al) >= 0 ? 70 : 0);
+        if (s2 > sc) sc = s2;
+      }
+      if (qn.length >= 4 && pk.indexOf(qn) >= 0 && sc < 70) sc = 70;
+      if (sc >= 45) out.push({ label: apps[i].n, score: sc, pkg: apps[i].p });
+    }
+    out.sort(function (a, b) { return b.score - a.score; });
+    return out;
+  }
+  function doOpenApp(name, api) {
+    var T = api.T, P = phone();
+    if (!P) { nativeOnly(api); return; }
+    name = tidy(name);
+    var c = findApps(name);
+    if (!c) { api.say(T('Ilovalar ro‘yxatini olib bo‘lmadi.', 'Не удалось получить список приложений.'), { silent: true }); return; }
+    if (!c.length) { var shown = name.replace(/ni$/i, ''); api.say(T('«' + shown + '» ilovasi topilmadi.', 'Приложение «' + shown + '» не найдено.'), { silent: true }); return; }
+    function open(cd) {
+      var r = P.openApp(cd.pkg);
+      if (r === 'ok') { api.finish(T(cd.label + ' ochildi ✓', cd.label + ' открыто ✓')); }
+      else { api.say(T(cd.label + ' ni ochib bo‘lmadi.', 'Не удалось открыть ' + cd.label + '.'), { silent: true }); }
+    }
+    if (c.length === 1 || c[0].score - c[1].score >= 15) { open(c[0]); }
+    else { api.choose(c, open, T('Qaysi ilova?', 'Какое приложение?')); }
+  }
+  reg(rx('^' + APPNOT + "(.+?)(?:\\s+ni)?\\s+(?:och|ochib\\s+ber|oching|ochgin|ishga\\s+tushir\\w*)$"), function (m, s, api) { doOpenApp(m[1], api); });
+  reg(rx('^' + APPNOT + '(?:открой|запусти)\\s+(.+)$'), function (m, s, api) { doOpenApp(m[1], api); });
 })();
 </script>
 
