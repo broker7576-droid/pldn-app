@@ -328,6 +328,157 @@ public class MainActivity extends BridgeActivity {
             try { if (vout != null && vout.exists()) { vout.delete(); } } catch (Exception e) { }
         }
     }
+    public class PldnVoice {
+        android.speech.SpeechRecognizer sr;
+        android.speech.tts.TextToSpeech tts;
+        volatile boolean ttsReady = false;
+        volatile String pendText = "";
+        volatile String pendLang = "uz-UZ";
+        void emit(final org.json.JSONObject o) {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    try {
+                        getBridge().getWebView().evaluateJavascript("window.pldnVoiceEvent&&window.pldnVoiceEvent(" + o.toString() + ")", null);
+                    } catch (Throwable e) { }
+                }
+            });
+        }
+        void emitType(String type, String key, Object val) {
+            try {
+                org.json.JSONObject o = new org.json.JSONObject();
+                o.put("type", type);
+                if (key != null) { o.put(key, val); }
+                emit(o);
+            } catch (Throwable e) { }
+        }
+        void killRec() {
+            try {
+                if (sr != null) {
+                    sr.setRecognitionListener(null);
+                    sr.cancel();
+                    sr.destroy();
+                    sr = null;
+                }
+            } catch (Throwable e) { sr = null; }
+        }
+        @android.webkit.JavascriptInterface
+        public boolean available() {
+            try { return android.speech.SpeechRecognizer.isRecognitionAvailable(MainActivity.this); } catch (Throwable e) { return false; }
+        }
+        @android.webkit.JavascriptInterface
+        public boolean hasMic() {
+            return ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+        }
+        @android.webkit.JavascriptInterface
+        public void askMic() {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
+                }
+            });
+        }
+        @android.webkit.JavascriptInterface
+        public void start(final String lang) {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    try {
+                        killRec();
+                        sr = android.speech.SpeechRecognizer.createSpeechRecognizer(MainActivity.this);
+                        sr.setRecognitionListener(new android.speech.RecognitionListener() {
+                            public void onReadyForSpeech(android.os.Bundle p) { emitType("ready", null, null); }
+                            public void onBeginningOfSpeech() { emitType("begin", null, null); }
+                            public void onRmsChanged(float rms) { }
+                            public void onBufferReceived(byte[] b) { }
+                            public void onEndOfSpeech() { emitType("end", null, null); }
+                            public void onError(int code) { emitType("error", "code", code); }
+                            public void onResults(android.os.Bundle b) {
+                                try {
+                                    java.util.ArrayList<String> l = b.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION);
+                                    org.json.JSONArray a = new org.json.JSONArray();
+                                    if (l != null) { for (String s : l) { a.put(s); } }
+                                    emitType("result", "texts", a);
+                                } catch (Throwable e) { emitType("error", "code", -1); }
+                            }
+                            public void onPartialResults(android.os.Bundle b) {
+                                try {
+                                    java.util.ArrayList<String> l = b.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION);
+                                    if (l != null && l.size() > 0) { emitType("partial", "text", l.get(0)); }
+                                } catch (Throwable e) { }
+                            }
+                            public void onEvent(int t, android.os.Bundle b) { }
+                        });
+                        android.content.Intent i = new android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                        i.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                        i.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, lang);
+                        i.putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+                        i.putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 4);
+                        i.putExtra(android.speech.RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
+                        sr.startListening(i);
+                    } catch (Throwable e) {
+                        emitType("error", "code", -2);
+                    }
+                }
+            });
+        }
+        @android.webkit.JavascriptInterface
+        public void stop() {
+            runOnUiThread(new Runnable() {
+                public void run() { try { if (sr != null) { sr.stopListening(); } } catch (Throwable e) { } }
+            });
+        }
+        @android.webkit.JavascriptInterface
+        public void cancel() {
+            runOnUiThread(new Runnable() {
+                public void run() { killRec(); }
+            });
+        }
+        void doSpeak(String text, String lang) {
+            try {
+                java.util.Locale loc = lang.startsWith("ru") ? new java.util.Locale("ru", "RU") : new java.util.Locale("uz", "UZ");
+                int r = tts.isLanguageAvailable(loc);
+                if (r < android.speech.tts.TextToSpeech.LANG_AVAILABLE) { emitType("tts", "ok", false); return; }
+                tts.setLanguage(loc);
+                tts.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "pldn");
+                emitType("tts", "ok", true);
+            } catch (Throwable e) { emitType("tts", "ok", false); }
+        }
+        @android.webkit.JavascriptInterface
+        public void speak(final String text, final String lang) {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    try {
+                        if (tts == null) {
+                            pendText = text; pendLang = lang;
+                            tts = new android.speech.tts.TextToSpeech(MainActivity.this, new android.speech.tts.TextToSpeech.OnInitListener() {
+                                public void onInit(int st) {
+                                    ttsReady = (st == android.speech.tts.TextToSpeech.SUCCESS);
+                                    if (ttsReady) { doSpeak(pendText, pendLang); } else { emitType("tts", "ok", false); }
+                                }
+                            });
+                        } else if (ttsReady) {
+                            doSpeak(text, lang);
+                        }
+                    } catch (Throwable e) { emitType("tts", "ok", false); }
+                }
+            });
+        }
+        @android.webkit.JavascriptInterface
+        public void shutUp() {
+            runOnUiThread(new Runnable() {
+                public void run() { try { if (tts != null) { tts.stop(); } } catch (Throwable e) { } }
+            });
+        }
+        void release() {
+            killRec();
+            try { if (tts != null) { tts.stop(); tts.shutdown(); tts = null; } } catch (Throwable e) { }
+        }
+    }
+    PldnVoice pldnVoice;
+    @Override
+    public void onDestroy() {
+        try { if (pldnVoice != null) { pldnVoice.release(); } } catch (Throwable e) { }
+        super.onDestroy();
+    }
     @Override
     public void onCreate(android.os.Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -362,6 +513,8 @@ public class MainActivity extends BridgeActivity {
         getBridge().getWebView().addJavascriptInterface(new PldnSaver(), "PldnSave");
         getBridge().getWebView().addJavascriptInterface(new PldnUpdater(), "PldnUpd");
         getBridge().getWebView().addJavascriptInterface(new PldnVideo(), "PldnVid");
+        if (pldnVoice == null) { pldnVoice = new PldnVoice(); }
+        getBridge().getWebView().addJavascriptInterface(pldnVoice, "PldnVoice");
         getBridge().getWebView().setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
