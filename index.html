@@ -9117,6 +9117,7 @@
     }
     if (token !== fbRenderToken) return;
     rows.sort((a, b) => b.ms - a.ms);
+    window.pldnVoiceRows = rows; // PLDN Start ovozli yordamchisi uchun chatlar ro'yxati
     chatListEl.innerHTML = '';
     rows.forEach(r => renderChatItem(r));
   }
@@ -17173,5 +17174,478 @@ async function fbOpenChat(info, ensure) {
   };
 })();
 </script>
+<!-- ===== PLDN START: ovozli yordamchi — 1-bosqich (tugma bilan ovozli buyruq, ilova ichidagi buyruqlar) ===== -->
+<style>
+  #pldnVoiceFab { position: fixed; right: 12px; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); width: 46px; height: 46px; border-radius: 50%; border: none; background: linear-gradient(135deg, #3a8dff, #7c4dff); color: #fff; font-size: 22px; line-height: 1; display: none; align-items: center; justify-content: center; z-index: 99980; box-shadow: 0 4px 14px rgba(0,0,0,.3); opacity: .92; cursor: pointer; }
+  #pldnVoiceFab.on { display: flex; }
+  #pldnVoiceFab.live { background: #ff3b30; animation: pldnVPulse 1.2s infinite; }
+  @keyframes pldnVPulse { 0% { box-shadow: 0 0 0 0 rgba(255,59,48,.55); } 70% { box-shadow: 0 0 0 16px rgba(255,59,48,0); } 100% { box-shadow: 0 0 0 0 rgba(255,59,48,0); } }
+  #pldnVoicePanel { position: fixed; left: 0; right: 0; bottom: 0; z-index: 99981; display: none; background: var(--bg-elevated); color: var(--text-primary); border-radius: 18px 18px 0 0; box-shadow: 0 -6px 24px rgba(0,0,0,.28); padding: 12px 16px calc(14px + env(safe-area-inset-bottom, 0px)); max-height: 70vh; overflow-y: auto; }
+  #pldnVoicePanel.open { display: block; }
+  #pldnVoicePanel .vp-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  #pldnVoicePanel .vp-title { font-size: 16px; }
+  #pldnVoicePanel .vp-sp { flex: 1; }
+  #pldnVoicePanel .vp-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-tertiary); flex-shrink: 0; }
+  #pldnVoicePanel .vp-dot.live { background: #ff3b30; animation: pldnVPulse 1.2s infinite; }
+  #pldnVoicePanel .vp-mini { border: none; background: var(--bg-card); color: var(--text-primary); border-radius: 10px; min-width: 34px; height: 30px; padding: 0 9px; font-size: 14px; cursor: pointer; }
+  #pldnVoicePanel .vp-status { font-size: 14px; color: var(--text-secondary); min-height: 18px; }
+  #pldnVoicePanel .vp-heard { font-size: 15px; margin-top: 6px; min-height: 20px; font-style: italic; word-break: break-word; }
+  #pldnVoicePanel .vp-reply { font-size: 16px; margin-top: 6px; font-weight: 600; word-break: break-word; }
+  #pldnVoicePanel .vp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  #pldnVoicePanel .vp-btn { border: none; border-radius: 12px; padding: 10px 14px; font-size: 15px; background: var(--bg-card); color: var(--text-primary); cursor: pointer; max-width: 100%; word-break: break-word; }
+  #pldnVoicePanel .vp-btn.pri { background: #2AABEE; color: #fff; }
+  #pldnVoicePanel .vp-btn.bad { background: #ff3b30; color: #fff; }
+  #pldnVoicePanel .vp-mic { width: 100%; margin-top: 10px; border: none; border-radius: 12px; padding: 11px; font-size: 15px; background: linear-gradient(135deg, #3a8dff, #7c4dff); color: #fff; cursor: pointer; }
+  #pldnVoicePanel .vp-mic.live { background: #ff3b30; }
+</style>
+<script>
+(function () {
+  'use strict';
+  var V = window.PldnVoice || null;
+  var LS = null;
+  try { LS = window.localStorage; } catch (e) { LS = null; }
+
+  function T(uz, ru) { try { return (typeof currentLang !== 'undefined' && currentLang === 'ru') ? ru : uz; } catch (e) { return uz; } }
+  var S = { lang: 'uz', speakOn: true, live: false, mode: 'cmd', ctx: null, pending: null, ttsBad: false, closeT: 0, listenT: 0 };
+  try {
+    var sl = LS && LS.getItem('pldn_start_lang');
+    S.lang = sl ? (sl === 'ru' ? 'ru' : 'uz') : (T('uz', 'ru') === 'ru' ? 'ru' : 'uz');
+    S.speakOn = !(LS && LS.getItem('pldn_start_tts') === '0');
+  } catch (e) {}
+
+  // ---------- MATN TOZALASH VA NOMLARNI TOPISH ----------
+  var CYR = { 'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'yo','ж':'j','з':'z','и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'x','ц':'ts','ч':'ch','ш':'sh','щ':'sh','ъ':'','ы':'i','ь':'','э':'e','ю':'yu','я':'ya','ў':'o','қ':'q','ғ':'g','ҳ':'h' };
+  function norm(s) {
+    s = String(s == null ? '' : s).toLowerCase().replace(/[ʻʼ'’‘`´]/g, '');
+    s = s.replace(/[а-яёўқғҳ]/g, function (c) { return CYR[c] != null ? CYR[c] : c; });
+    return s.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function toks(s) { return norm(s).split(' ').filter(function (x) { return x && x !== 'pldn'; }); }
+  function lev(a, b) {
+    var m = a.length, n = b.length, i, j, d = [], c;
+    if (!m) return n; if (!n) return m;
+    for (i = 0; i <= m; i++) { d[i] = [i]; }
+    for (j = 0; j <= n; j++) { d[0][j] = j; }
+    for (i = 1; i <= m; i++) { for (j = 1; j <= n; j++) {
+      c = a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c);
+    } }
+    return d[m][n];
+  }
+  function tokScore(q, t) {
+    if (q === t) return 100;
+    if (q.length >= 3 && t.indexOf(q) === 0) return 80;
+    if (t.length >= 3 && q.indexOf(t) === 0 && q.length - t.length <= 4) return 75;
+    var d = lev(q, t);
+    if (q.length >= 4 && d <= 1) return 60;
+    if (q.length >= 6 && d <= 2) return 45;
+    return 0;
+  }
+  function nameScore(query, name) {
+    var qs = toks(query), ns = toks(name), sum = 0, i, j, best, sc;
+    if (!qs.length || !ns.length) return 0;
+    for (i = 0; i < qs.length; i++) {
+      best = 0;
+      for (j = 0; j < ns.length; j++) { sc = tokScore(qs[i], ns[j]); if (sc > best) best = sc; }
+      if (!best) return 0;
+      sum += best;
+    }
+    return sum / qs.length;
+  }
+
+  function clean(t) {
+    t = String(t || '').replace(/[ʻʼ’‘`´]/g, "'").replace(/\s+/g, ' ').trim();
+    t = t.replace(/^(?:(?:hey|hay|ey|ok)\s+)?(?:pldn|plden|плдн)\s+(?:start|старт|стар)[\s,.:!\-]*/i, '');
+    t = t.replace(/[.!?]+$/, '').trim();
+    return t;
+  }
+
+  var OPEN = "(?:och|ochib\\s+ber|oching|ko'?rsat\\w*)";
+  var SEND = "(?:yoz|yubor|jo'?nat|yozib\\s+yubor)";
+  function R(src) { return new RegExp('^' + src + '$', 'i'); }
+  var P = {
+    botSend: R("(?:pldn\\s*)?bot(?:ga)?\\s+(.+?)\\s+deb\\s+(?:yoz|so'?ra|ayt|yubor)"),
+    botOpen: R("(?:pldn\\s*)?bot\\w*\\s+" + OPEN),
+    voiceMsg: R("(.+?)\\s*(?:ga|ka|qa)\\s+ovozli\\s+(?:xabar|habar)\\w*\\s+" + SEND),
+    sendDeb: R("(.+?)\\s*(?:ga|ka|qa)\\s+(.+?)\\s+deb\\s+(?:" + SEND + "|ayt)"),
+    sendMsg: R("(.+?)\\s*(?:ga|ka|qa)\\s+(xabar|habar|sms)\\w*\\s+" + SEND + "\\s*[:,]?\\s*(.*)"),
+    lastChat: R("(?:oxirgi|so'?nggi)\\s+(?:suhbat|chat|yozishma)\\w*\\s+" + OPEN),
+    openChat: R("(.+?)\\s+(?:bilan\\s+)?(?:chat|suhbat|yozishma)\\w*\\s+" + OPEN),
+    openChat2: R("(?:chat|suhbat)\\w*\\s+(.+?)\\s+bilan\\s+" + OPEN),
+    tabSettings: R("(?:pldn\\s+)?sozlama\\w*\\s+" + OPEN),
+    tabContacts: R("kontakt\\w*\\s+" + OPEN),
+    tabProfile: R("profil\\w*\\s+" + OPEN),
+    tabChats: R("(?:chatlar|suhbatlar)\\w*(?:\\s+ro'?yxat\\w*)?\\s+(?:och\\w*|qayt\\w*|o'?t\\w*)"),
+    searchC: R("kontakt\\w*\\s+(.+?)(?:\\s*ni)?\\s+(?:qidir|izla)\\w*"),
+    searchG: R("(.+?)(?:\\s*ni)?\\s+(?:qidir|izla)\\w*"),
+    nextPrev: R("(keyingi|oldingi)\\s+(?:suhbat|chat)\\w*(?:\\s+(?:och|o'?t)\\w*)?"),
+    back: R("(?:orqaga|ortga|qaytish|qayt|chiqish)"),
+    help: R("(?:yordam|buyruqlar|nima\\s+qila\\s+olasan)"),
+    cancel: R("(?:bekor|toxta\\w*|yo'?q|yopish)"),
+    ruLast: R("открой\\s+последн\\w+\\s+(?:чат|диалог)"),
+    ruChat: R("открой\\s+(?:чат|диалог)\\s+с\\s+(.+)"),
+    ruSend: R("(?:напиши|отправь)\\s+(?:сообщение\\s+)?(\\S+)\\s+(.+)"),
+    ruBot: R("открой\\s+(?:pldn\\s*|плдн\\s*)?бот\\w*"),
+    ruSet: R("открой\\s+настройк\\w*"),
+    ruCon: R("открой\\s+контакт\\w*"),
+    ruProf: R("открой\\s+профиль"),
+    ruBack: R("назад"),
+    ruHelp: R("помощь")
+  };
+  var CUSTOM = [];
+
+  function parse(raw) {
+    var s = clean(raw), m, i;
+    if (!s) return null;
+    for (i = 0; i < CUSTOM.length; i++) { m = CUSTOM[i].re.exec(s); if (m) return { type: 'custom', fn: CUSTOM[i].fn, m: m, s: s }; }
+    if ((m = P.botSend.exec(s))) return { type: 'botSend', text: m[1] };
+    if (P.botOpen.test(s) || P.ruBot.test(s)) return { type: 'botOpen' };
+    if ((m = P.voiceMsg.exec(s))) return { type: 'voiceMsg', name: m[1] };
+    if ((m = P.sendDeb.exec(s))) return { type: 'send', name: m[1], text: m[2] };
+    if ((m = P.sendMsg.exec(s))) {
+      if (/^sms$/i.test(m[2])) return { type: 'todo', what: 'SMS' };
+      return { type: 'send', name: m[1], text: (m[3] || '').trim() };
+    }
+    if (P.lastChat.test(s) || P.ruLast.test(s)) return { type: 'lastChat' };
+    if ((m = P.openChat.exec(s)) || (m = P.openChat2.exec(s)) || (m = P.ruChat.exec(s))) return { type: 'openChat', name: m[1] };
+    if ((m = P.ruSend.exec(s))) return { type: 'send', name: m[1], text: m[2] };
+    if (P.tabSettings.test(s) || P.ruSet.test(s)) return { type: 'tab', tab: 'settings' };
+    if (P.tabContacts.test(s) || P.ruCon.test(s)) return { type: 'tab', tab: 'contacts' };
+    if (P.tabProfile.test(s) || P.ruProf.test(s)) return { type: 'tab', tab: 'profile' };
+    if (P.tabChats.test(s)) return { type: 'tab', tab: 'chats' };
+    if ((m = P.searchC.exec(s)) || (m = P.searchG.exec(s))) return { type: 'search', name: m[1] };
+    if ((m = P.nextPrev.exec(s))) return { type: 'nextPrev', dir: /^keyingi/i.test(m[1]) ? 1 : -1 };
+    if (P.back.test(s) || P.ruBack.test(s)) return { type: 'back' };
+    if (P.help.test(s) || P.ruHelp.test(s)) return { type: 'help' };
+    if (P.cancel.test(s)) return { type: 'cancel' };
+    return null;
+  }
+  function yesNo(texts) {
+    var i, n;
+    for (i = 0; i < texts.length; i++) {
+      n = ' ' + norm(texts[i]) + ' ';
+      if (/ (yoq|bekor|kerak emas|net|нет|otmena|otmen|toxta|toxtat) /.test(n)) return false;
+      if (/ (ha|xa|haa|yubor|yuboring|yuborish|mayli|albatta|ok|okey|tasdiqlayman|ha yubor|da|davay|otpravit) /.test(n)) return true;
+    }
+    return null;
+  }
+
+  window.PLDNStart = window.PLDNStart || {};
+  window.PLDNStart._t = { clean: clean, parse: parse, norm: norm, nameScore: nameScore, yesNo: yesNo };
+  // Keyingi funksiyalarni ovozli boshqaruvga ulash: PLDNStart.register(/^qora fon(?:ni)? yoq$/i, function (m, s, api) { ...; api.say('Tayyor'); });
+  window.PLDNStart.register = function (re, fn) { if (re instanceof RegExp && typeof fn === 'function') CUSTOM.push({ re: re, fn: fn }); };
+
+  // ---------- INTERFEYS ----------
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  var fab = el('button', '', '🎙️'); fab.id = 'pldnVoiceFab'; fab.setAttribute('aria-label', 'PLDN Start');
+  var panel = el('div'); panel.id = 'pldnVoicePanel';
+  panel.innerHTML = '<div class="vp-top"><span class="vp-dot" id="vpDot"></span><b class="vp-title">PLDN Start</b><span class="vp-sp"></span>' +
+    '<button class="vp-mini" id="vpLang"></button><button class="vp-mini" id="vpTts"></button><button class="vp-mini" id="vpClose">✕</button></div>' +
+    '<div class="vp-status" id="vpStatus"></div><div class="vp-heard" id="vpHeard"></div><div class="vp-reply" id="vpReply"></div>' +
+    '<div class="vp-actions" id="vpActions"></div><button class="vp-mic" id="vpMic"></button>';
+  document.body.appendChild(fab);
+  document.body.appendChild(panel);
+  function $(id) { return document.getElementById(id); }
+
+  function setStatus(t) { $('vpStatus').textContent = t || ''; }
+  function setHeard(t) { $('vpHeard').textContent = t ? '«' + t + '»' : ''; }
+  function setReply(t) { $('vpReply').textContent = t || ''; }
+  function clearActions() { $('vpActions').textContent = ''; }
+  function addAction(label, cls, fn) {
+    var b = el('button', 'vp-btn' + (cls ? ' ' + cls : ''), label);
+    b.addEventListener('click', fn);
+    $('vpActions').appendChild(b);
+    return b;
+  }
+  function refreshStatic() {
+    $('vpLang').textContent = S.lang === 'ru' ? 'RU' : 'UZ';
+    $('vpTts').textContent = S.speakOn ? '🔊' : '🔇';
+    $('vpMic').textContent = S.live ? T('⏹ To‘xtatish', '⏹ Остановить') : T('🎙️ Gapirish', '🎙️ Говорить');
+    $('vpMic').className = 'vp-mic' + (S.live ? ' live' : '');
+    $('vpDot').className = 'vp-dot' + (S.live ? ' live' : '');
+    fab.className = (fab.className.indexOf('on') >= 0 ? 'on' : '') + (S.live ? ' live' : '');
+    fab.className = fab.className.trim();
+  }
+  function setLive(v) {
+    S.live = !!v;
+    if (!v && S.listenT) { clearTimeout(S.listenT); S.listenT = 0; }
+    refreshStatic();
+  }
+  function openPanel() { if (S.closeT) { clearTimeout(S.closeT); S.closeT = 0; } panel.className = 'open'; refreshStatic(); }
+  function closePanel() {
+    if (S.closeT) { clearTimeout(S.closeT); S.closeT = 0; }
+    try { if (V) { V.cancel(); V.shutUp(); } } catch (e) {}
+    setLive(false); S.pending = null; S.mode = 'cmd'; S.ctx = null;
+    panel.className = '';
+    clearActions(); setHeard(''); setReply(''); setStatus('');
+  }
+  function say(text, opts) {
+    opts = opts || {};
+    setReply(text);
+    if (S.speakOn && V && !opts.silent && !(S.ttsBad && S.lang === 'uz')) {
+      try { V.speak(text, S.lang === 'ru' ? 'ru-RU' : 'uz-UZ'); } catch (e) {}
+    }
+  }
+  function finish(text) {
+    clearActions(); setLive(false); setStatus(T('Mikrofon o‘chiq', 'Микрофон выключен'));
+    say(text);
+    if (S.closeT) clearTimeout(S.closeT);
+    S.closeT = setTimeout(function () { S.closeT = 0; closePanel(); }, 1800);
+  }
+
+  // ---------- TINGLASH ----------
+  var ERR = {
+    1: ['Internet bilan muammo (tarmoq vaqti tugadi).', 'Проблема с сетью.'],
+    2: ['Internet yo‘q yoki aloqa uzildi.', 'Нет интернета.'],
+    3: ['Mikrofonda xatolik.', 'Ошибка микрофона.'],
+    4: ['Tanish xizmati xatosi, keyinroq urinib ko‘ring.', 'Ошибка сервиса распознавания.'],
+    5: ['Tanish xatosi, qayta urinib ko‘ring.', 'Ошибка распознавания.'],
+    6: ['Hech narsa eshitmadim. Qayta bosing va gapiring.', 'Ничего не услышал. Нажмите и говорите.'],
+    7: ['Tushunmadim, qayta urinib ko‘ring.', 'Не понял, попробуйте ещё раз.'],
+    8: ['Mikrofon band (ovozli xabar yoki qo‘ng‘iroq ketayotgan bo‘lishi mumkin).', 'Микрофон занят.'],
+    9: ['Mikrofon ruxsati yo‘q. Telefon sozlamalaridan ruxsat bering.', 'Нет разрешения на микрофон.'],
+    11: ['Tanish xizmati uzildi, qayta urinib ko‘ring.', 'Сервис распознавания отключён.'],
+    12: ['Bu til qo‘llab-quvvatlanmaydi. Tepadagi UZ/RU tugmasi bilan tilni almashtiring.', 'Язык не поддерживается. Смените язык кнопкой UZ/RU.'],
+    13: ['Telefonda bu til yuklanmagan (Google ilovasi → Ovozli kiritish → til paketi). Yoki UZ/RU ni almashtiring.', 'Языковой пакет не загружен. Смените язык UZ/RU.']
+  };
+  function activeScreenId() { var a = document.querySelector('.screen.active'); return a ? a.id : ''; }
+  function listen(mode, ctx) {
+    if (!V) { say(T('Ovozli boshqaruv faqat PLDN ilovasida (APK) ishlaydi.', 'Голосовое управление работает только в приложении PLDN (APK).'), { silent: true }); return; }
+    try { if (typeof isRecordingActive !== 'undefined' && isRecordingActive) { say(T('Ovozli xabar yozilayotganda ishlamaydi.', 'Недоступно во время записи голосового сообщения.'), { silent: true }); return; } } catch (e) {}
+    var ov = document.querySelector('.pldn-call-ov');
+    if (ov && ov.style.display && ov.style.display !== 'none') { say(T('Qo‘ng‘iroq paytida ishlamaydi.', 'Недоступно во время звонка.'), { silent: true }); return; }
+    var mic = false; try { mic = V.hasMic(); } catch (e) {}
+    if (!mic) { try { V.askMic(); } catch (e) {} say(T('Mikrofon ruxsatini bering, so‘ng yana bosing.', 'Дайте доступ к микрофону и нажмите снова.'), { silent: true }); return; }
+    S.mode = mode; S.ctx = ctx || null;
+    openPanel();
+    try { V.shutUp(); } catch (e) {}
+    setLive(true);
+    setStatus(T('🔴 Mikrofon yoqilgan — gapiring…', '🔴 Микрофон включён — говорите…'));
+    setHeard('');
+    try { V.start(S.lang === 'ru' ? 'ru-RU' : 'uz-UZ'); } catch (e) { setLive(false); say(T('Tinglashni boshlab bo‘lmadi.', 'Не удалось начать.'), { silent: true }); return; }
+    if (S.listenT) clearTimeout(S.listenT);
+    S.listenT = setTimeout(function () {
+      if (S.live) { try { V.cancel(); } catch (e) {} setLive(false); setStatus(T('Mikrofon o‘chiq', 'Микрофон выключен')); say(T('Vaqt tugadi. Qayta bosing.', 'Время вышло. Нажмите снова.'), { silent: true }); }
+    }, 15000);
+  }
+  function stopListen() { try { if (V) V.cancel(); } catch (e) {} setLive(false); setStatus(T('Mikrofon o‘chiq', 'Микрофон выключен')); }
+
+  window.pldnVoiceEvent = function (e) {
+    if (!e || !e.type) return;
+    if (e.type === 'tts') { if (e.ok === false && S.lang === 'uz' && !S.ttsBad) { S.ttsBad = true; setStatus(T('Telefonda o‘zbekcha ovoz (TTS) yo‘q — javoblar matn shaklida', 'Нет узбекского синтезатора — ответы текстом')); } return; }
+    if (!S.live && e.type !== 'result') return;
+    if (e.type === 'ready') { setStatus(T('🔴 Mikrofon yoqilgan — gapiring…', '🔴 Микрофон включён — говорите…')); }
+    else if (e.type === 'begin') { setStatus(T('🔴 Eshityapman…', '🔴 Слушаю…')); }
+    else if (e.type === 'partial') { setHeard(e.text); }
+    else if (e.type === 'end') { setStatus(T('Qayta ishlanmoqda…', 'Обработка…')); }
+    else if (e.type === 'error') {
+      setLive(false); setStatus(T('Mikrofon o‘chiq', 'Микрофон выключен'));
+      var m = ERR[e.code], msg = m ? T(m[0], m[1]) : T('Xatolik (kod ' + e.code + ').', 'Ошибка (код ' + e.code + ').');
+      say(msg, { silent: true });
+      if (S.mode !== 'cmd') { showConfirmButtons(); }
+    }
+    else if (e.type === 'result') { setLive(false); setStatus(T('Mikrofon o‘chiq', 'Микрофон выключен')); handle(e.texts || []); }
+  };
+
+  // ---------- BUYRUQLARNI BAJARISH ----------
+  function rows() { return (window.pldnVoiceRows && window.pldnVoiceRows.length) ? window.pldnVoiceRows : []; }
+  function contactItems() {
+    var out = [], list = document.querySelectorAll('#contactsList .chat-item'), i, n;
+    for (i = 0; i < list.length; i++) { n = list[i].querySelector('.chat-name'); if (n) out.push({ name: n.textContent || '', node: list[i] }); }
+    return out;
+  }
+  function resolve(nameRaw, needRow) {
+    var c = [], q = nameRaw, r = rows(), i, sc, seen = {};
+    for (i = 0; i < r.length; i++) { sc = nameScore(q, r[i].name); if (sc >= 45) { c.push({ label: r[i].name, score: sc, row: r[i] }); seen[norm(r[i].name)] = 1; } }
+    if (!needRow) {
+      var ci = contactItems();
+      for (i = 0; i < ci.length; i++) { sc = nameScore(q, ci[i].name); if (sc >= 45 && !seen[norm(ci[i].name)]) c.push({ label: ci[i].name, score: sc, node: ci[i].node }); }
+    }
+    c.sort(function (a, b) { return b.score - a.score; });
+    return c;
+  }
+  function chooseFrom(cands, onPick, title) {
+    clearActions();
+    setReply(title);
+    var k, max = Math.min(cands.length, 5);
+    for (k = 0; k < max; k++) (function (cd) { addAction(cd.label, '', function () { clearActions(); onPick(cd); }); })(cands[k]);
+    addAction(T('Bekor', 'Отмена'), 'bad', function () { closePanel(); });
+  }
+  function pick(cands, onPick, title) {
+    if (cands.length === 1 || (cands.length > 1 && cands[0].score - cands[1].score >= 15)) { onPick(cands[0]); return; }
+    chooseFrom(cands, onPick, title);
+  }
+  function openCand(cd) {
+    if (cd.row) { Promise.resolve(fbOpenChat(cd.row, false)); }
+    else if (cd.node) { cd.node.click(); }
+    finish(T(cd.label + ' bilan chat ochildi ✓', 'Чат с ' + cd.label + ' открыт ✓'));
+  }
+  function goTab(tab) {
+    var scr = { chats: 'screen4', contacts: 'contactsScreen', settings: 'settingsScreen', profile: 'profileScreen' }[tab];
+    try { if (typeof setActiveNav === 'function') setActiveNav(tab); } catch (e) {}
+    goToScreen(scr);
+  }
+  function needLogin() {
+    try { if (typeof fbAuth === 'undefined' || !fbAuth || !fbAuth.currentUser) { say(T('Avval hisobga kiring.', 'Сначала войдите в аккаунт.'), { silent: true }); return true; } } catch (e) { return true; }
+    return false;
+  }
+  var HELP = {
+    uz: ['«Aziz bilan chatni och»', '«Azizga salom deb yoz» (yuborishdan oldin so‘raydi)', '«Oxirgi suhbatni och»', '«Keyingi / oldingi suhbat»', '«PLDN botini och»', '«Botga … deb yoz»', '«Sozlamalarni / kontaktlarni / profilni och»', '«Kontaktlardan Aziz ni qidir»', '«Orqaga»'],
+    ru: ['«Открой чат с Азиз»', '«Напиши Азиз привет» (перед отправкой спросит)', '«Открой последний чат»', '«Открой бот»', '«Открой настройки / контакты / профиль»', '«Назад»']
+  };
+
+  function run(cmd) {
+    clearActions();
+    var c, r;
+    switch (cmd.type) {
+      case 'custom':
+        try { cmd.fn(cmd.m, cmd.s, { say: say, finish: finish, close: closePanel }); } catch (e) { say(T('Buyruqda xatolik.', 'Ошибка команды.'), { silent: true }); }
+        return;
+      case 'cancel': closePanel(); return;
+      case 'help': say(T('Buyruqlar:', 'Команды:'), { silent: true });
+        HELP[S.lang].forEach(function (h) { var d = el('div', '', h); d.style.cssText = 'width:100%;font-size:14px;opacity:.85'; $('vpActions').appendChild(d); });
+        return;
+      case 'todo': say(T(cmd.what + ' keyingi bosqichda qo‘shiladi.', cmd.what + ' будет добавлено на следующем этапе.')); return;
+      case 'back':
+        var handled = false; try { handled = !!(window.pldnBack && window.pldnBack()); } catch (e) {}
+        if (!handled) goToScreen('screen4');
+        finish(T('Orqaga ✓', 'Назад ✓')); return;
+      case 'tab': goTab(cmd.tab); finish(T('Ochildi ✓', 'Открыто ✓')); return;
+      case 'botOpen':
+        if (typeof window.PLDNBotOpen === 'function') { window.PLDNBotOpen(); finish(T('PLDN Bot ochildi ✓', 'PLDN Bot открыт ✓')); }
+        else say(T('PLDN Bot topilmadi.', 'PLDN Bot не найден.'), { silent: true });
+        return;
+      case 'botSend':
+        if (typeof window.PLDNBotOpen !== 'function' || !$('botInput') || !$('botSend')) { say(T('PLDN Bot topilmadi.', 'PLDN Bot не найден.'), { silent: true }); return; }
+        window.PLDNBotOpen(); $('botInput').value = cmd.text; $('botSend').click();
+        finish(T('Botga yuborildi ✓', 'Отправлено боту ✓')); return;
+      case 'search':
+        goTab('contacts');
+        var inp = $('contactsSearchInput');
+        if (inp) { inp.value = cmd.name; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+        finish(T('Kontaktlarda qidirildi: ' + cmd.name, 'Поиск в контактах: ' + cmd.name)); return;
+      case 'lastChat':
+        r = rows();
+        if (!r.length) { say(T('Hali suhbatlar yo‘q.', 'Чатов пока нет.'), { silent: true }); return; }
+        openCand({ row: r[0], label: r[0].name }); return;
+      case 'nextPrev':
+        r = rows();
+        if (!r.length) { say(T('Hali suhbatlar yo‘q.', 'Чатов пока нет.'), { silent: true }); return; }
+        var cur = -1, i;
+        try { if (fbCurrentChat) { for (i = 0; i < r.length; i++) { if (r[i].id === fbCurrentChat.id) { cur = i; break; } } } } catch (e) {}
+        var nx = cur < 0 ? 0 : cur + cmd.dir;
+        if (nx < 0 || nx >= r.length) { say(T('Boshqa suhbat yo‘q.', 'Больше чатов нет.'), { silent: true }); return; }
+        openCand({ row: r[nx], label: r[nx].name }); return;
+      case 'openChat':
+        c = resolve(cmd.name, false);
+        if (!c.length) { say(T('«' + cmd.name + '» topilmadi. Ismni qayta ayting.', '«' + cmd.name + '» не найден.'), { silent: true }); return; }
+        pick(c, openCand, T('Qaysi biri?', 'Какой именно?')); return;
+      case 'voiceMsg':
+        c = resolve(cmd.name, true);
+        if (!c.length) { say(T('«' + cmd.name + '» bilan chat topilmadi.', 'Чат с «' + cmd.name + '» не найден.'), { silent: true }); return; }
+        pick(c, function (cd) {
+          Promise.resolve(fbOpenChat(cd.row, false));
+          finish(T(cd.label + ' chati ochildi. Ovozli xabar uchun mikrofon tugmasini bosib turing (avtomatik yozish keyingi bosqichda).', 'Чат открыт. Для голосового сообщения удерживайте микрофон.'));
+        }, T('Qaysi biri?', 'Какой именно?')); return;
+      case 'send':
+        if (needLogin()) return;
+        c = resolve(cmd.name, true);
+        if (!c.length) { say(T('«' + cmd.name + '» bilan chat topilmadi. Avval chatni oching yoki ismni qayta ayting.', 'Чат с «' + cmd.name + '» не найден.'), { silent: true }); return; }
+        pick(c, function (cd) {
+          if (!cmd.text) { S.ctx = { row: cd.row, label: cd.label }; say(T(cd.label + ' ga nima deb yozay?', 'Что написать ' + cd.label + '?')); listen('dictate', S.ctx); return; }
+          askConfirm(cd.row, cd.label, cmd.text);
+        }, T('Kimga yuboray?', 'Кому отправить?')); return;
+    }
+  }
+
+  function askConfirm(row, label, text) {
+    S.pending = { row: row, label: label, text: text };
+    S.mode = 'yesno';
+    clearActions();
+    setHeard('');
+    say(T(label + ' ga yuboraymi: «' + text + '»?', 'Отправить ' + label + ': «' + text + '»?'));
+    showConfirmButtons();
+  }
+  function showConfirmButtons() {
+    if (!S.pending) return;
+    clearActions();
+    addAction(T('✔ Yuborish', '✔ Отправить'), 'pri', confirmYes);
+    addAction(T('✕ Bekor', '✕ Отмена'), 'bad', confirmNo);
+    addAction(T('🎙️ Ovoz bilan (ha / yo‘q)', '🎙️ Голосом (да / нет)'), '', function () { listen('yesno', S.pending); });
+  }
+  function confirmNo() { S.pending = null; finish(T('Bekor qilindi.', 'Отменено.')); }
+  function confirmYes() {
+    var p = S.pending; if (!p) return;
+    S.pending = null; clearActions(); stopListen();
+    setReply(T('Yuborilmoqda…', 'Отправка…'));
+    Promise.resolve(fbOpenChat(p.row, false)).then(function () { return fbSendText(p.text); }).then(function () {
+      finish(T('Yuborildi ✓', 'Отправлено ✓'));
+    }).catch(function () { say(T('Yuborib bo‘lmadi.', 'Не удалось отправить.'), { silent: true }); });
+  }
+
+  function handle(texts) {
+    texts = (texts || []).filter(Boolean);
+    if (!texts.length) { say(T('Hech narsa eshitmadim.', 'Ничего не услышал.'), { silent: true }); if (S.pending) showConfirmButtons(); return; }
+    setHeard(texts[0]);
+    var i, cmd, mode = S.mode, ctx = S.ctx;
+    if (mode === 'yesno') {
+      var yn = yesNo(texts);
+      if (yn === true) { confirmYes(); } else if (yn === false) { confirmNo(); }
+      else { say(T('«Ha» yoki «yo‘q» deb ayting.', 'Скажите «да» или «нет».'), { silent: true }); showConfirmButtons(); }
+      return;
+    }
+    if (mode === 'dictate' && ctx) {
+      S.mode = 'cmd'; S.ctx = null;
+      var txt = String(texts[0]).replace(/\s+/g, ' ').trim();
+      if (!txt) { say(T('Matnni eshitmadim.', 'Текст не услышан.'), { silent: true }); return; }
+      askConfirm(ctx.row, ctx.label, txt);
+      return;
+    }
+    for (i = 0; i < texts.length; i++) { cmd = parse(texts[i]); if (cmd) { run(cmd); return; } }
+    say(T('Buyruqni tushunmadim. «Yordam» deb ayting.', 'Команду не понял. Скажите «помощь».'), { silent: true });
+  }
+
+  // ---------- TUGMALAR ----------
+  fab.addEventListener('click', function () {
+    if (S.live) { stopListen(); return; }
+    if (panel.className.indexOf('open') < 0) { clearActions(); setReply(''); S.pending = null; }
+    listen('cmd');
+  });
+  $('vpMic').addEventListener('click', function () { if (S.live) { stopListen(); } else { listen(S.pending ? 'yesno' : 'cmd', S.pending); } });
+  $('vpClose').addEventListener('click', closePanel);
+  $('vpLang').addEventListener('click', function () {
+    S.lang = S.lang === 'ru' ? 'uz' : 'ru'; S.ttsBad = false;
+    try { if (LS) LS.setItem('pldn_start_lang', S.lang); } catch (e) {}
+    refreshStatic();
+  });
+  $('vpTts').addEventListener('click', function () {
+    S.speakOn = !S.speakOn;
+    try { if (LS) LS.setItem('pldn_start_tts', S.speakOn ? '1' : '0'); } catch (e) {}
+    if (!S.speakOn) { try { if (V) V.shutUp(); } catch (e) {} }
+    refreshStatic();
+  });
+  // Ilova fonga o'tsa — mikrofon darrov o'chadi (maxfiylik)
+  document.addEventListener('visibilitychange', function () { if (document.hidden && S.live) stopListen(); });
+
+  // Tugma faqat asosiy ekranlarda ko'rinadi
+  var SHOW = { screen4: 1, contactsScreen: 1, settingsScreen: 1, profileScreen: 1, chatDetailScreen: 1, botScreen: 1 };
+  var upT = 0;
+  function updateFab() {
+    upT = 0;
+    var on = !!V && !!SHOW[activeScreenId()];
+    var ov = document.querySelector('.pldn-call-ov');
+    if (ov && ov.style.display && ov.style.display !== 'none') on = false;
+    fab.className = (on ? 'on' : '') + (S.live ? ' live' : '');
+    fab.className = fab.className.trim();
+  }
+  try {
+    new MutationObserver(function () { if (!upT) upT = setTimeout(updateFab, 150); })
+      .observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
+  } catch (e) { setInterval(updateFab, 500); }
+  refreshStatic();
+  updateFab();
+})();
+</script>
+
 </body>
 </html>
