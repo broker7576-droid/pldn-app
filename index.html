@@ -1,4 +1,4 @@
-<!-- VERSION: 173 -->
+<!-- VERSION: 172 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -16803,7 +16803,7 @@ async function fbOpenChat(info, ensure) {
 })();
 </script>
 <script>
-// ===== PLDN BOT — 2-BOSQICH ===== VERSION: bot-v2 (qidiruv VPS serverda)
+// ===== PLDN BOT — 2-BOSQICH ===== VERSION: bot-v3 (token himoyasi, javobsiz savollar, o‘rgatish)
 // Bilimlar bazasi asosidagi bot (tashqi AI yo'q). Bot kodi ma'lumotni FAQAT BotStore orqali oladi:
 // keyinroq boshqa bulutli xotiraga o'tish uchun faqat BotStore ichini almashtirish kifoya.
 (function () {
@@ -16814,21 +16814,40 @@ async function fbOpenChat(info, ensure) {
   function lang() { return (typeof currentLang !== 'undefined' && currentLang) || 'uz'; }
 
   // ---------- 1) MA'LUMOTLAR QATLAMI (almashtiriladi) ----------
-  var BOT_SEARCH_URL = 'https://134-255-228-146.sslip.io/search';
+  var BOT_API = 'https://134-255-228-146.sslip.io';
   var BotStore = (function () {
     var col = function () { return fbDb.collection('botKB'); };
     return {
       kind: 'firestore', // keyin: 'http' (VPS API) yoki boshqa baza
-      // O'xshash savolni VPS serverda qidiradi (3 soniya ichida javob bermasa xato tashlaydi)
-      search: async function (q) {
+      // VPS server bilan aloqa (Firebase tokeni bilan)
+      call: async function (path, opt) {
+        var u = me();
+        if (!u) throw new Error('Kirish kerak');
+        var tk = await u.getIdToken();
         var ctl = new AbortController();
-        var tm = setTimeout(function () { ctl.abort(); }, 5000);
+        var tm = setTimeout(function () { ctl.abort(); }, 8000);
         try {
-          var r = await fetch(BOT_SEARCH_URL + '?q=' + encodeURIComponent(q), { signal: ctl.signal });
-          if (!r.ok) throw new Error('http ' + r.status);
-          return await r.json();
+          opt = opt || {};
+          var h = { Authorization: 'Bearer ' + tk };
+          if (opt.body) h['Content-Type'] = 'application/json';
+          var r = await fetch(BOT_API + path, { method: opt.method || 'GET', headers: h, body: opt.body, signal: ctl.signal });
+          var j = await r.json().catch(function () { return {}; });
+          if (!r.ok) { var er = new Error(j.error || ('http ' + r.status)); er.status = r.status; throw er; }
+          return j;
         } finally { clearTimeout(tm); }
       },
+      search: function (q) { return this.call('/search?q=' + encodeURIComponent(q)); },
+      teach: function (q, t, lg) { return this.call('/teach', { method: 'POST', body: JSON.stringify({ q: q, t: t, lang: lg }) }); },
+      unanswered: async function () {
+        var s = await fbDb.collection('botUnanswered').orderBy('count', 'desc').limit(50).get();
+        return s.docs.map(function (d) { var x = d.data(); return { id: d.id, q: x.q || d.id, count: x.count || 1 }; });
+      },
+      removeUnanswered: async function (id) { await fbDb.collection('botUnanswered').doc(id).delete(); },
+      pendingList: async function () {
+        var s = await fbDb.collection('botPending').orderBy('at', 'desc').limit(50).get();
+        return s.docs.map(function (d) { var x = d.data(); return { id: d.id, q: x.q, t: x.t, lang: x.lang }; });
+      },
+      removePending: async function (id) { await fbDb.collection('botPending').doc(id).delete(); },
       getAnswers: async function (key) {
         var s = await col().doc(key).get();
         if (!s.exists) return [];
@@ -16861,25 +16880,58 @@ async function fbOpenChat(info, ensure) {
       .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
   }
   function keyOf(s) { return norm(s).replace(/ /g, '_').slice(0, 200); }
-  var pending = null; // "Shuni nazarda tutdingizmi?" savoliga javob kutilmoqda
+  var pending = null;     // "Shuni nazarda tutdingizmi?" savoliga javob kutilmoqda
+  var lastUnknown = null; // bot bilmagan oxirgi savol (/oyrat uchun)
+  var isAdm = false;
   var YES = /^(ha|xa|ha shu|ha shuni|shu|shunday|togri|да|yes|ok)$/;
+  var NO = /^(yoq|yo q|нет|no|net)$/;
   function pick(arr) {
     var L = lang();
     var same = arr.filter(function (a) { return !a.lang || a.lang === L; });
     var use = same.length ? same : arr;
     return use[Math.floor(Math.random() * use.length)].t;
   }
-  function none() { return T('Bu savolga hali javob o‘rganilmagan.', 'На этот вопрос ответ ещё не выучен.'); }
+  function none(hint) {
+    var s = T('Bu savolga hali javob o‘rganilmagan.', 'На этот вопрос ответ ещё не выучен.');
+    if (hint) s += T(' Javobini bilsangiz, «/oyrat javob matni» deb yozing: admin tasdiqlasa, bot o‘rganadi.', ' Если знаете ответ, напишите «/oyrat текст ответа»: после одобрения админом бот его выучит.');
+    return s;
+  }
+  async function teachCmd(arg) {
+    if (!lastUnknown) return T('Avval bot bilmagan savolni yozing, keyin «/oyrat javob matni» deb yuboring.', 'Сначала задайте вопрос, на который бот не знает ответа, затем напишите «/oyrat текст ответа».');
+    if (!arg) return T('Javob matnini ham yozing: /oyrat javob matni', 'Напишите и текст ответа: /oyrat текст ответа');
+    var q = lastUnknown, u = me();
+    if (!u) return T('Avval hisobga kiring.', 'Сначала войдите в аккаунт.');
+    try {
+      if (isAdm) {
+        var key = keyOf(q);
+        if (!key) return none();
+        await BotStore.addAnswer(q, key, arg.slice(0, 1500), lang(), u.uid);
+        lastUnknown = null;
+        return T('Bazaga qo‘shildi ✓', 'Добавлено в базу ✓');
+      }
+      await BotStore.teach(q, arg, lang());
+      lastUnknown = null;
+      return T('Rahmat! Javobingiz adminga yuborildi. Tasdiqlansa, bot shuni o‘rganadi.', 'Спасибо! Ваш ответ отправлен админу. Если одобрит, бот его выучит.');
+    } catch (e) { return T('Yuborib bo‘lmadi: ', 'Не удалось отправить: ') + (e.message || ''); }
+  }
   async function reply(text) {
+    var cmd = text.trim().match(/^\/(\S+)\s*([\s\S]*)$/);
+    if (cmd) {
+      pending = null;
+      if (cmd[1].toLowerCase() === 'oyrat') return teachCmd(cmd[2].trim());
+      return T('Noma‘lum buyruq. Hozircha mavjud: /oyrat', 'Неизвестная команда. Пока есть: /oyrat');
+    }
     var n = norm(text);
     if (pending) {
       var p = pending; pending = null;
       if (YES.test(n)) return pick(p.answers);
+      if (NO.test(n)) return T('Mayli, savolingizni boshqacha yozib ko‘ring.', 'Хорошо, попробуйте переформулировать вопрос.');
     }
     if (!n) return none();
-    var r = null;
-    try { r = await BotStore.search(text); } catch (e) { r = null; }
+    var r = null, err = null;
+    try { r = await BotStore.search(text); } catch (e) { r = null; err = e; }
     if (!r) { // server javob bermadi: faqat aynan mos savol bo'yicha mahalliy qidiruv
+      if (err && err.status === 429) return err.message;
       try {
         var a = await BotStore.getAnswers(keyOf(text));
         if (a.length) return a[Math.floor(Math.random() * a.length)];
@@ -16894,7 +16946,8 @@ async function fbOpenChat(info, ensure) {
       pending = { answers: r.answers };
       return T('Shuni nazarda tutdingizmi: «', 'Вы имели в виду: «') + r.q + T('»? (ha / yo‘q)', '»? (да / нет)');
     }
-    return none();
+    lastUnknown = text.trim().slice(0, 300);
+    return none(true);
   }
 
   // ---------- 3) EKRAN ----------
@@ -16902,6 +16955,7 @@ async function fbOpenChat(info, ensure) {
   screen.className = 'screen'; screen.id = 'botScreen';
   var IN = 'flex:1;border:0;outline:0;border-radius:20px;padding:10px 14px;font-size:15px;background:var(--bg-card);color:inherit;min-width:0';
   var FLD = 'width:100%;box-sizing:border-box;border:1px solid var(--border-color);border-radius:12px;padding:10px 12px;font-size:15px;background:var(--bg-card);color:inherit;margin-bottom:10px;font-family:inherit';
+  var TAB = 'border:0;border-radius:16px;padding:8px 14px;font-size:14px;background:var(--bg-card);color:inherit';
   screen.innerHTML =
     '<div class="chat-detail-header">' +
     '<button class="chat-back-btn" id="botBackBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>' +
@@ -16916,10 +16970,16 @@ async function fbOpenChat(info, ensure) {
     '<div class="chat-detail-header"><button class="chat-back-btn" id="botAdminBack"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>' +
     '<div class="chat-detail-info"><div class="chat-detail-name">' + T('Bilimlar bazasi', 'База знаний') + '</div></div></div>' +
     '<div style="padding:14px;overflow-y:auto;flex:1">' +
+    '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">' +
+    '<button id="botTab1" style="' + TAB + '">' + T('Bilim', 'Знания') + '</button>' +
+    '<button id="botTab2" style="' + TAB + '">' + T('Javobsiz', 'Без ответа') + '</button>' +
+    '<button id="botTab3" style="' + TAB + '">' + T('Takliflar', 'Предложения') + '</button></div>' +
+    '<div id="botPaneKB">' +
     '<input id="botQ" style="' + FLD + '" placeholder="' + T('Savol', 'Вопрос') + '" maxlength="300">' +
     '<textarea id="botA" rows="3" style="' + FLD + '" placeholder="' + T('Javob', 'Ответ') + '" maxlength="1500"></textarea>' +
     '<button class="edit-profile-btn" id="botSave">' + T('Qo‘shish', 'Добавить') + '</button>' +
-    '<div id="botKBList" style="margin-top:16px"></div></div></div>';
+    '<div id="botKBList" style="margin-top:16px"></div></div>' +
+    '<div id="botPaneUn" style="display:none"></div><div id="botPanePend" style="display:none"></div></div></div>';
   var s4 = $('screen4');
   if (!s4) return;
   s4.parentNode.appendChild(screen);
@@ -16977,10 +17037,65 @@ async function fbOpenChat(info, ensure) {
     if (!key) { alert(T('Savolda harf yoki raqam bo‘lishi kerak.', 'В вопросе должны быть буквы или цифры.')); return; }
     try {
       await BotStore.addAnswer(q, key, a, lang(), u.uid);
+      if (pickedUn && pickedUn.q === q) { try { await BotStore.removeUnanswered(pickedUn.id); } catch (e2) {} }
+      pickedUn = null;
       $('botQ').value = ''; $('botA').value = ''; refreshList();
     } catch (e) { alert(T('Saqlab bo‘lmadi: ', 'Не удалось сохранить: ') + e.message); }
   });
-  function adminOpen(v) { adminOv.style.display = v ? 'flex' : 'none'; if (v) refreshList(); }
+  var pickedUn = null;
+  function mkRow() { var it = document.createElement('div'); it.style.cssText = 'display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border-color)'; return it; }
+  function mkBtn(label, fn) { var b = document.createElement('button'); b.textContent = label; b.style.cssText = 'border:0;background:none;font-size:22px;padding:2px 6px;color:inherit'; b.addEventListener('click', fn); return b; }
+  function mkTx() { var d = document.createElement('div'); d.style.cssText = 'flex:1;min-width:0;word-wrap:break-word'; return d; }
+  async function refreshUn() {
+    var box = $('botPaneUn'); box.textContent = '…';
+    try {
+      var rows = await BotStore.unanswered();
+      box.textContent = '';
+      if (!rows.length) { box.textContent = T('Javobsiz savol yo‘q.', 'Вопросов без ответа нет.'); return; }
+      rows.forEach(function (r) {
+        var it = mkRow(), tx = mkTx();
+        var q = document.createElement('b'); q.textContent = r.q;
+        var c = document.createElement('div'); c.style.opacity = '.65';
+        c.textContent = r.count + T(' marta so‘ralgan · bosib javob yozing', ' раз спрашивали · нажмите, чтобы ответить');
+        tx.appendChild(q); tx.appendChild(c);
+        tx.addEventListener('click', function () { setTab(1); pickedUn = { id: r.id, q: r.q }; $('botQ').value = r.q; $('botA').focus(); });
+        it.appendChild(tx);
+        it.appendChild(mkBtn('🗑️', async function () { try { await BotStore.removeUnanswered(r.id); refreshUn(); } catch (e) { alert(e.message); } }));
+        box.appendChild(it);
+      });
+    } catch (e) { box.textContent = e.message; }
+  }
+  async function refreshPend() {
+    var box = $('botPanePend'); box.textContent = '…';
+    try {
+      var rows = await BotStore.pendingList();
+      box.textContent = '';
+      if (!rows.length) { box.textContent = T('Takliflar yo‘q.', 'Предложений нет.'); return; }
+      rows.forEach(function (r) {
+        var it = mkRow(), tx = mkTx();
+        var q = document.createElement('b'); q.textContent = r.q;
+        var a = document.createElement('div'); a.style.opacity = '.85'; a.textContent = '• ' + r.t;
+        tx.appendChild(q); tx.appendChild(a);
+        it.appendChild(tx);
+        it.appendChild(mkBtn('✓', async function () {
+          var u = me(), key = keyOf(r.q);
+          if (!u || !key) return;
+          try { await BotStore.addAnswer(r.q, key, r.t, r.lang || lang(), u.uid); await BotStore.removePending(r.id); refreshPend(); } catch (e) { alert(e.message); }
+        }));
+        it.appendChild(mkBtn('✕', async function () { try { await BotStore.removePending(r.id); refreshPend(); } catch (e) { alert(e.message); } }));
+        box.appendChild(it);
+      });
+    } catch (e) { box.textContent = e.message; }
+  }
+  function setTab(i) {
+    $('botPaneKB').style.display = i === 1 ? '' : 'none';
+    $('botPaneUn').style.display = i === 2 ? '' : 'none';
+    $('botPanePend').style.display = i === 3 ? '' : 'none';
+    [1, 2, 3].forEach(function (k) { var b = $('botTab' + k); b.style.background = k === i ? '#3a8dff' : 'var(--bg-card)'; b.style.color = k === i ? '#fff' : 'inherit'; });
+    if (i === 1) refreshList(); else if (i === 2) refreshUn(); else refreshPend();
+  }
+  [1, 2, 3].forEach(function (k) { $('botTab' + k).addEventListener('click', function () { setTab(k); }); });
+  function adminOpen(v) { adminOv.style.display = v ? 'flex' : 'none'; if (v) setTab(1); }
   $('botAdminBtn').addEventListener('click', function () { adminOpen(true); });
   $('botAdminBack').addEventListener('click', function () { adminOpen(false); });
 
@@ -16998,7 +17113,7 @@ async function fbOpenChat(info, ensure) {
     var u = me();
     if (u && !adminChecked) {
       adminChecked = true;
-      BotStore.isAdmin(u.uid).then(function (ok) { $('botAdminBtn').style.display = ok ? '' : 'none'; });
+      BotStore.isAdmin(u.uid).then(function (ok) { isAdm = ok; $('botAdminBtn').style.display = ok ? '' : 'none'; });
     }
   }
   row.addEventListener('click', openBot);
