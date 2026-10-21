@@ -473,10 +473,284 @@ public class MainActivity extends BridgeActivity {
             try { if (tts != null) { tts.stop(); tts.shutdown(); tts = null; } } catch (Throwable e) { }
         }
     }
+    public class PldnPhone {
+        android.content.BroadcastReceiver smsRcv;
+        volatile int smsLeft = 0;
+        volatile int smsFail = 0;
+        volatile boolean smsRegistered = false;
+        final String SMS_ACT = "pldn.sms.sent";
+        void emitPhone(final org.json.JSONObject o) {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    try {
+                        getBridge().getWebView().evaluateJavascript("window.pldnPhoneEvent&&window.pldnPhoneEvent(" + o.toString() + ")", null);
+                    } catch (Throwable e) { }
+                }
+            });
+        }
+        String permOf(String k) {
+            if ("call".equals(k)) { return Manifest.permission.CALL_PHONE; }
+            if ("sms".equals(k)) { return Manifest.permission.SEND_SMS; }
+            if ("contacts".equals(k)) { return Manifest.permission.READ_CONTACTS; }
+            return null;
+        }
+        String cleanNum(String s) {
+            return s == null ? "" : s.replaceAll("[^0-9+*#]", "");
+        }
+        @android.webkit.JavascriptInterface
+        public boolean has(String k) {
+            String p = permOf(k);
+            return p != null && ContextCompat.checkSelfPermission(MainActivity.this, p) == PackageManager.PERMISSION_GRANTED;
+        }
+        @android.webkit.JavascriptInterface
+        public void ask(String k) {
+            final String p = permOf(k);
+            if (p == null) { return; }
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    ActivityCompat.requestPermissions(MainActivity.this, new String[]{p}, 7);
+                }
+            });
+        }
+        @android.webkit.JavascriptInterface
+        public String contacts() {
+            if (!has("contacts")) { return "noperm"; }
+            android.database.Cursor c = null;
+            try {
+                c = getContentResolver().query(
+                    android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    new String[]{
+                        android.provider.ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
+                        android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                        android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER
+                    }, null, null, null);
+                java.util.LinkedHashMap<Long, String> names = new java.util.LinkedHashMap<Long, String>();
+                java.util.HashMap<Long, java.util.LinkedHashMap<String, String>> nums = new java.util.HashMap<Long, java.util.LinkedHashMap<String, String>>();
+                if (c != null) {
+                    while (c.moveToNext()) {
+                        long id = c.getLong(0);
+                        String nm = c.getString(1);
+                        String num = cleanNum(c.getString(2));
+                        if (nm == null || num.length() < 3) { continue; }
+                        String key = num.replace("+", "");
+                        if (key.length() > 9) { key = key.substring(key.length() - 9); }
+                        if (!names.containsKey(id)) {
+                            names.put(id, nm);
+                            nums.put(id, new java.util.LinkedHashMap<String, String>());
+                        }
+                        if (!nums.get(id).containsKey(key)) { nums.get(id).put(key, num); }
+                    }
+                }
+                org.json.JSONArray a = new org.json.JSONArray();
+                for (java.util.Map.Entry<Long, String> en : names.entrySet()) {
+                    org.json.JSONObject o = new org.json.JSONObject();
+                    o.put("n", en.getValue());
+                    org.json.JSONArray pa = new org.json.JSONArray();
+                    for (String v : nums.get(en.getKey()).values()) { pa.put(v); }
+                    o.put("p", pa);
+                    a.put(o);
+                }
+                return a.toString();
+            } catch (Throwable e) {
+                return "err:" + e;
+            } finally {
+                try { if (c != null) { c.close(); } } catch (Throwable e2) { }
+            }
+        }
+        @android.webkit.JavascriptInterface
+        public String call(String number) {
+            try {
+                String n = cleanNum(number);
+                if (n.length() < 3) { return "err:raqam"; }
+                boolean ok = has("call");
+                android.content.Intent i = new android.content.Intent(ok ? android.content.Intent.ACTION_CALL : android.content.Intent.ACTION_DIAL, android.net.Uri.fromParts("tel", n, null));
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return ok ? "ok" : "dial";
+            } catch (Throwable e) { return "err:" + e; }
+        }
+        void ensureSmsRcv() {
+            if (smsRegistered) { return; }
+            smsRcv = new android.content.BroadcastReceiver() {
+                public void onReceive(android.content.Context ctx, android.content.Intent it) {
+                    int rc = getResultCode();
+                    if (rc != android.app.Activity.RESULT_OK) { smsFail = rc; }
+                    smsLeft = smsLeft - 1;
+                    if (smsLeft <= 0) {
+                        try {
+                            org.json.JSONObject o = new org.json.JSONObject();
+                            o.put("type", "sms");
+                            o.put("ok", smsFail == 0);
+                            o.put("code", smsFail);
+                            emitPhone(o);
+                        } catch (Throwable e) { }
+                    }
+                }
+            };
+            ContextCompat.registerReceiver(MainActivity.this, smsRcv, new android.content.IntentFilter(SMS_ACT), ContextCompat.RECEIVER_NOT_EXPORTED);
+            smsRegistered = true;
+        }
+        @android.webkit.JavascriptInterface
+        public String sms(String number, String text) {
+            if (!has("sms")) { return "noperm"; }
+            try {
+                String n = cleanNum(number);
+                if (n.length() < 3) { return "err:raqam"; }
+                if (text == null || text.trim().length() == 0) { return "err:matn"; }
+                ensureSmsRcv();
+                android.telephony.SmsManager sm;
+                if (android.os.Build.VERSION.SDK_INT >= 31) { sm = getSystemService(android.telephony.SmsManager.class); }
+                else { sm = android.telephony.SmsManager.getDefault(); }
+                java.util.ArrayList<String> parts = sm.divideMessage(text);
+                java.util.ArrayList<android.app.PendingIntent> sent = new java.util.ArrayList<android.app.PendingIntent>();
+                smsLeft = parts.size();
+                smsFail = 0;
+                for (int k = 0; k < parts.size(); k++) {
+                    android.content.Intent si = new android.content.Intent(SMS_ACT);
+                    si.setPackage(getPackageName());
+                    sent.add(android.app.PendingIntent.getBroadcast(MainActivity.this, 700 + k, si, android.app.PendingIntent.FLAG_IMMUTABLE | android.app.PendingIntent.FLAG_UPDATE_CURRENT));
+                }
+                if (parts.size() > 1) { sm.sendMultipartTextMessage(n, null, parts, sent, null); }
+                else { sm.sendTextMessage(n, null, text, sent.get(0), null); }
+                return "ok";
+            } catch (Throwable e) { return "err:" + e; }
+        }
+        @android.webkit.JavascriptInterface
+        public String smsCompose(String number, String text) {
+            try {
+                android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.fromParts("smsto", cleanNum(number), null));
+                i.putExtra("sms_body", text == null ? "" : text);
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return "ok";
+            } catch (Throwable e) { return "err:" + e; }
+        }
+        @android.webkit.JavascriptInterface
+        public String alarm(int hour, int minute, String label) {
+            try {
+                android.content.Intent i = new android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM);
+                i.putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour);
+                i.putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute);
+                i.putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, label == null ? "PLDN" : label);
+                i.putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true);
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return "ok";
+            } catch (Throwable e) { return "err:" + e; }
+        }
+        @android.webkit.JavascriptInterface
+        public String showAlarms() {
+            try {
+                android.content.Intent i = new android.content.Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS);
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return "ok";
+            } catch (Throwable e) { return "err:" + e; }
+        }
+        @android.webkit.JavascriptInterface
+        public String timer(int seconds, String label) {
+            try {
+                int sec = Math.max(1, Math.min(86400, seconds));
+                android.content.Intent i = new android.content.Intent(android.provider.AlarmClock.ACTION_SET_TIMER);
+                i.putExtra(android.provider.AlarmClock.EXTRA_LENGTH, sec);
+                i.putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, label == null ? "PLDN" : label);
+                i.putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true);
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return "ok";
+            } catch (Throwable e) { return "err:" + e; }
+        }
+        @android.webkit.JavascriptInterface
+        public String showTimers() {
+            try {
+                android.content.Intent i = new android.content.Intent(android.provider.AlarmClock.ACTION_SHOW_TIMERS);
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return "ok";
+            } catch (Throwable e) { return "err:" + e; }
+        }
+        @android.webkit.JavascriptInterface
+        public String apps() {
+            try {
+                android.content.pm.PackageManager pm = getPackageManager();
+                android.content.Intent q = new android.content.Intent(android.content.Intent.ACTION_MAIN);
+                q.addCategory(android.content.Intent.CATEGORY_LAUNCHER);
+                java.util.List<android.content.pm.ResolveInfo> l = pm.queryIntentActivities(q, 0);
+                java.util.HashSet<String> seen = new java.util.HashSet<String>();
+                org.json.JSONArray a = new org.json.JSONArray();
+                for (android.content.pm.ResolveInfo ri : l) {
+                    String pkg = ri.activityInfo.packageName;
+                    if (pkg.equals(getPackageName()) || seen.contains(pkg)) { continue; }
+                    seen.add(pkg);
+                    org.json.JSONObject o = new org.json.JSONObject();
+                    o.put("n", String.valueOf(ri.loadLabel(pm)));
+                    o.put("p", pkg);
+                    a.put(o);
+                }
+                return a.toString();
+            } catch (Throwable e) { return "err:" + e; }
+        }
+        @android.webkit.JavascriptInterface
+        public String openApp(String pkg) {
+            try {
+                android.content.Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
+                if (i == null) { return "noapp"; }
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return "ok";
+            } catch (Throwable e) { return "err:" + e; }
+        }
+        @android.webkit.JavascriptInterface
+        public String volume(String stream, String op, int pct) {
+            try {
+                android.media.AudioManager am = (android.media.AudioManager) getSystemService(android.content.Context.AUDIO_SERVICE);
+                int st = android.media.AudioManager.STREAM_MUSIC;
+                if ("ring".equals(stream)) { st = android.media.AudioManager.STREAM_RING; }
+                else if ("alarm".equals(stream)) { st = android.media.AudioManager.STREAM_ALARM; }
+                int max = am.getStreamMaxVolume(st);
+                int cur = am.getStreamVolume(st);
+                int step = Math.max(1, Math.round(max * (pct > 0 ? pct : 20) / 100f));
+                int v = cur;
+                if ("set".equals(op)) { v = Math.round(Math.max(0, Math.min(100, pct)) * max / 100f); }
+                else if ("up".equals(op)) { v = Math.min(max, cur + step); }
+                else if ("down".equals(op)) { v = Math.max(0, cur - step); }
+                else if ("mute".equals(op)) { v = 0; }
+                am.setStreamVolume(st, v, android.media.AudioManager.FLAG_SHOW_UI);
+                return "ok|" + Math.round(v * 100f / max);
+            } catch (Throwable e) { return "err:" + e; }
+        }
+        @android.webkit.JavascriptInterface
+        public String camera(boolean video) {
+            try {
+                android.content.Intent i = new android.content.Intent(video ? android.provider.MediaStore.INTENT_ACTION_VIDEO_CAMERA : android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA);
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return "ok";
+            } catch (Throwable e) { return "err:" + e; }
+        }
+        @android.webkit.JavascriptInterface
+        public String settings(String which) {
+            try {
+                String act = android.provider.Settings.ACTION_SETTINGS;
+                if ("wifi".equals(which)) { act = android.provider.Settings.ACTION_WIFI_SETTINGS; }
+                else if ("bluetooth".equals(which)) { act = android.provider.Settings.ACTION_BLUETOOTH_SETTINGS; }
+                android.content.Intent i = new android.content.Intent(act);
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return "ok";
+            } catch (Throwable e) { return "err:" + e; }
+        }
+        void release() {
+            try { if (smsRegistered && smsRcv != null) { unregisterReceiver(smsRcv); } } catch (Throwable e) { }
+            smsRegistered = false;
+        }
+    }
     PldnVoice pldnVoice;
+    PldnPhone pldnPhone;
     @Override
     public void onDestroy() {
         try { if (pldnVoice != null) { pldnVoice.release(); } } catch (Throwable e) { }
+        try { if (pldnPhone != null) { pldnPhone.release(); } } catch (Throwable e) { }
         super.onDestroy();
     }
     @Override
@@ -515,6 +789,8 @@ public class MainActivity extends BridgeActivity {
         getBridge().getWebView().addJavascriptInterface(new PldnVideo(), "PldnVid");
         if (pldnVoice == null) { pldnVoice = new PldnVoice(); }
         getBridge().getWebView().addJavascriptInterface(pldnVoice, "PldnVoice");
+        if (pldnPhone == null) { pldnPhone = new PldnPhone(); }
+        getBridge().getWebView().addJavascriptInterface(pldnPhone, "PldnPhone");
         getBridge().getWebView().setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
