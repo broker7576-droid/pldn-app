@@ -1,4 +1,4 @@
-<!-- VERSION: 175 -->
+<!-- VERSION: 173 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -8073,6 +8073,7 @@
         await PN.addListener('pushNotificationActionPerformed', async (a) => {
           const d = (a && a.notification && a.notification.data) || {};
           try {
+            if (d.kind === 'bot') { if (window.PLDNBotOpen) window.PLDNBotOpen(); return; }
             if (d.otherUid) {
               const u = await fbGetUser(d.otherUid);
               fbOpenChat({ id: d.chatId, otherUid: u.uid, name: u.name, color: u.color, avatar: u.avatar });
@@ -16803,7 +16804,7 @@ async function fbOpenChat(info, ensure) {
 })();
 </script>
 <script>
-// ===== PLDN BOT — 2-BOSQICH ===== VERSION: bot-v3 (token himoyasi, javobsiz savollar, o‘rgatish)
+// ===== PLDN BOT — 2-BOSQICH ===== VERSION: bot-v4 (serverda shifrlangan tarix, xotira, eslatmalar)
 // Bilimlar bazasi asosidagi bot (tashqi AI yo'q). Bot kodi ma'lumotni FAQAT BotStore orqali oladi:
 // keyinroq boshqa bulutli xotiraga o'tish uchun faqat BotStore ichini almashtirish kifoya.
 (function () {
@@ -16837,6 +16838,9 @@ async function fbOpenChat(info, ensure) {
         } finally { clearTimeout(tm); }
       },
       search: function (q) { return this.call('/search?q=' + encodeURIComponent(q)); },
+      cmd: function (text) { return this.call('/cmd', { method: 'POST', body: JSON.stringify({ text: text, lang: lang(), tz: -new Date().getTimezoneOffset() }) }); },
+      hist: function (limit) { return this.call('/hist?limit=' + (limit || 40)); },
+      saveHist: function (items) { return this.call('/hist', { method: 'POST', body: JSON.stringify({ items: items }) }); },
       teach: function (q, t, lg) { return this.call('/teach', { method: 'POST', body: JSON.stringify({ q: q, t: t, lang: lg }) }); },
       unanswered: async function () {
         var s = await fbDb.collection('botUnanswered').orderBy('count', 'desc').limit(50).get();
@@ -16883,6 +16887,8 @@ async function fbOpenChat(info, ensure) {
   var pending = null;     // "Shuni nazarda tutdingizmi?" savoliga javob kutilmoqda
   var lastUnknown = null; // bot bilmagan oxirgi savol (/oyrat uchun)
   var isAdm = false;
+  var skipHist = false;   // /tozala dan keyin tarixga yozilmaydi
+  var histSeq = 0;
   var YES = /^(ha|xa|ha shu|ha shuni|shu|shunday|togri|да|yes|ok)$/;
   var NO = /^(yoq|yo q|нет|no|net)$/;
   function pick(arr) {
@@ -16919,7 +16925,14 @@ async function fbOpenChat(info, ensure) {
     if (cmd) {
       pending = null;
       if (cmd[1].toLowerCase() === 'oyrat') return teachCmd(cmd[2].trim());
-      return T('Noma‘lum buyruq. Hozircha mavjud: /oyrat', 'Неизвестная команда. Пока есть: /oyrat');
+      try {
+        var cr = await BotStore.cmd(text.trim());
+        if (cr.clear) { skipHist = true; area.textContent = ''; cacheSet([]); }
+        return cr.reply || '';
+      } catch (e) {
+        if (e.status) return e.message;
+        return T('Server bilan aloqa yo‘q. Keyinroq urinib ko‘ring.', 'Нет связи с сервером. Попробуйте позже.');
+      }
     }
     var n = norm(text);
     if (pending) {
@@ -16985,22 +16998,51 @@ async function fbOpenChat(info, ensure) {
   s4.parentNode.appendChild(screen);
   var area = $('botMsgs'), input = $('botInput'), adminOv = $('botAdmin');
 
-  function bubble(text, type) {
+  function bubble(text, type, ts) {
     var b = document.createElement('div'); b.className = 'message-bubble ' + type;
     var t = document.createElement('span'); t.className = 'msg-text'; t.textContent = text;
     var tm = document.createElement('span'); tm.className = 'msg-time';
-    var d = new Date(); tm.textContent = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    var d = ts ? new Date(ts) : new Date(); tm.textContent = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
     b.appendChild(t); b.appendChild(tm); area.appendChild(b);
     area.scrollTop = area.scrollHeight;
+  }
+  // Tarix serverda shifrlangan saqlanadi; telefonda faqat oxirgi 40 ta nusxa (tez ochilishi uchun)
+  function ckey() { var u = me(); return 'pldn_bot_h_' + (u ? u.uid : ''); }
+  function cacheGet() { try { return JSON.parse(localStorage.getItem(ckey()) || '[]'); } catch (e) { return []; } }
+  function cacheSet(a) { try { localStorage.setItem(ckey(), JSON.stringify(a.slice(-40))); } catch (e) {} }
+  function persist(items) {
+    var a = cacheGet();
+    items.forEach(function (i) { a.push({ who: i.who, t: i.t, ts: Date.now() }); });
+    cacheSet(a);
+    BotStore.saveHist(items).catch(function () {});
+  }
+  function renderHist(list) {
+    area.textContent = '';
+    list.forEach(function (m) { bubble(m.t, m.who === 'u' ? 'outgoing' : 'incoming', m.ts); });
+    if (!list.length) bubble(T('Salom! Savolingizni yozing. Buyruqlar: /yordam', 'Привет! Напишите свой вопрос. Команды: /yordam'), 'incoming');
+  }
+  async function loadHist() {
+    var my = ++histSeq;
+    renderHist(cacheGet());
+    try {
+      var j = await BotStore.hist(40);
+      if (my !== histSeq) return;
+      var list = (j.msgs || []).map(function (m) { return { who: m.who, t: m.t, ts: m.ts }; });
+      cacheSet(list);
+      renderHist(list);
+    } catch (e) { /* server yo'q: mahalliy nusxa qoladi */ }
   }
   var busy = false;
   async function send() {
     var text = input.value.trim();
     if (!text || busy) return;
     busy = true; input.value = '';
+    histSeq++;
     bubble(text, 'outgoing');
     var r = await reply(text);
     bubble(r, 'incoming');
+    if (skipHist) skipHist = false;
+    else persist([{ who: 'u', t: text }, { who: 'b', t: r }]);
     busy = false;
   }
   $('botSend').addEventListener('click', send);
@@ -17109,13 +17151,14 @@ async function fbOpenChat(info, ensure) {
   var adminChecked = false;
   function openBot() {
     goToScreen('botScreen');
-    if (!area.children.length) bubble(T('Salom! Savolingizni yozing.', 'Привет! Напишите свой вопрос.'), 'incoming');
+    loadHist();
     var u = me();
     if (u && !adminChecked) {
       adminChecked = true;
       BotStore.isAdmin(u.uid).then(function (ok) { isAdm = ok; $('botAdminBtn').style.display = ok ? '' : 'none'; });
     }
   }
+  window.PLDNBotOpen = openBot;
   row.addEventListener('click', openBot);
   $('botBackBtn').addEventListener('click', function () { goToScreen('screen4'); });
 
