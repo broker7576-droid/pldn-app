@@ -1,3 +1,4 @@
+// PLDN-FAYL: MainActivity.txt | versiya: wake-3.4 | 22-okt-2026
 package __PKG__;
 
 import android.Manifest;
@@ -811,6 +812,8 @@ public class MainActivity extends BridgeActivity {
                 o.put("err", PldnWakeService.err);
                 o.put("heard", PldnWakeService.heard);
                 o.put("wakes", PldnWakeService.wakes);
+                o.put("code", PldnWakeService.CODE);
+                o.put("wakeInfo", PldnWakeService.wakeInfo);
                 o.put("debug", PldnWakeService.debug);
                 o.put("model", modelReady());
                 return o.toString();
