@@ -1,3 +1,4 @@
+// PLDN-FAYL: PldnWakeService.java | versiya: wake-3.4 | 22-okt-2026
 package __PKG__;
 
 import android.app.KeyguardManager;
@@ -65,7 +66,9 @@ public class PldnWakeService extends Service {
     public static volatile String state = "stopped"; // stopped | loading | listening | paused | error
     public static volatile String err = "";
     public static volatile String heard = "";
+    public static final String CODE = "wake-3.4";
     public static volatile int wakes = 0;
+    public static volatile String wakeInfo = "";
     public static volatile boolean debug = false;
     public static volatile long holdUntil = 0;
 
@@ -395,6 +398,7 @@ public class PldnWakeService extends Service {
         if (interactive && !locked && s != null) {
             try { done = s.onWake(); } catch (Throwable e) { done = false; }
         }
+        wakeInfo = "#" + wakes + " ekran=" + interactive + " qulf=" + locked + " ilova=" + (s != null) + " JSga=" + done;
         if (!done) {
             // Ilova oldinda emas yoki telefon qulflangan: qulfni chetlab o'tmaymiz, bildirishnoma orqali davom etamiz.
             holdFor(4000);
