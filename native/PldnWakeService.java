@@ -1,4 +1,4 @@
-// PLDN-FAYL: PldnWakeService.java | versiya: wake-3.4 | 22-okt-2026
+// PLDN-FAYL: PldnWakeService.java | versiya: lock-4.0 | 22-okt-2026
 package __PKG__;
 
 import android.app.KeyguardManager;
@@ -66,7 +66,7 @@ public class PldnWakeService extends Service {
     public static volatile String state = "stopped"; // stopped | loading | listening | paused | error
     public static volatile String err = "";
     public static volatile String heard = "";
-    public static final String CODE = "wake-3.4";
+    public static final String CODE = "lock-4.0";
     public static volatile int wakes = 0;
     public static volatile String wakeInfo = "";
     public static volatile boolean debug = false;
@@ -93,6 +93,7 @@ public class PldnWakeService extends Service {
     PowerManager pm;
     AudioManager am;
     PowerManager.WakeLock wl;
+    PldnLock lock;
 
     @Override
     public IBinder onBind(Intent intent) { return null; }
@@ -102,6 +103,7 @@ public class PldnWakeService extends Service {
         super.onCreate();
         pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
         am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        lock = new PldnLock(this);
     }
 
     @Override
@@ -205,6 +207,26 @@ public class PldnWakeService extends Service {
             main.postDelayed(new Runnable() {
                 public void run() { try { nm.cancel(NID_CMD); } catch (Throwable e) { } }
             }, 10000);
+        } catch (Throwable e) { }
+    }
+
+    /** Qulf rejimi javoblari/davom etish bildirishnomasi. Lock-ekranda matn yashirin (VISIBILITY_PRIVATE). */
+    void postAction(String title, String text, PendingIntent tap, long timeoutMs) {
+        try {
+            makeChannels();
+            Notification.Builder pub = builder(CH_CMD);
+            pub.setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("PLDN Start");
+            Notification.Builder b = builder(CH_CMD);
+            b.setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setStyle(new Notification.BigTextStyle().bigText(text))
+                .setAutoCancel(true);
+            if (tap != null) { b.setContentIntent(tap); }
+            if (Build.VERSION.SDK_INT >= 21) { b.setVisibility(Notification.VISIBILITY_PRIVATE); b.setPublicVersion(pub.build()); }
+            if (Build.VERSION.SDK_INT >= 26) { b.setTimeoutAfter(timeoutMs); }
+            else { b.setPriority(Notification.PRIORITY_HIGH); }
+            ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).notify(NID_CMD, b.build());
         } catch (Throwable e) { }
     }
 
@@ -400,9 +422,12 @@ public class PldnWakeService extends Service {
         }
         wakeInfo = "#" + wakes + " ekran=" + interactive + " qulf=" + locked + " ilova=" + (s != null) + " JSga=" + done;
         if (!done) {
-            // Ilova oldinda emas yoki telefon qulflangan: qulfni chetlab o'tmaymiz, bildirishnoma orqali davom etamiz.
+            // Ilova oldinda emas yoki telefon qulflangan: qulfni chetlab o'tmaymiz.
             holdFor(4000);
-            if (!interactive || locked) {
+            if (getSharedPreferences("pldn_wake", Context.MODE_PRIVATE).getBoolean("lock_on", true)) {
+                // 4-bosqich: qulfsiz amallar mahalliy bajariladi, qolganlari telefon ochilgach davom etadi
+                main.post(new Runnable() { public void run() { try { lock.start(); } catch (Throwable e) { } } });
+            } else if (!interactive || locked) {
                 notifyCmd("PLDN Start", "Telefon qulflangan. Bosing, qulfni ochgach buyruqni tinglayman.");
             } else {
                 notifyCmd("PLDN Start", "Buyruqni aytish uchun bosing.");
@@ -523,6 +548,7 @@ public class PldnWakeService extends Service {
 
     @Override
     public void onDestroy() {
+        try { if (lock != null) { lock.release(); } } catch (Throwable e) { }
         stopAll();
         running = false;
         if (!"error".equals(state)) { state = "stopped"; }
