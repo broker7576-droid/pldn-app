@@ -1,4 +1,4 @@
-// PLDN-FAYL: MainActivity.txt | versiya: wake-3.4 | 22-okt-2026
+// PLDN-FAYL: MainActivity.txt | versiya: lock-4.0 | 22-okt-2026
 package __PKG__;
 
 import android.Manifest;
@@ -803,6 +803,29 @@ public class MainActivity extends BridgeActivity {
             return false;
         }
         @android.webkit.JavascriptInterface
+        public void setLang(String l) { sp().edit().putString("lang", "ru".equals(l) ? "ru" : "uz").apply(); }
+        @android.webkit.JavascriptInterface
+        public String lockPrefs() {
+            try {
+                org.json.JSONObject o = new org.json.JSONObject();
+                o.put("on", sp().getBoolean("lock_on", true));
+                o.put("cs", sp().getBoolean("lock_cs", true));
+                return o.toString();
+            } catch (Throwable e) { return "{}"; }
+        }
+        @android.webkit.JavascriptInterface
+        public void setLock(String key, boolean v) {
+            if ("on".equals(key)) { sp().edit().putBoolean("lock_on", v).apply(); }
+            else if ("cs".equals(key)) { sp().edit().putBoolean("lock_cs", v).apply(); }
+        }
+        @android.webkit.JavascriptInterface
+        public String takeCmd() {
+            String c = uiCmd;
+            uiCmd = null;
+            if (c != null && android.os.SystemClock.elapsedRealtime() - uiCmdAt < 60000) { return c; }
+            return "";
+        }
+        @android.webkit.JavascriptInterface
         public String status() {
             try {
                 org.json.JSONObject o = new org.json.JSONObject();
@@ -837,6 +860,8 @@ public class MainActivity extends BridgeActivity {
     PldnWake pldnWake;
     volatile boolean uiResumed = false;
     volatile long wakePendingAt = 0;
+    volatile String uiCmd = null;
+    volatile long uiCmdAt = 0;
     final PldnWakeService.Sink wakeSink = new PldnWakeService.Sink() {
         public boolean onWake() {
             if (!uiResumed) { return false; }
@@ -861,6 +886,27 @@ public class MainActivity extends BridgeActivity {
                     }
                 }, 1800);
             }
+            if (in != null && in.hasExtra("pldn_tok")) {
+                String tk = in.getStringExtra("pldn_tok");
+                in.removeExtra("pldn_tok");
+                String c = PldnLock.takeCmd(tk);
+                if (c != null) {
+                    uiCmd = c;
+                    uiCmdAt = android.os.SystemClock.elapsedRealtime();
+                    getBridge().getWebView().postDelayed(new Runnable() { public void run() { deliverCmd(); } }, 1200);
+                }
+            }
+        } catch (Throwable e) { }
+    }
+    void deliverCmd() {
+        final String c = uiCmd;
+        if (c == null || android.os.SystemClock.elapsedRealtime() - uiCmdAt > 60000) { uiCmd = null; return; }
+        if (!uiResumed) { return; }
+        try {
+            String js = "(function(){try{if(window.PLDNStart&&window.PLDNStart.runText){window.PLDNStart.runText(" + org.json.JSONObject.quote(c) + ");return 1;}}catch(e){}return 0;})()";
+            getBridge().getWebView().evaluateJavascript(js, new android.webkit.ValueCallback<String>() {
+                public void onReceiveValue(String v) { if ("1".equals(v)) { uiCmd = null; } }
+            });
         } catch (Throwable e) { }
     }
     PldnVoice pldnVoice;
