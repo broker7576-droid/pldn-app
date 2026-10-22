@@ -344,6 +344,7 @@ public class MainActivity extends BridgeActivity {
             });
         }
         void emitType(String type, String key, Object val) {
+            if ("result".equals(type) || "error".equals(type)) { PldnWakeService.holdFor(700); }
             try {
                 org.json.JSONObject o = new org.json.JSONObject();
                 o.put("type", type);
@@ -379,6 +380,7 @@ public class MainActivity extends BridgeActivity {
         }
         @android.webkit.JavascriptInterface
         public void start(final String lang) {
+            PldnWakeService.holdFor(25000);
             runOnUiThread(new Runnable() {
                 public void run() {
                     try {
@@ -428,6 +430,7 @@ public class MainActivity extends BridgeActivity {
         }
         @android.webkit.JavascriptInterface
         public void cancel() {
+            PldnWakeService.holdFor(700);
             runOnUiThread(new Runnable() {
                 public void run() { killRec(); }
             });
@@ -745,10 +748,123 @@ public class MainActivity extends BridgeActivity {
             smsRegistered = false;
         }
     }
+    public class PldnWake {
+        android.content.SharedPreferences sp() { return getSharedPreferences("pldn_wake", android.content.Context.MODE_PRIVATE); }
+        boolean perm(String p) { return ContextCompat.checkSelfPermission(MainActivity.this, p) == PackageManager.PERMISSION_GRANTED; }
+        void askPerm(final String p, final int code) {
+            runOnUiThread(new Runnable() {
+                public void run() { ActivityCompat.requestPermissions(MainActivity.this, new String[]{p}, code); }
+            });
+        }
+        @android.webkit.JavascriptInterface
+        public boolean modelReady() {
+            try { String[] l = getAssets().list("vosk-model"); return l != null && l.length > 0; } catch (Throwable e) { return false; }
+        }
+        @android.webkit.JavascriptInterface
+        public boolean wanted() { return sp().getBoolean("on", false); }
+        String launch(boolean dbg) {
+            if (!modelReady()) { return "nomodel"; }
+            if (!perm(Manifest.permission.RECORD_AUDIO)) { askPerm(Manifest.permission.RECORD_AUDIO, 1); return "nomic"; }
+            if (android.os.Build.VERSION.SDK_INT >= 33 && !perm(Manifest.permission.POST_NOTIFICATIONS)) { askPerm(Manifest.permission.POST_NOTIFICATIONS, 8); return "nonotif"; }
+            sp().edit().putBoolean("on", true).putBoolean("dbg", dbg).apply();
+            try {
+                android.content.Intent i = new android.content.Intent(MainActivity.this, PldnWakeService.class);
+                i.setAction(PldnWakeService.ACT_START);
+                i.putExtra("debug", dbg);
+                if (android.os.Build.VERSION.SDK_INT >= 26) { startForegroundService(i); } else { startService(i); }
+                return "ok";
+            } catch (Throwable e) { return "err:" + e; }
+        }
+        @android.webkit.JavascriptInterface
+        public String start(boolean dbg) { return launch(dbg); }
+        @android.webkit.JavascriptInterface
+        public String resume() {
+            if (!wanted() || PldnWakeService.running) { return "skip"; }
+            if (!perm(Manifest.permission.RECORD_AUDIO)) { return "skip"; }
+            if (android.os.Build.VERSION.SDK_INT >= 33 && !perm(Manifest.permission.POST_NOTIFICATIONS)) { return "skip"; }
+            return launch(sp().getBoolean("dbg", false));
+        }
+        @android.webkit.JavascriptInterface
+        public void stop() {
+            sp().edit().putBoolean("on", false).apply();
+            try {
+                android.content.Intent i = new android.content.Intent(MainActivity.this, PldnWakeService.class);
+                i.setAction(PldnWakeService.ACT_STOP);
+                startService(i);
+            } catch (Throwable e) { }
+        }
+        @android.webkit.JavascriptInterface
+        public void hold(int ms) { PldnWakeService.holdMax(Math.max(0, Math.min(ms, 30000))); }
+        @android.webkit.JavascriptInterface
+        public boolean takePending() {
+            if (wakePendingAt > 0 && android.os.SystemClock.elapsedRealtime() - wakePendingAt < 20000) { wakePendingAt = 0; return true; }
+            wakePendingAt = 0;
+            return false;
+        }
+        @android.webkit.JavascriptInterface
+        public String status() {
+            try {
+                org.json.JSONObject o = new org.json.JSONObject();
+                o.put("on", wanted());
+                o.put("running", PldnWakeService.running);
+                o.put("state", PldnWakeService.state);
+                o.put("err", PldnWakeService.err);
+                o.put("heard", PldnWakeService.heard);
+                o.put("wakes", PldnWakeService.wakes);
+                o.put("debug", PldnWakeService.debug);
+                o.put("model", modelReady());
+                return o.toString();
+            } catch (Throwable e) { return "{}"; }
+        }
+        @android.webkit.JavascriptInterface
+        public String openSettings(String which) {
+            try {
+                android.content.Intent i;
+                if ("battery".equals(which)) {
+                    i = new android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                } else {
+                    i = new android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + getPackageName()));
+                }
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return "ok";
+            } catch (Throwable e) { return "err:" + e; }
+        }
+    }
+    PldnWake pldnWake;
+    volatile boolean uiResumed = false;
+    volatile long wakePendingAt = 0;
+    final PldnWakeService.Sink wakeSink = new PldnWakeService.Sink() {
+        public boolean onWake() {
+            if (!uiResumed) { return false; }
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    try {
+                        getBridge().getWebView().evaluateJavascript("window.pldnWakeEvent&&window.pldnWakeEvent({type:'wake'})", null);
+                    } catch (Throwable e) { }
+                }
+            });
+            return true;
+        }
+    };
+    void checkWakeIntent(android.content.Intent in) {
+        try {
+            if (in != null && in.getBooleanExtra("pldn_wake", false)) {
+                in.removeExtra("pldn_wake");
+                wakePendingAt = android.os.SystemClock.elapsedRealtime();
+                getBridge().getWebView().postDelayed(new Runnable() {
+                    public void run() {
+                        if (uiResumed && pldnWake != null && pldnWake.takePending()) { wakeSink.onWake(); }
+                    }
+                }, 1800);
+            }
+        } catch (Throwable e) { }
+    }
     PldnVoice pldnVoice;
     PldnPhone pldnPhone;
     @Override
     public void onDestroy() {
+        try { if (PldnWakeService.sink == wakeSink) { PldnWakeService.sink = null; } } catch (Throwable e) { }
         try { if (pldnVoice != null) { pldnVoice.release(); } } catch (Throwable e) { }
         try { if (pldnPhone != null) { pldnPhone.release(); } } catch (Throwable e) { }
         super.onDestroy();
@@ -778,6 +894,22 @@ public class MainActivity extends BridgeActivity {
         });
     }
     @Override
+    public void onResume() {
+        super.onResume();
+        uiResumed = true;
+    }
+    @Override
+    public void onPause() {
+        uiResumed = false;
+        super.onPause();
+    }
+    @Override
+    public void onNewIntent(android.content.Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        checkWakeIntent(intent);
+    }
+    @Override
     public void onStart() {
         super.onStart();
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -791,6 +923,10 @@ public class MainActivity extends BridgeActivity {
         getBridge().getWebView().addJavascriptInterface(pldnVoice, "PldnVoice");
         if (pldnPhone == null) { pldnPhone = new PldnPhone(); }
         getBridge().getWebView().addJavascriptInterface(pldnPhone, "PldnPhone");
+        if (pldnWake == null) { pldnWake = new PldnWake(); }
+        getBridge().getWebView().addJavascriptInterface(pldnWake, "PldnWake");
+        PldnWakeService.sink = wakeSink;
+        checkWakeIntent(getIntent());
         getBridge().getWebView().setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
