@@ -1,4 +1,4 @@
-<!-- VERSION: 184 -->
+<!-- VERSION: 182 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -17392,6 +17392,83 @@ async function fbOpenChat(info, ensure) {
     if (S.closeT) clearTimeout(S.closeT);
     S.closeT = setTimeout(function () { S.closeT = 0; closePanel(); }, 1800);
   }
+
+  // ---------- UYG'OTISH IBORASI (3-bosqich): «PLDN Start» ----------
+  var W = window.PldnWake || null;
+  window.PLDNStart.wake = function () {
+    try { if (!S.live) listen('cmd'); } catch (e) {}
+  };
+  window.pldnWakeEvent = function (e) { if (e && e.type === 'wake') { window.PLDNStart.wake(); } };
+  function wakeSt() { try { return JSON.parse(W.status()); } catch (e) { return {}; } }
+  if (W) (function () {
+    var row = el('div');
+    row.style.cssText = 'margin-top:12px;padding-top:10px;border-top:1px solid rgba(128,128,128,.25)';
+    row.innerHTML = '<div style="font-size:15px;font-weight:600">' + T('🔔 «PLDN Start» uyg‘otish iborasi', '🔔 Фраза пробуждения «PLDN Start»') + '</div>' +
+      '<div class="vp-status" id="vpWakeSt" style="margin-top:4px"></div>' +
+      '<div class="vp-heard" id="vpWakeHeard" style="font-size:13px;min-height:0"></div>' +
+      '<div class="vp-actions"><button class="vp-btn pri" id="vpWakeTg"></button><button class="vp-btn" id="vpWakeDbg"></button><button class="vp-btn" id="vpWakeBat">' + T('🔋 Batareya', '🔋 Батарея') + '</button></div>' +
+      '<div class="vp-status" style="font-size:12px;margin-top:6px">' + T('Yoqilganda bildirishnomada «mikrofon yoniq» ko‘rinadi. Ovoz saqlanmaydi, faqat xotirada qayta ishlanadi. Xizmatni ilova ochiq paytda yoqing.', 'При включении в уведомлении видно «микрофон включён». Звук не сохраняется. Включайте при открытом приложении.') + '</div>';
+    panel.appendChild(row);
+    var note = '', noteT = 0;
+    function setNote(r) {
+      var m = {
+        nomodel: T('Ovoz modeli APK ichida yo‘q (yangi build kerak).', 'В APK нет модели.'),
+        nomic: T('Mikrofon ruxsatini bering, so‘ng yana bosing.', 'Дайте доступ к микрофону и нажмите снова.'),
+        nonotif: T('Bildirishnoma ruxsatini bering, so‘ng yana bosing.', 'Дайте доступ к уведомлениям и нажмите снова.')
+      };
+      note = m[r] || String(r); noteT = Date.now() + 6000;
+    }
+    function render() {
+      var s = wakeSt(), txt;
+      if (Date.now() < noteT) txt = note;
+      else if (s.model === false) txt = T('Ovoz modeli APK ichida yo‘q (yangi build kerak).', 'В APK нет модели.');
+      else if (s.state === 'error') txt = T('Xatolik: ', 'Ошибка: ') + (s.err || '');
+      else if (s.state === 'loading') txt = T('Model yuklanmoqda… (birinchi marta bir necha soniya)', 'Загрузка модели…');
+      else if (s.state === 'listening') txt = T('🟢 Tinglayapti — «PLDN Start» deng', '🟢 Слушает — скажите «PLDN Start»');
+      else if (s.state === 'paused') txt = T('⏸ Vaqtincha to‘xtadi (buyruq/qo‘ng‘iroq/yozuv)', '⏸ Пауза');
+      else txt = T('⚪ O‘chiq', '⚪ Выключено');
+      if (s.err && s.state === 'paused' && Date.now() >= noteT) txt += ' — ' + s.err;
+      $('vpWakeSt').textContent = txt;
+      $('vpWakeHeard').textContent = (s.running && s.heard) ? T('Oxirgi eshitilgan: ', 'Последнее услышано: ') + '«' + s.heard + '»  ·  ' + T('uyg‘onish: ', 'пробуждений: ') + (s.wakes || 0) : '';
+      var tg = $('vpWakeTg');
+      tg.textContent = s.running ? T('⏹ O‘chirish', '⏹ Выключить') : T('▶ Yoqish', '▶ Включить');
+      tg.className = 'vp-btn ' + (s.running ? 'bad' : 'pri');
+      $('vpWakeDbg').textContent = (s.running && s.debug) ? T('🧪 Sinov: yoniq', '🧪 Тест: вкл') : T('🧪 Sinov', '🧪 Тест');
+    }
+    $('vpWakeTg').addEventListener('click', function () {
+      var s = wakeSt();
+      if (s.running) { try { W.stop(); } catch (e) {} setTimeout(render, 700); return; }
+      var r = ''; try { r = W.start(false); } catch (e) { r = 'err:' + e; }
+      if (r !== 'ok') setNote(r);
+      setTimeout(render, 700);
+    });
+    $('vpWakeDbg').addEventListener('click', function () {
+      var s = wakeSt(), wantDbg = !(s.running && s.debug);
+      if (s.running) { try { W.stop(); } catch (e) {} }
+      setTimeout(function () {
+        var r = ''; try { r = W.start(wantDbg); } catch (e) { r = 'err:' + e; }
+        if (r !== 'ok') setNote(r);
+        render();
+      }, s.running ? 1800 : 0);
+    });
+    $('vpWakeBat').addEventListener('click', function () { try { W.openSettings('battery'); } catch (e) {} });
+    setInterval(function () { if (panel.className.indexOf('open') >= 0) render(); }, 1500);
+    // Ovozli xabar yozilayotganda yoki qo‘ng‘iroq paytida mikrofonni bo‘shatib turamiz
+    setInterval(function () {
+      try {
+        var rec = (typeof isRecordingActive !== 'undefined' && isRecordingActive);
+        var ov = document.querySelector('.pldn-call-ov');
+        var call = !!(ov && ov.style.display && ov.style.display !== 'none');
+        if (rec || call) { W.hold(3000); }
+      } catch (e) {}
+    }, 1500);
+    // Ilova ochilganda: oldin yoqilgan bo‘lsa qayta ishga tushirish; bildirishnoma orqali kelgan uyg‘otishni bajarish
+    setTimeout(function () {
+      try { W.resume(); } catch (e) {}
+      try { if (W.takePending()) { window.PLDNStart.wake(); } } catch (e) {}
+    }, 2500);
+    render();
+  })();
 
   // ---------- TINGLASH ----------
   var ERR = {
