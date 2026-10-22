@@ -1,4 +1,5 @@
-<!-- VERSION: 191 -->
+<!-- VERSION: 182 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: wake-3.4 | 22-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -17409,6 +17410,7 @@ async function fbOpenChat(info, ensure) {
   // ---------- UYG'OTISH IBORASI (3-bosqich): «PLDN Start» ----------
   var W = window.PldnWake || null;
   window.PLDNStart.wake = function () {
+    window.__pwJs = (window.__pwJs || 0) + 1;
     try { if (!S.live) listen('cmd'); } catch (e) {}
   };
   window.pldnWakeEvent = function (e) { if (e && e.type === 'wake') { window.PLDNStart.wake(); } };
@@ -17442,7 +17444,11 @@ async function fbOpenChat(info, ensure) {
       else txt = T('⚪ O‘chiq', '⚪ Выключено');
       if (s.err && s.state === 'paused' && Date.now() >= noteT) txt += ' — ' + s.err;
       $('vpWakeSt').textContent = txt;
-      $('vpWakeHeard').textContent = (s.running && s.heard) ? T('Oxirgi eshitilgan: ', 'Последнее услышано: ') + '«' + s.heard + '»  ·  ' + T('uyg‘onish: ', 'пробуждений: ') + (s.wakes || 0) : '';
+      var hs = (s.running && s.heard) ? T('Oxirgi eshitilgan: ', 'Последнее услышано: ') + '«' + s.heard + '»  ·  ' + T('uyg‘onish: ', 'пробуждений: ') + (s.wakes || 0) : '';
+      if (s.running && s.wakeInfo) { hs += (hs ? '\n' : '') + 'wake ' + s.wakeInfo + ' · JS: ' + (window.__pwJs || 0); }
+      hs += (hs ? '\n' : '') + 'kod: ' + (s.code || T('eski (yangilanmagan)', 'старый')) + ' / index: wake-3.4';
+      $('vpWakeHeard').style.whiteSpace = 'pre-line';
+      $('vpWakeHeard').textContent = hs;
       var tg = $('vpWakeTg');
       tg.textContent = s.running ? T('⏹ O‘chirish', '⏹ Выключить') : T('▶ Yoqish', '▶ Включить');
       tg.className = 'vp-btn ' + (s.running ? 'bad' : 'pri');
