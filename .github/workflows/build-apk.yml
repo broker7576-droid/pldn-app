@@ -84,8 +84,35 @@ jobs:
           PKG=$(grep applicationId android/app/build.gradle | head -1 | sed -E 's/.*"(.*)".*/\1/')
           cat native/MainActivity.txt | sed "s/__PKG__/$PKG/" > "$MAINACT"
      
+      - name: Add PLDN Start wake service (permissions, service, Vosk)
+        run: |
+          PKG=$(grep applicationId android/app/build.gradle | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          JAVADIR=$(dirname "$(find android/app/src/main/java -name MainActivity.java)")
+          sed "s/__PKG__/$PKG/" native/PldnWakeService.java > "$JAVADIR/PldnWakeService.java"
+          sed -i 's#</manifest>#<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />\n<uses-permission android:name="android.permission.WAKE_LOCK" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+          sed -i "s#</application>#<service android:name=\"$PKG.PldnWakeService\" android:exported=\"false\" android:foregroundServiceType=\"microphone\" />\n</application>#" android/app/src/main/AndroidManifest.xml
+          echo "dependencies { implementation 'com.alphacephei:vosk-android:0.3.47' }" >> android/app/build.gradle
+          echo "android { defaultConfig { ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' } } }" >> android/app/build.gradle
+          grep -n "PldnWakeService" android/app/src/main/AndroidManifest.xml
+
       - name: Sync Capacitor
         run: npx cap sync android
+
+      - name: Cache Vosk model
+        uses: actions/cache@v4
+        with:
+          path: /tmp/vosk-model.zip
+          key: vosk-model-small-en-us-0.15
+
+      - name: Add Vosk model
+        run: |
+          [ -s /tmp/vosk-model.zip ] || curl -fL --retry 3 -o /tmp/vosk-model.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+          rm -rf /tmp/vosk-model && mkdir -p /tmp/vosk-model
+          unzip -q /tmp/vosk-model.zip -d /tmp/vosk-model
+          mkdir -p android/app/src/main/assets
+          rm -rf android/app/src/main/assets/vosk-model
+          mv /tmp/vosk-model/vosk-model-small-en-us-0.15 android/app/src/main/assets/vosk-model
+          test -f android/app/src/main/assets/vosk-model/conf/model.conf
 
       - name: Build APK
         run: |
