@@ -52,7 +52,8 @@ public class PldnWakeService extends Service {
 
     // ---- SOZLAMALAR (aniqlik yomon bo'lsa shu yerni sozlaymiz) ----
     static final String GRAMMAR = "[\"pee el dee en start\", \"p l d n start\", \"pldn start\", \"[unk]\"]";
-    static final double MIN_CONF = 0.55;     // so'zlarning o'rtacha ishonchi (0..1)
+    static final boolean USE_GRAMMAR = false; // false: erkin tanish + undosh-skelet moslashuvi (o'zbekcha talaffuzga bardoshli)
+    static final double MIN_CONF = 0.50;     // so'zlarning o'rtacha ishonchi (0..1)
     static final int MIN_LETTERS = 3;        // «pee el dee en» dan kamida nechtasi eshitilsin
     static final double MIN_GATE = 300.0;    // ovoz energiyasi chegarasi (tinchlikda protsessorni dam oldiradi)
     static final long HANG_MS = 1200;        // ovoz tugagach shuncha vaqt yana tinglaymiz
@@ -248,7 +249,7 @@ public class PldnWakeService extends Service {
             LibVosk.setLogLevel(LogLevel.WARNINGS);
             File dir = ensureModel();
             model = new Model(dir.getAbsolutePath());
-            rec = debug ? new Recognizer(model, 16000.0f) : new Recognizer(model, 16000.0f, GRAMMAR);
+            rec = USE_GRAMMAR ? new Recognizer(model, 16000.0f, GRAMMAR) : new Recognizer(model, 16000.0f);
             rec.setWords(true);
             capThread = new Thread(new Runnable() { public void run() { captureLoop(); } }, "pldn-wake-cap");
             capThread.start();
@@ -320,18 +321,28 @@ public class PldnWakeService extends Service {
                 for (int i = 0; i < ws.length(); i++) { s += ws.getJSONObject(i).optDouble("conf", 1.0); }
                 conf = s / ws.length();
             }
-            heard = text + " (" + Math.round(conf * 100) + "%)";
+            if (debug) { heard = text + " (" + Math.round(conf * 100) + "%)"; }
             if (SystemClock.elapsedRealtime() - lastWakeAt < 4000) { return false; }
             if (!isWake(text, conf)) { return false; }
+            heard = text + " (" + Math.round(conf * 100) + "%)";
             onWake();
             return true;
         } catch (Throwable e) { return false; }
     }
 
+    /** Unli harflarsiz skelet: «pe le dinstart», «pee el dee en start», «p l d n start» -> «pldnstrt». */
+    static String skel(String t) {
+        return t.toLowerCase().replaceAll("[^a-z]", "").replaceAll("[aeiouy]", "");
+    }
+
     static boolean isWake(String text, double conf) {
+        if (conf < MIN_CONF) { return false; }
         String t = text.toLowerCase().replaceAll("[^a-z ]", " ").trim().replaceAll("\\s+", " ");
+        // 1) undosh-skelet: pldn + start («strt» yoki «stt»)
+        if (skel(t).matches(".*pldnstr?t.*")) { return true; }
+        // 2) harflar bo'yicha: «pee el dee en ... start»
         int k = t.indexOf("start");
-        if (k < 0 || conf < MIN_CONF) { return false; }
+        if (k < 0) { return false; }
         String head = t.substring(0, k).trim();
         if (head.contains("pldn")) { return true; }
         int hits = 0;
