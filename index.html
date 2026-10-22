@@ -1,5 +1,5 @@
-<!-- VERSION: 194 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: wake-3.4 | 22-okt-2026 -->
+<!-- VERSION: 182 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: wake-3.5 | 22-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -17446,7 +17446,7 @@ async function fbOpenChat(info, ensure) {
       $('vpWakeSt').textContent = txt;
       var hs = (s.running && s.heard) ? T('Oxirgi eshitilgan: ', 'Последнее услышано: ') + '«' + s.heard + '»  ·  ' + T('uyg‘onish: ', 'пробуждений: ') + (s.wakes || 0) : '';
       if (s.running && s.wakeInfo) { hs += (hs ? '\n' : '') + 'wake ' + s.wakeInfo + ' · JS: ' + (window.__pwJs || 0); }
-      hs += (hs ? '\n' : '') + 'kod: ' + (s.code || T('eski (yangilanmagan)', 'старый')) + ' / index: wake-3.4';
+      hs += (hs ? '\n' : '') + 'kod: ' + (s.code || T('eski (yangilanmagan)', 'старый')) + ' / index: wake-3.5';
       $('vpWakeHeard').style.whiteSpace = 'pre-line';
       $('vpWakeHeard').textContent = hs;
       var tg = $('vpWakeTg');
@@ -17713,6 +17713,14 @@ async function fbOpenChat(info, ensure) {
       askConfirm(ctx.row, ctx.label, txt);
       return;
     }
+    // uyg'otish so'zi buyruq boshida qolib ketsa («Paladin Azizaga SMS yubor»), uni olib tashlaymiz
+    var wk = /^\s*(?:hey\s+|hay\s+)?(?:paladin|paladen|paladyn|palladin|pladin|pladen|peladin|паладин|pldn\s*start|p\.?\s?l\.?\s?d\.?\s?n\.?\s*start)[\s,.!:\-]*/i;
+    var stripped = texts.map(function (x) { return String(x).replace(wk, '').trim(); }).filter(Boolean);
+    if (!stripped.length) {
+      // faqat «Paladin» deyilgan: bir marta qayta tinglaymiz
+      if (!S._wr) { S._wr = true; say(T('Eshityapman, buyruqni ayting.', 'Слушаю, назовите команду.'), { silent: true }); setTimeout(function () { try { if (!S.live) listen('cmd'); } catch (e) {} }, 300); return; }
+      S._wr = false;
+    } else { S._wr = false; texts = stripped; }
     for (i = 0; i < texts.length; i++) { cmd = parse(texts[i]); if (cmd) { run(cmd); return; } }
     say(T('Buyruqni tushunmadim. «Yordam» deb ayting.', 'Команду не понял. Скажите «помощь».'), { silent: true });
   }
