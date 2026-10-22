@@ -1,4 +1,4 @@
-<!-- VERSION: 189 -->
+<!-- VERSION: 182 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -17437,7 +17437,7 @@ async function fbOpenChat(info, ensure) {
       else if (s.model === false) txt = T('Ovoz modeli APK ichida yo‘q (yangi build kerak).', 'В APK нет модели.');
       else if (s.state === 'error') txt = T('Xatolik: ', 'Ошибка: ') + (s.err || '');
       else if (s.state === 'loading') txt = T('Model yuklanmoqda… (birinchi marta bir necha soniya)', 'Загрузка модели…');
-      else if (s.state === 'listening') txt = T('🟢 Tinglayapti — «PLDN Start» deng', '🟢 Слушает — скажите «PLDN Start»');
+      else if (s.state === 'listening') txt = T('🟢 Tinglayapti — «Paladin» yoki «PLDN Start» deng', '🟢 Слушает — скажите «Paladin» или «PLDN Start»');
       else if (s.state === 'paused') txt = T('⏸ Vaqtincha to‘xtadi (buyruq/qo‘ng‘iroq/yozuv)', '⏸ Пауза');
       else txt = T('⚪ O‘chiq', '⚪ Выключено');
       if (s.err && s.state === 'paused' && Date.now() >= noteT) txt += ' — ' + s.err;
