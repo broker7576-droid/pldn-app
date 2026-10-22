@@ -1,4 +1,4 @@
-<!-- VERSION: 187 -->
+<!-- VERSION: 182 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -8618,7 +8618,7 @@
     }
     if (manual && val) val.textContent = fbT('Tekshirilmoqda...', 'Проверка...');
     try {
-      const r = await fetch('https://api.github.com/repos/' + PLDN_REPO + '/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
+      const r = await fetch('https://api.github.com/repos/' + PLDN_REPO + '/releases/latest', { headers: { Accept: 'application/vnd.github+json' }, signal: (window.AbortSignal && AbortSignal.timeout) ? AbortSignal.timeout(10000) : undefined });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const j = await r.json();
       const latest = parseInt(String(j.tag_name || '').replace(/\D/g, ''), 10);
@@ -8908,8 +8908,21 @@
           yes.className = 'np-yes';
           yes.textContent = retry ? fbT('Qayta yuklab olish', 'Скачать снова') : fbT('Yuklab olish', 'Скачать');
           yes.onclick = async function () {
-            if (!pldnUpdateInfo) { try { await pldnCheckUpdate(false); } catch (_) {} }
-            const u = pldnUpdateInfo ? pldnUpdateInfo.url : null;
+            if (yes.dataset.busy) return;
+            let u = pldnUpdateInfo ? pldnUpdateInfo.url : null;
+            if (!u) {
+              // havola hali olinmagan: tugma "tekshirilmoqda" ko'rsatadi va 3 marta urinadi (kuchsiz tarmoqda birinchi urinish tez-tez o'xshamaydi)
+              yes.dataset.busy = '1';
+              const oldTxt = yes.textContent;
+              yes.textContent = fbT('Tekshirilmoqda…', 'Проверка…');
+              for (let k = 0; k < 3 && !u; k++) {
+                try { await pldnCheckUpdate(false); } catch (_) {}
+                u = pldnUpdateInfo ? pldnUpdateInfo.url : null;
+                if (!u && k < 2) await new Promise(function (r) { setTimeout(r, 1200); });
+              }
+              yes.textContent = oldTxt;
+              delete yes.dataset.busy;
+            }
             pldnSelfUpdate(it, u, card, row);
           };
           row.append(no, yes);
