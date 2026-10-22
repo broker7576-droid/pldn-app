@@ -89,6 +89,10 @@ jobs:
           PKG=$(grep applicationId android/app/build.gradle | head -1 | sed -E 's/.*"(.*)".*/\1/')
           JAVADIR=$(dirname "$(find android/app/src/main/java -name MainActivity.java)")
           sed "s/__PKG__/$PKG/" native/PldnWakeService.java > "$JAVADIR/PldnWakeService.java"
+          sed "s/__PKG__/$PKG/" native/PldnLock.java > "$JAVADIR/PldnLock.java"
+          sed "s/__PKG__/$PKG/" native/PldnAlarmReceiver.java > "$JAVADIR/PldnAlarmReceiver.java"
+          sed -i 's#</manifest>#<uses-permission android:name="android.permission.USE_EXACT_ALARM" />\n<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+          sed -i "s#</application>#<receiver android:name=\"$PKG.PldnAlarmReceiver\" android:exported=\"false\" />\n</application>#" android/app/src/main/AndroidManifest.xml
           sed -i 's#</manifest>#<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />\n<uses-permission android:name="android.permission.WAKE_LOCK" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
           sed -i "s#</application>#<service android:name=\"$PKG.PldnWakeService\" android:exported=\"false\" android:foregroundServiceType=\"microphone\" />\n</application>#" android/app/src/main/AndroidManifest.xml
           echo "dependencies { implementation 'com.alphacephei:vosk-android:0.3.47' }" >> android/app/build.gradle
