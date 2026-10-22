@@ -173,7 +173,7 @@ public class PldnWakeService extends Service {
         b.setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("🎙️ PLDN Start — mikrofon yoniq")
             .setContentText(dbg ? "Sinov rejimi: eshitilgan so'zlar ilovada ko'rinadi. Ovoz saqlanmaydi."
-                                : "Faqat «PLDN Start» iborasini kutyapti. Ovoz saqlanmaydi.")
+                                : "Faqat uyg'otish so'zini («Paladin» / «PLDN Start») kutyapti. Ovoz saqlanmaydi.")
             .setOngoing(true)
             .setContentIntent(pOpen)
             .addAction(android.R.drawable.ic_media_pause, "To'xtatish", pStop);
@@ -335,11 +335,43 @@ public class PldnWakeService extends Service {
         return t.toLowerCase().replaceAll("[^a-z]", "").replaceAll("[aeiouy]", "");
     }
 
+    /** Skelet «pldnstrt» ga 1 ta harf farq bilan (tushib qolgan yoki almashgan) yaqin bo'lsa ham mos deymiz. */
+    static boolean near(String sk) {
+        final String tg = "pldnstrt";
+        for (int len = tg.length() - 1; len <= tg.length() + 1; len++) {
+            for (int i = 0; i + len <= sk.length(); i++) {
+                if (lev(sk.substring(i, i + len), tg) <= 1) { return true; }
+            }
+        }
+        return false;
+    }
+
+    static int lev(String a, String b) {
+        int[] p = new int[b.length() + 1];
+        int[] c = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) { p[j] = j; }
+        for (int i = 1; i <= a.length(); i++) {
+            c[0] = i;
+            for (int j = 1; j <= b.length(); j++) {
+                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                c[j] = Math.min(Math.min(c[j - 1] + 1, p[j] + 1), p[j - 1] + cost);
+            }
+            int[] t = p; p = c; c = t;
+        }
+        return p[b.length()];
+    }
+
     static boolean isWake(String text, double conf) {
         if (conf < MIN_CONF) { return false; }
         String t = text.toLowerCase().replaceAll("[^a-z ]", " ").trim().replaceAll("\\s+", " ");
         // 1) undosh-skelet: pldn + start («strt» yoki «stt»)
-        if (skel(t).matches(".*pldnstr?t.*")) { return true; }
+        // 0) bitta so'z: «paladin» (undosh skeleti pldn) va unga yaqin eshitilishlar: paladin, palladin, pelidin, paladins...
+        for (String w : t.split(" ")) {
+            String ws = skel(w).replaceAll("(.)\\1+", "$1");
+            if (ws.equals("pldn") || ws.equals("pldns")) { return true; }
+        }
+        String sk = skel(t);
+        if (sk.matches(".*pldnstr?t.*") || near(sk)) { return true; }
         // 2) harflar bo'yicha: «pee el dee en ... start»
         int k = t.indexOf("start");
         if (k < 0) { return false; }
