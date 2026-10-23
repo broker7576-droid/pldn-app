@@ -1,5 +1,5 @@
-<!-- VERSION: 208 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: pocket-5.0 | satr: 18223 | 23-okt-2026 -->
+<!-- VERSION: 202 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: pocket-5.1 | satr: 18254 | 23-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -762,6 +762,11 @@
   .pldn-call-ov.is-video.mode-out .cb-cam, .pldn-call-ov.is-video.mode-active .cb-cam { display: flex; }
   .pldn-call-ov.is-video.mode-out .cb-mir, .pldn-call-ov.is-video.mode-active .cb-mir { display: flex; }
   .cb-mir.on { background: #ff2d87; }
+  .pldn-call-ov.mode-out .cb-spk, .pldn-call-ov.mode-active .cb-spk { display: flex; }
+  .cb-spk[data-nonative] { display: none !important; }
+  .cb-spk.on { background: #fff; color: #000; }
+  .pldn-call-ov.is-video .pldn-call-bar { gap: 12px; }
+  .pldn-call-ov.is-video .pldn-call-bar .cb { width: 54px; height: 54px; font-size: 22px; }
   /* Qo'ng'iroqni yozib olish */
   .pldn-call-more { position: absolute; top: calc(16px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 4; width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255,255,255,.18); color: #fff; font-size: 24px; display: none; align-items: center; justify-content: center; }
   .pldn-call-ov.connected .pldn-call-more { display: flex; }
@@ -3855,6 +3860,7 @@
   </div>
   <div class="pldn-call-bar">
     <button class="cb cb-ctl cb-mute" id="pldnCallMute">🎤</button>
+    <button class="cb cb-ctl cb-spk" id="pldnCallSpk">🔈</button>
     <button class="cb cb-ctl cb-mir" id="pldnCallMir">🪞</button>
     <button class="cb cb-ctl cb-cam" id="pldnCallCam">📹</button>
     <button class="cb cb-red cb-decline" id="pldnCallDecline">✖</button>
@@ -8627,6 +8633,7 @@
       if (val) val.textContent = 'v' + cur;
       if (latest > cur && asset) {
         pldnUpdateInfo = { latest: latest, url: asset.browser_download_url };
+        try { localStorage.setItem('pldn_upd_info', JSON.stringify({ latest: latest, url: asset.browser_download_url })); } catch (_) {}
         await pldnUpdHistBackfill(cur, latest);
         pldnUpdHistAdd(latest);
         pldnUpdHistNotes(latest, j.body);
@@ -8640,6 +8647,11 @@
       pldnUpdHistSync(cur);
     } catch (e) {
       console.error('Yangilanish tekshiruvi', e);
+      // GitHub API javob bermasa, oxirgi ma'lum yangilanish havolasidan foydalanamiz (karta va tugma yo'qolmasin)
+      try {
+        const ci = JSON.parse(localStorage.getItem('pldn_upd_info') || 'null');
+        if (ci && ci.latest > cur && ci.url && !pldnUpdateInfo) { pldnUpdateInfo = { latest: ci.latest, url: ci.url }; pldnUpdHistAdd(ci.latest); pldnRefreshBell(); }
+      } catch (_) {}
       if (val) val.textContent = 'v' + cur;
       if (manual) alert(fbT("Tekshirib bo'lmadi. Internetni tekshirib qayta urinib ko'ring.", 'Не удалось проверить. Проверьте интернет и повторите.'));
     }
@@ -8665,15 +8677,17 @@
     if (tabO) tabO.classList.toggle('has-new', offers);
   }
   // ILOVANING O'ZIDAN YANGILASH: APK ni ilova yuklaydi (progress bilan) va Android o'rnatish oynasini ochadi
-  // VERSION: firebase-selfupdate-v48
+  // VERSION: firebase-selfupdate-v49
   let pldnUpdBusy = false;
+  let pldnUpdPrevStop = null; // oldingi (yopilgan) kartaning taymerini to'xtatish uchun
   function pldnSelfUpdate(it, url, card, row) {
     if (!url) { alert(fbT("Yangilanish havolasi topilmadi. Keyinroq qayta urinib ko'ring.", 'Ссылка на обновление не найдена. Повторите позже.')); return; }
     if (!(window.PldnUpd && PldnUpd.download)) {
       // eski APK: Chrome orqali yuklash (bir marta qo'lda o'rnatiladi)
       pldnUpdHistMark(it.v, 'downloaded'); pldnNpClose(); window.location.href = url; return;
     }
-    if (pldnUpdBusy) return;
+    // X bilan yopilgan karta taymeri hali ishlab turgan bo'lishi mumkin: uni to'xtatib, yangi kartani yuklashga ulaymiz
+    if (pldnUpdBusy && pldnUpdPrevStop) { try { pldnUpdPrevStop(); } catch (_) {} }
     pldnUpdBusy = true;
     try { localStorage.setItem('pldn_upd_resume', JSON.stringify({ v: it.v, ts: Date.now(), n: window.__pldnUpdAutoN || 0 })); } catch (_) {}
     window.__pldnUpdAutoN = 0;
@@ -8690,6 +8704,7 @@
     if (nt) { card.insertBefore(st, nt); card.insertBefore(barW, nt); card.insertBefore(act, nt); } else card.append(st, barW, act);
     let timer = null;
     function stop() { if (timer) { clearInterval(timer); timer = null; } pldnUpdBusy = false; }
+    pldnUpdPrevStop = stop;
     function fail(msg) {
       stop();
       try { localStorage.removeItem('pldn_upd_resume'); } catch (_) {}
@@ -8713,7 +8728,7 @@
         const state = a[0], pct = parseInt(a[1], 10) || 0, mb = ((parseInt(a[2], 10) || 0) / 1048576).toFixed(1);
         if (state === 'downloading') {
           bar.style.width = pct + '%';
-          st.textContent = fbT('Yuklanmoqda… ', 'Загрузка… ') + (pct > 0 ? pct + '%' : mb + ' MB');
+          st.textContent = fbT('Yuklanmoqda… ', 'Загрузка… ') + (pct > 0 ? pct + '%' : mb + ' MB') + (a[3] ? ' · ' + a[3] : '');
         } else if (state === 'done') {
           bar.style.width = '100%';
           stop();
@@ -8885,7 +8900,7 @@
         ver.textContent = fbT('versiya: ', 'версия: ') + 'v' + it.v;
         card.append(h, ver);
         const installed = cur > 0 ? it.v <= cur : it.st === 'downloaded';
-        const actionable = !installed && (latestV ? it.v === latestV : it.st === 'pending');
+        const actionable = !installed && (latestV ? it.v === latestV : (it.st === 'pending' || it.st === 'downloaded'));
         if (installed || !actionable) {
           const st = document.createElement('p');
           st.className = 'upd-st ' + (installed ? 'ok' : 'no');
@@ -10054,6 +10069,12 @@ async function fbOpenChat(info, ensure) {
     ov.classList.remove('mode-in', 'mode-out', 'mode-active');
     if (mode) ov.classList.add('mode-' + mode);
   }
+  // dinamik (speaker) tugmasi holatini tizim bilan moslash
+  function pldnSyncSpk() {
+    const b = $('pldnCallSpk'); if (!b) return;
+    let on = false; try { on = !!(window.PldnAudio && window.PldnAudio.isSpeaker()); } catch (_) {}
+    b.classList.toggle('on', on); b.textContent = on ? '🔊' : '🔈';
+  }
   function showUi(c, mode, name, avatar, color) {
     const ov = $('pldnCallOv');
     ov.classList.add('open');
@@ -10064,6 +10085,7 @@ async function fbOpenChat(info, ensure) {
     else { av.textContent = (typeof initials === 'function') ? initials(name || '') : (name || '?').charAt(0); av.style.background = color || '#2AABEE'; }
     $('pldnCallName').textContent = name || '';
     $('pldnCallMute').classList.remove('off'); $('pldnCallMute').textContent = '🎤';
+    try { pldnSyncSpk(); } catch (_) {}
     $('pldnCallCam').classList.remove('off'); $('pldnCallCam').textContent = '📹';
     setMode(mode);
   }
@@ -10156,6 +10178,7 @@ async function fbOpenChat(info, ensure) {
     $('pldnCallOv').classList.add('connected');
     pushMir(c); applyMir(c, c.lastDoc);
     setMode('active');
+    try { pldnSyncSpk(); } catch (_) {}
     const t0 = Date.now();
     const tick = function () {
       const sec = Math.floor((Date.now() - t0) / 1000);
@@ -10192,6 +10215,7 @@ async function fbOpenChat(info, ensure) {
     c.unsubs.forEach(function (u) { try { u(); } catch (_) {} });
     try { if (c.stream) c.stream.getTracks().forEach(function (tr) { tr.stop(); }); } catch (_) {}
     try { if (c.pc) c.pc.close(); } catch (_) {}
+    try { if (window.PldnAudio) window.PldnAudio.reset(); } catch (_) {}
     if (call === c) call = null;
     if (msg) {
       setStatus(msg); setMode(null);
@@ -10497,6 +10521,13 @@ async function fbOpenChat(info, ensure) {
   $('pldnCallAccept').addEventListener('click', accept);
   $('pldnCallDecline').addEventListener('click', decline);
   $('pldnCallEnd').addEventListener('click', endCall);
+  if (!window.PldnAudio) { $('pldnCallSpk').setAttribute('data-nonative', '1'); }
+  $('pldnCallSpk').addEventListener('click', function () {
+    const A = window.PldnAudio; if (!A) return;
+    let cur = false; try { cur = !!A.isSpeaker(); } catch (_) {}
+    try { A.setSpeaker(!cur); } catch (_) {}
+    pldnSyncSpk();
+  });
   $('pldnCallMute').addEventListener('click', function () {
     const c = call; if (!c || !c.stream) return;
     const tr = c.stream.getAudioTracks(); if (!tr.length) return;
@@ -17454,7 +17485,7 @@ async function fbOpenChat(info, ensure) {
       $('vpWakeSt').textContent = txt;
       var hs = (s.running && s.heard) ? T('Oxirgi eshitilgan: ', 'Последнее услышано: ') + '«' + s.heard + '»  ·  ' + T('uyg‘onish: ', 'пробуждений: ') + (s.wakes || 0) : '';
       if (s.running && s.wakeInfo) { hs += (hs ? '\n' : '') + 'wake ' + s.wakeInfo + ' · JS: ' + (window.__pwJs || 0); }
-      hs += (hs ? '\n' : '') + 'kod: ' + (s.code || T('eski (yangilanmagan)', 'старый')) + ' / index: pocket-5.0';
+      hs += (hs ? '\n' : '') + 'kod: ' + (s.code || T('eski (yangilanmagan)', 'старый')) + ' / index: pocket-5.1';
       $('vpWakeHeard').style.whiteSpace = 'pre-line';
       $('vpWakeHeard').textContent = hs;
       var tg = $('vpWakeTg');
