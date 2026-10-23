@@ -1,5 +1,5 @@
 <!-- VERSION: 213 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: robot-battery-7.0 | satr: 18949 | 23-okt-2026 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: robot-love3d-8.0 | satr: 19121 | 23-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -2699,6 +2699,19 @@
   .prm-center .pldn-robot-eye { animation: pldnRobotBlink 9s linear infinite; }
   .prm-toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 99995; background: rgba(20,24,40,0.94); color: #fff; padding: 10px 16px; border-radius: 14px; font-size: 14px; max-width: 86vw; text-align: center; opacity: 0; transition: opacity 0.2s ease; pointer-events: none; }
   .prm-toast.show { opacity: 1; }
+  /* ===== PLDN 3D SEVGI ANIMATSIYASI ===== VERSION: love3d-1.0 */
+  #pldnLove3D { position: fixed; inset: 0; z-index: 99991; background: radial-gradient(ellipse at 50% 43%, #18254a 0, #0a1025 48%, #050914 100%); color: #dce8ff; overflow: hidden; touch-action: none; opacity: 0; transition: opacity 0.2s ease; }
+  #pldnLove3D.show { opacity: 1; }
+  .pl3-cv { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  .pl3-x { position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); right: 14px; width: 38px; height: 38px; border-radius: 50%; border: 1px solid rgba(130,153,216,0.4); background: rgba(23,36,69,0.8); color: #eaf1ff; font-size: 16px; z-index: 2; }
+  .pl3-head { position: absolute; top: calc(22px + env(safe-area-inset-top, 0px)); left: 0; right: 0; text-align: center; pointer-events: none; letter-spacing: 0.12em; font-size: 12px; color: #9ebaff; }
+  .pl3-head b { display: block; color: #f1f5ff; font-size: 20px; letter-spacing: 0.04em; margin-top: 5px; }
+  .pl3-cap { position: absolute; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); left: 0; right: 0; text-align: center; pointer-events: none; color: #a8bbdf; font-size: 14px; }
+  .pl3-cap strong { display: block; color: #fff; font-size: 17px; margin-bottom: 5px; }
+  .pl3-cap small { display: block; margin-top: 5px; font-size: 11px; opacity: 0.65; }
+  .pl3-ctl { position: absolute; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); left: 0; right: 0; display: flex; gap: 10px; justify-content: center; }
+  .pl3-ctl button { border: 1px solid rgba(130,153,216,0.4); background: rgba(23,36,69,0.8); color: #eaf1ff; border-radius: 999px; padding: 9px 15px; font-size: 12px; }
+  .pl3-ctl button:active { transform: scale(0.97); }
 
   /* ===== ROBOT QUVVATLASH OYNASI (batareya) ===== VERSION: robot-battery-7.0 */
   #pldnBattWin { position: fixed; inset: 0; z-index: 99992; display: none; flex-direction: column; gap: 6px; box-sizing: border-box; padding: calc(env(safe-area-inset-top, 0px) + 8px) 14px calc(env(safe-area-inset-bottom, 0px) + 12px); background: radial-gradient(120% 80% at 50% 16%, #10295a 0%, #081230 55%, #03060f 100%); color: #fff; opacity: 0; transition: opacity 0.2s ease; overflow: hidden; overscroll-behavior: contain; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -18434,16 +18447,18 @@ async function fbOpenChat(info, ensure) {
     mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M9 21h6"/>',
     gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
     battery: '<rect x="2.5" y="7" width="16" height="10" rx="2.5"/><path d="M21 10.5v3M7 10.5v3M11 10.5v3"/>',
+    heart: '<path d="M12 20.5C6 16 3 12.8 3 9a4.5 4.5 0 0 1 9-1.5A4.5 4.5 0 0 1 21 9c0 3.8-3 7-9 11.5z"/>',
     x: '<path d="M6 6l12 12M18 6L6 18"/>'
   };
 
   // Menyu bandlari. Yangi funksiya ulash: PLDNRobotMenu.setAction('charge', function () { ... });
   var ITEMS = [
     { id: 'kb', ang: -90, c: '42,171,238', ico: 'book', t: ['Bilimlar bazasi', 'База знаний'], s: ['Savollarga javob', 'Ответы на вопросы'], run: openKB },
-    { id: 'settings', ang: -18, c: '52,199,89', ico: 'gear', t: ['Sozlamalar', 'Настройки'], s: ['Boshqaruv va moslamalar', 'Управление'], run: openSettings },
-    { id: 'charge', ang: 54, c: '255,176,32', ico: 'battery', t: ['Quvvatlash rejimi', 'Режим зарядки'], s: ['Batareya va quvvat', 'Батарея и заряд'], run: function () { toast(T('🔋 Quvvatlash rejimi tez orada qo‘shiladi', '🔋 Режим зарядки скоро появится')); } },
-    { id: 'close', ang: 126, c: '120,160,255', ico: 'x', t: ['Yopish', 'Закрыть'], s: null, run: function () {} },
-    { id: 'voice', ang: 198, c: '160,110,255', ico: 'mic', t: ['Ovoz bilan boshqarish', 'Голосовое управление'], s: ['Buyruqlar orqali', 'Командами'], run: openVoice }
+    { id: 'settings', ang: -30, c: '52,199,89', ico: 'gear', t: ['Sozlamalar', 'Настройки'], s: ['Boshqaruv va moslamalar', 'Управление'], run: openSettings },
+    { id: 'charge', ang: 30, c: '255,176,32', ico: 'battery', t: ['Quvvatlash rejimi', 'Режим зарядки'], s: ['Batareya va quvvat', 'Батарея и заряд'], run: function () { toast(T('🔋 Quvvatlash rejimi tez orada qo‘shiladi', '🔋 Режим зарядки скоро появится')); } },
+    { id: 'close', ang: 90, c: '120,160,255', ico: 'x', t: ['Yopish', 'Закрыть'], s: null, run: function () {} },
+    { id: 'voice', ang: 150, c: '160,110,255', ico: 'mic', t: ['Ovoz bilan boshqarish', 'Голосовое управление'], s: ['Buyruqlar orqali', 'Командами'], run: openVoice },
+    { id: 'love', ang: 210, c: '255,50,109', ico: 'heart', t: ['Sevgi animatsiyasi', 'Анимация любви'], s: ['Robot yurakni quchadi', 'Робот обнимает сердце'], run: openLove }
   ];
 
   function openKB() {
@@ -18453,6 +18468,9 @@ async function fbOpenChat(info, ensure) {
   }
   function openSettings() {
     if (typeof goToScreen === 'function') goToScreen('pldnSettingsScreen');
+  }
+  function openLove() {
+    if (window.PLDNLove3D) window.PLDNLove3D.open(); else toast(T('Sevgi animatsiyasi topilmadi', 'Анимация не найдена'));
   }
   function openVoice() {
     var f = document.getElementById('pldnVoiceFab');
@@ -18488,7 +18506,7 @@ async function fbOpenChat(info, ensure) {
   var segs = {};
   ITEMS.forEach(function (it) {
     var p = document.createElementNS(NS, 'path');
-    p.setAttribute('d', arc(104, 196, it.ang - 34, it.ang + 34));
+    p.setAttribute('d', arc(104, 196, it.ang - 28, it.ang + 28));
     p.setAttribute('class', 'prm-seg');
     p.setAttribute('style', '--c:' + it.c);
     p.addEventListener('pointerdown', function () { p.classList.add('hot'); });
@@ -18945,5 +18963,159 @@ var PLDNBattModel = (function () {
 })();
 </script>
 
+<script>
+// ===== PLDN 3D SEVGI ANIMATSIYASI ===== VERSION: love3d-1.0
+// Robot menyusidagi "Sevgi animatsiyasi" tugmasi ochadi: PLDNLove3D.open(). three.min.js birinchi ochilganda yuklanadi.
+(function () {
+  var PI = Math.PI, ov = null, R = null, raf = 0, loading = false, onRz = null;
+  function T(uz, ru) { try { return typeof fbT === 'function' ? fbT(uz, ru) : uz; } catch (e) { return uz; } }
+  function fail(msg) { try { alert(T('PLDN ilovasi xatosi: ', 'Ошибка приложения PLDN: ') + msg); } catch (e) {} }
+  function loadThree(cb) {
+    if (window.THREE) return cb();
+    if (loading) return;
+    loading = true;
+    var s = document.createElement('script'); s.src = 'three.min.js';
+    s.onload = function () { loading = false; cb(); };
+    s.onerror = function () { loading = false; fail(T('3D kutubxona (three.min.js) topilmadi', '3D-библиотека (three.min.js) не найдена')); };
+    document.head.appendChild(s);
+  }
+  function close() {
+    if (!ov) return;
+    cancelAnimationFrame(raf);
+    if (onRz) { window.removeEventListener('resize', onRz); onRz = null; }
+    try { if (R) { R.dispose(); if (R.forceContextLoss) R.forceContextLoss(); } } catch (e) {}
+    R = null;
+    var o = ov; ov = null;
+    o.classList.remove('show');
+    setTimeout(function () { if (o.parentNode) o.parentNode.removeChild(o); }, 200);
+  }
+  function start() {
+    if (ov) return;
+    var THREE = window.THREE;
+    ov = document.createElement('div'); ov.id = 'pldnLove3D';
+    ov.innerHTML = '<canvas class="pl3-cv"></canvas><button class="pl3-x" type="button" aria-label="close">✕</button>' +
+      '<div class="pl3-head">PLDN<b></b></div><div class="pl3-cap"><strong></strong><span></span><small></small></div>' +
+      '<div class="pl3-ctl"><button class="pl3-pause" type="button"></button><button class="pl3-rest" type="button"></button></div>';
+    document.body.appendChild(ov);
+    var q = function (s) { return ov.querySelector(s); };
+    q('.pl3-head b').textContent = T('Sevgi animatsiyasi', 'Анимация любви');
+    q('.pl3-cap strong').textContent = T('Yurakni quchoqlash ❤️', 'Объятия сердца ❤️');
+    q('.pl3-cap span').textContent = T('Mayin yurak urishi • PLDN robot', 'Мягкое биение сердца • робот PLDN');
+    q('.pl3-cap small').textContent = T('Robotni barmoq bilan aylantiring', 'Поверните робота пальцем');
+    var pb = q('.pl3-pause'), rb = q('.pl3-rest'), cv = q('.pl3-cv');
+    var pTxt = function (p) { pb.textContent = p ? '▶ ' + T('Davom etish', 'Продолжить') : 'Ⅱ ' + T('Pauza', 'Пауза'); };
+    rb.textContent = '↻ ' + T('Qayta boshlash', 'Заново'); pTxt(false);
+    q('.pl3-x').addEventListener('click', close);
+    try { R = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true }); }
+    catch (e) { close(); fail(T('3D (WebGL) bu qurilmada ishlamadi', '3D (WebGL) не работает на этом устройстве')); return; }
+    R.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    var S = new THREE.Scene(), cam = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+    function rbox(w, h, d, r, b) {
+      var iw = w - 2 * b, ih = h - 2 * b, rr = Math.min(r, iw / 2, ih / 2), x = iw / 2, y = ih / 2, s = new THREE.Shape();
+      s.moveTo(-x + rr, -y); s.lineTo(x - rr, -y); s.quadraticCurveTo(x, -y, x, -y + rr); s.lineTo(x, y - rr); s.quadraticCurveTo(x, y, x - rr, y);
+      s.lineTo(-x + rr, y); s.quadraticCurveTo(-x, y, -x, y - rr); s.lineTo(-x, -y + rr); s.quadraticCurveTo(-x, -y, -x + rr, -y);
+      var g = new THREE.ExtrudeGeometry(s, { depth: d - 2 * b, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 4, curveSegments: 10 });
+      g.center(); return g;
+    }
+    function heartGeo(d, b) {
+      var s = new THREE.Shape(); s.moveTo(.25, .25); s.bezierCurveTo(.25, .25, .2, 0, 0, 0); s.bezierCurveTo(-.3, 0, -.3, .35, -.3, .35);
+      s.bezierCurveTo(-.3, .55, -.1, .77, .25, .95); s.bezierCurveTo(.6, .77, .8, .55, .8, .35); s.bezierCurveTo(.8, .35, .8, 0, .5, 0); s.bezierCurveTo(.35, 0, .25, .25, .25, .25);
+      var g = new THREE.ExtrudeGeometry(s, { depth: d, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 5, curveSegments: 16 });
+      g.rotateZ(PI); g.center(); return g;
+    }
+    function glow(rgb, sz, p, x, y, z) {
+      var c = document.createElement('canvas'); c.width = c.height = 64; var g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gr.addColorStop(0, 'rgba(' + rgb + ',.85)'); gr.addColorStop(.35, 'rgba(' + rgb + ',.3)'); gr.addColorStop(1, 'rgba(' + rgb + ',0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+      var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      sp.scale.set(sz, sz, 1); sp.position.set(x, y, z); p.add(sp); return sp;
+    }
+    var pivot = new THREE.Group(), robot = new THREE.Group(); S.add(pivot); pivot.add(robot);
+    function M(g, m, x, y, z, p) { var o = new THREE.Mesh(g, m); o.position.set(x, y, z); (p || robot).add(o); return o; }
+    // Robot o'lchamlari ilovadagi CSS robotdan (1 birlik = 10px): bosh 26x20, tana 30x22, ingichka yon qo'llar, binafsha antenna
+    var mHead = new THREE.MeshStandardMaterial({ color: 0xc4c9cf, metalness: .35, roughness: .35 }),
+      mBody = new THREE.MeshStandardMaterial({ color: 0xb0b5bb, metalness: .35, roughness: .38 }),
+      mArm = new THREE.MeshStandardMaterial({ color: 0xa6abb1, metalness: .35, roughness: .4 }),
+      mAnt = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, metalness: .4, roughness: .4 });
+    M(rbox(3.0, 2.2, 1.6, .9, .25), mBody, 0, -.9, 0);
+    var head = new THREE.Group(); head.position.set(0, 1.0, 0); robot.add(head);
+    M(rbox(2.6, 2.0, 1.8, .8, .2), mHead, 0, 0, 0, head);
+    function eye(c, rgb, x) {
+      var g = new THREE.Group(); g.position.set(x, 0, .9); head.add(g);
+      M(new THREE.SphereGeometry(.3, 24, 16), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 1.1, roughness: .2 }), 0, 0, 0, g).scale.z = .45;
+      glow(rgb, 1.3, g, 0, 0, .25); return g;
+    }
+    var eyeB = eye(0x2AABEE, '42,171,238', -.5), eyeG = eye(0x34C759, '52,199,89', .5);
+    M(new THREE.CylinderGeometry(.1, .1, .7, 12), mAnt, 0, 1.35, 0, head);
+    var orbM = new THREE.MeshStandardMaterial({ color: 0x7A5CFF, emissive: 0x7A5CFF, emissiveIntensity: 1, roughness: .2 });
+    var orb = M(new THREE.SphereGeometry(.25, 20, 14), orbM, 0, 1.85, 0, head), orbG = glow('122,92,255', 1.6, head, 0, 1.85, 0);
+    function arm(side) {
+      var p = new THREE.Group(); p.position.set(side * 1.75, -.35, 0); robot.add(p);
+      M(new THREE.SphereGeometry(.25, 16, 12), mArm, 0, 0, 0, p); M(new THREE.CylinderGeometry(.25, .25, .7, 16), mArm, 0, -.35, 0, p); M(new THREE.SphereGeometry(.25, 16, 12), mArm, 0, -.7, 0, p);
+      return p;
+    }
+    var armL = arm(-1), armR = arm(1);
+    var hm = new THREE.MeshStandardMaterial({ color: 0xff2f70, emissive: 0xd0104a, emissiveIntensity: .7, roughness: .25, metalness: .1 });
+    var heart = new THREE.Group(); heart.position.set(0, -.85, 1.5); robot.add(heart);
+    M(heartGeo(.3, .12), hm, 0, 0, 0, heart).scale.setScalar(.9);
+    var fl = [], fx = [-2.2, 2.2, -1.7, 1.8, .1, -.9, 1], fy = [-1.1, -.9, -2, -1.8, 1.4, -1.5, -.6], fg = heartGeo(.2, .08);
+    for (var i = 0; i < 7; i++) {
+      var m = new THREE.MeshStandardMaterial({ color: 0xff79b4, emissive: 0xff3478, emissiveIntensity: .8, transparent: true, opacity: 0 });
+      var o = new THREE.Mesh(fg, m); S.add(o); fl.push({ o: o, m: m, x: fx[i], y: fy[i], d: i * .55, s: .13 + .03 * (i % 3) });
+    }
+    S.add(new THREE.HemisphereLight(0xcfe0ff, 0x1a2146, 1));
+    var key = new THREE.DirectionalLight(0xffffff, .9); key.position.set(4, 6, 8); S.add(key);
+    var rim = new THREE.DirectionalLight(0x4a78ff, .8); rim.position.set(-6, 3, -5); S.add(rim);
+    var pl = new THREE.PointLight(0xff3a7a, 1.2, 7); pl.position.set(0, -.8, 3); S.add(pl);
+    var c2 = document.createElement('canvas'); c2.width = c2.height = 128; var x2 = c2.getContext('2d'), gr = x2.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, 'rgba(255,54,125,.55)'); gr.addColorStop(.4, 'rgba(71,118,255,.3)'); gr.addColorStop(1, 'rgba(71,118,255,0)'); x2.fillStyle = gr; x2.fillRect(0, 0, 128, 128);
+    var fp = new THREE.Mesh(new THREE.PlaneGeometry(6.5, 6.5), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c2), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    fp.rotation.x = -PI / 2; fp.position.y = -2.4; S.add(fp);
+    var t = 0, last = performance.now(), paused = false, dragY = 0, drag = false, lx = 0;
+    cv.addEventListener('pointerdown', function (e) { drag = true; lx = e.clientX; try { cv.setPointerCapture(e.pointerId); } catch (x) {} cv.style.cursor = 'grabbing'; });
+    cv.addEventListener('pointermove', function (e) { if (drag) { dragY = Math.max(-1.7, Math.min(1.7, dragY + (e.clientX - lx) * .012)); lx = e.clientX; } });
+    var up = function () { drag = false; cv.style.cursor = 'grab'; }; cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+    pb.addEventListener('click', function () { paused = !paused; pTxt(paused); });
+    rb.addEventListener('click', function () { t = 0; paused = false; pTxt(false); });
+    function ss(x) { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
+    function bump(p, c, w) { return Math.max(0, 1 - Math.abs(p - c) / w); }
+    function resize() {
+      var w = ov.clientWidth, h = ov.clientHeight; R.setSize(w, h, false); cam.aspect = w / h;
+      var dist = Math.max(13.5, 5.6 / (2 * Math.tan(17.5 * PI / 180) * cam.aspect));
+      cam.position.set(0, .8, dist); cam.lookAt(0, .45, 0); cam.updateProjectionMatrix();
+    }
+    onRz = resize; window.addEventListener('resize', resize); resize();
+    function frame(now) {
+      var dt = Math.min((now - last) / 1000, .05); last = now; if (!paused) t += dt;
+      if (!drag) dragY += (0 - dragY) * Math.min(1, dt * 1.5);
+      pivot.rotation.y = dragY + Math.sin(t * .6) * .28;
+      robot.position.y = Math.sin(t * 2.094) * .12; robot.rotation.z = Math.sin(t * 2.094) * .02;
+      var p = (t % 4.8) / 4.8, h = p < .15 ? 0 : p < .35 ? ss((p - .15) / .2) : p < .75 ? 1 : ss(1 - (p - .75) / .25);
+      var a = -1.1 * h, b = -.12 + .57 * h, px = 1.75 - .7 * h, pz = .45 * h;
+      armL.position.set(-px, -.35, pz); armR.position.set(px, -.35, pz); armL.rotation.set(a, 0, b); armR.rotation.set(a, 0, -b);
+      head.rotation.x = .12 * h; head.rotation.z = Math.sin(t * 1.2) * .03;
+      var bp = t % 5.8; eyeB.scale.y = eyeG.scale.y = (bp > 2.6 && bp < 2.76) ? .12 : 1;
+      var hp = (t % 1.15) / 1.15, hs = 1 + .09 * bump(hp, .12, .12) + .06 * bump(hp, .38, .12);
+      heart.scale.setScalar(hs); heart.rotation.y = Math.sin(t * .9) * .15;
+      pl.intensity = 1 + 8 * (hs - 1); hm.emissiveIntensity = .6 + 3 * (hs - 1);
+      var ap = Math.sin(t * PI) * .5 + .5; orb.scale.setScalar(1 + .08 * ap); orbM.emissiveIntensity = .9 + .7 * ap; orbG.material.opacity = .7 + .3 * ap;
+      fp.scale.setScalar(.95 + .1 * (Math.sin(t * PI) * .5 + .5));
+      for (var i = 0; i < fl.length; i++) {
+        var f = fl[i], u = ((t + f.d) % 3.8) / 3.8; f.o.position.set(f.x, f.y + u * 2.2, 1.2);
+        f.m.opacity = u < .15 ? u / .15 : u > .75 ? (1 - u) / .25 * .9 : .9; f.o.scale.setScalar(f.s * (.5 + u * .75)); f.o.rotation.z = Math.sin(u * PI * 2 + i) * .3;
+      }
+      R.render(S, cam); raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(frame);
+    void ov.offsetWidth; ov.classList.add('show');
+  }
+  function open() { loadThree(start); }
+  window.PLDNLove3D = { open: open, close: close, isOpen: function () { return !!ov; } };
+  var prevBack = window.pldnBack;
+  window.pldnBack = function () {
+    if (ov) { close(); return true; }
+    return prevBack ? prevBack.apply(this, arguments) : false;
+  };
+})();
+</script>
 </body>
 </html>
