@@ -1,4 +1,4 @@
-# PLDN-FAYL: build-apk.yml | versiya: pocket-5.0 | satr: 161 | 23-okt-2026
+# PLDN-FAYL: build-apk.yml | versiya: love3d-8.0 | satr: 162 | 23-okt-2026
 name: Build APK
 
 on:
@@ -43,6 +43,7 @@ jobs:
         run: |
           mkdir -p www
           cp index.html www/index.html
+          cp three.min.js www/three.min.js
           sed -i "s/__PLDN_BUILD__/$VERSION_CODE/" www/index.html
           sed -i "1s/^<!-- VERSION:.*/<!-- VERSION: $VERSION_CODE -->/" www/index.html
 
