@@ -1,4 +1,4 @@
-// PLDN-FAYL: PldnWakeService.java | versiya: lock-4.0 | 22-okt-2026
+// PLDN-FAYL: PldnWakeService.java | versiya: pocket-5.0 | satr: 582 | 23-okt-2026
 package __PKG__;
 
 import android.app.KeyguardManager;
@@ -39,12 +39,13 @@ import org.vosk.Model;
 import org.vosk.Recognizer;
 
 /**
- * PLDN Start uyg'otish xizmati: telefonning o'zida (internetsiz) «PLDN Start» iborasini kutadi.
+ * PLDN Start uyg'otish xizmati: telefonning o'zida (internetsiz) «Paladin» so'zini kutadi.
  * Ovoz faqat xotirada qayta ishlanadi, hech qayerga yozilmaydi.
  */
 public class PldnWakeService extends Service {
     public static final String ACT_START = "pldn.wake.START";
     public static final String ACT_STOP = "pldn.wake.STOP";
+    public static final String ACT_POCKET_OFF = "pldn.wake.POCKET_OFF";
     static final String CH_RUN = "pldn_wake_run";
     static final String CH_CMD = "pldn_wake_cmd";
     static final int NID_RUN = 4101;
@@ -52,7 +53,7 @@ public class PldnWakeService extends Service {
     static final String MODEL_ASSET = "vosk-model";
 
     // ---- SOZLAMALAR (aniqlik yomon bo'lsa shu yerni sozlaymiz) ----
-    static final String GRAMMAR = "[\"pee el dee en start\", \"p l d n start\", \"pldn start\", \"[unk]\"]";
+    static final String GRAMMAR = "[\"paladin\", \"[unk]\"]";
     static final boolean USE_GRAMMAR = false; // false: erkin tanish + undosh-skelet moslashuvi (o'zbekcha talaffuzga bardoshli)
     static final double MIN_CONF = 0.50;     // so'zlarning o'rtacha ishonchi (0..1)
     static final int MIN_LETTERS = 3;        // «pee el dee en» dan kamida nechtasi eshitilsin
@@ -66,7 +67,7 @@ public class PldnWakeService extends Service {
     public static volatile String state = "stopped"; // stopped | loading | listening | paused | error
     public static volatile String err = "";
     public static volatile String heard = "";
-    public static final String CODE = "lock-4.0";
+    public static final String CODE = "pocket-5.0";
     public static volatile int wakes = 0;
     public static volatile String wakeInfo = "";
     public static volatile boolean debug = false;
@@ -94,6 +95,7 @@ public class PldnWakeService extends Service {
     AudioManager am;
     PowerManager.WakeLock wl;
     PldnLock lock;
+    public PldnPocket pocket;
 
     @Override
     public IBinder onBind(Intent intent) { return null; }
@@ -104,12 +106,18 @@ public class PldnWakeService extends Service {
         pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
         am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         lock = new PldnLock(this);
+        pocket = new PldnPocket(this);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String a = intent == null ? null : intent.getAction();
         if (ACT_STOP.equals(a)) { shutdown(true); return START_NOT_STICKY; }
+        if (ACT_POCKET_OFF.equals(a)) {
+            try { if (pocket != null) { pocket.disable(); } } catch (Throwable e) { }
+            if (!running) { stopSelf(); }
+            return START_NOT_STICKY;
+        }
         if (intent == null || !ACT_START.equals(a)) { stopSelf(); return START_NOT_STICKY; }
         boolean dbg = intent.getBooleanExtra("debug", false);
         makeChannels();
@@ -175,18 +183,37 @@ public class PldnWakeService extends Service {
         st.setAction(ACT_STOP);
         PendingIntent pStop = PendingIntent.getService(this, 2, st, piFlags());
         Notification.Builder b = builder(CH_RUN);
+        boolean pk = PldnPocket.on;
         b.setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("🎙️ PLDN Start — mikrofon yoniq")
+            .setContentTitle(pk ? "🎒 PLDN Start — cho'ntak rejimi yoniq" : "🎙️ PLDN Start — mikrofon yoniq")
             .setContentText(dbg ? "Sinov rejimi: eshitilgan so'zlar ilovada ko'rinadi. Ovoz saqlanmaydi."
-                                : "Faqat uyg'otish so'zini («Paladin» / «PLDN Start») kutyapti. Ovoz saqlanmaydi.")
+                                : "Faqat uyg'otish so'zini («Paladin») kutyapti. Ovoz saqlanmaydi.")
             .setOngoing(true)
             .setContentIntent(pOpen)
             .addAction(android.R.drawable.ic_media_pause, "To'xtatish", pStop);
+        if (pk) {
+            Intent po = new Intent(this, PldnWakeService.class);
+            po.setAction(ACT_POCKET_OFF);
+            PendingIntent pPo = PendingIntent.getService(this, 6, po, piFlags());
+            b.addAction(android.R.drawable.ic_lock_idle_lock, "Cho'ntak: o'chirish", pPo);
+        }
         if (Build.VERSION.SDK_INT < 26) { b.setPriority(Notification.PRIORITY_LOW); }
         if (Build.VERSION.SDK_INT >= 31) {
             try { b.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE); } catch (Throwable e) { }
         }
         return b.build();
+    }
+
+    /** Cho'ntak rejimi o'zgarganda doimiy bildirishnomani yangilaydi. */
+    void refreshRunNotification() {
+        main.post(new Runnable() {
+            public void run() {
+                try {
+                    if (!running) { return; }
+                    ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).notify(NID_RUN, runNotification(debug));
+                } catch (Throwable e) { }
+            }
+        });
     }
 
     void notifyCmd(String title, String text) {
@@ -386,25 +413,21 @@ public class PldnWakeService extends Service {
         return p[b.length()];
     }
 
+    /** Uyg'otish so'zi: «Paladin» (undosh skeleti «pldn»): paladin, palladin, paladen, pladin, «pal a din» ... */
     static boolean isWake(String text, double conf) {
         if (conf < MIN_CONF) { return false; }
         String t = text.toLowerCase().replaceAll("[^a-z ]", " ").trim().replaceAll("\\s+", " ");
-        // 1) undosh-skelet: pldn + start («strt» yoki «stt»)
-        // 0) bitta so'z: «paladin» (undosh skeleti pldn) va unga yaqin eshitilishlar: paladin, palladin, pelidin, paladins...
-        for (String w : t.split(" ")) {
-            String ws = skel(w).replaceAll("(.)\\1+", "$1");
-            if (ws.equals("pldn") || ws.equals("pldns")) { return true; }
+        if (t.length() == 0) { return false; }
+        String[] ws = t.split(" ");
+        for (String w : ws) {
+            String k = skel(w).replaceAll("(.)\\1+", "$1");
+            if (k.equals("pldn") || k.equals("pldns")) { return true; }
         }
-        String sk = skel(t);
-        if (sk.matches(".*pldnstr?t.*") || near(sk)) { return true; }
-        // 2) harflar bo'yicha: «pee el dee en ... start»
-        int k = t.indexOf("start");
-        if (k < 0) { return false; }
-        String head = t.substring(0, k).trim();
-        if (head.contains("pldn")) { return true; }
-        int hits = 0;
-        if (head.length() > 0) { for (String w : head.split(" ")) { if (LETTERS.contains(w)) { hits++; } } }
-        return hits >= MIN_LETTERS;
+        if (ws.length <= 3) { // «pal a din» kabi bo'laklab eshitilsa
+            String k = skel(t).replaceAll("(.)\\1+", "$1");
+            if (k.equals("pldn")) { return true; }
+        }
+        return false;
     }
 
     void onWake() {
@@ -520,6 +543,7 @@ public class PldnWakeService extends Service {
     // ---------- to'xtatish ----------
     void stopAll() {
         stopFlag = true;
+        try { if (pocket != null) { pocket.disable(); } } catch (Throwable e) { }
         Thread t1 = capThread, t2 = decThread;
         if (t1 != null) { t1.interrupt(); }
         if (t2 != null) { t2.interrupt(); }
@@ -549,6 +573,7 @@ public class PldnWakeService extends Service {
     @Override
     public void onDestroy() {
         try { if (lock != null) { lock.release(); } } catch (Throwable e) { }
+        try { if (pocket != null) { pocket.release(); } } catch (Throwable e) { }
         stopAll();
         running = false;
         if (!"error".equals(state)) { state = "stopped"; }
