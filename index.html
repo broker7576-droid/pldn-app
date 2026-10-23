@@ -1,5 +1,5 @@
-<!-- VERSION: 210 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: pocket-5.1 | satr: 18254 | 23-okt-2026 -->
+<!-- VERSION: 211 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: robot-6.0 | satr: 18506 | 23-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -2657,6 +2657,48 @@
     0% { opacity: 0.8; transform: scale(0.9); }
     100% { opacity: 0; transform: scale(1.05); }
   }
+
+
+  /* ===== ROBOT: tabiiy ko'z pirpiratish (faqat CSS, JS siklsiz) ===== */
+  .pldn-robot-eye { transform-origin: 50% 50%; }
+  .pldn-robot.pldn-robot-visible:not(.pldn-robot-away) .pldn-robot-eye { animation: pldnRobotBlink 11s linear infinite; }
+  @keyframes pldnRobotBlink {
+    0%, 6.3% { transform: scaleY(1); }
+    7% { transform: scaleY(0.08); }
+    7.7%, 30.3% { transform: scaleY(1); }
+    31% { transform: scaleY(0.08); }
+    31.7%, 33.3% { transform: scaleY(1); }
+    34% { transform: scaleY(0.08); }
+    34.7%, 51.3% { transform: scaleY(1); }
+    52% { transform: scaleY(0.08); }
+    52.7%, 75.3% { transform: scaleY(1); }
+    76% { transform: scaleY(0.08); }
+    76.7%, 100% { transform: scaleY(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pldn-robot.pldn-robot-visible .pldn-robot-eye, .prm-center .pldn-robot-eye { animation: none; }
+  }
+
+  /* ===== ROBOT AYLANA MENYUSI ===== */
+  #pldnRobotMenu { position: fixed; inset: 0; z-index: 99990; display: none; align-items: center; justify-content: center; background: rgba(3,7,20,0.88); opacity: 0; transition: opacity 0.2s ease; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+  #pldnRobotMenu.open { display: flex; }
+  #pldnRobotMenu.show { opacity: 1; }
+  #pldnRobotMenu.closing { pointer-events: none; }
+  .prm-wheel { position: relative; width: 360px; height: 360px; transform: scale(0.7); transition: transform 0.25s cubic-bezier(0.34, 1.4, 0.64, 1); }
+  #pldnRobotMenu.show .prm-wheel { transform: scale(1); }
+  .prm-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .prm-seg { fill: rgba(var(--c), 0.16); stroke: rgb(var(--c)); stroke-width: 2; cursor: pointer; pointer-events: all; filter: drop-shadow(0 0 5px rgba(var(--c), 0.7)); transition: fill 0.12s; }
+  .prm-seg.hot { fill: rgba(var(--c), 0.4); }
+  .prm-lab { position: absolute; transform: translate(-50%, -50%); width: 36%; text-align: center; pointer-events: none; color: #fff; line-height: 1.15; }
+  .prm-ico { width: calc(var(--s) * 0.1); height: calc(var(--s) * 0.1); border: 2px solid rgb(var(--c)); border-radius: 50%; display: grid; place-items: center; margin: 0 auto calc(var(--s) * 0.01); color: rgb(var(--c)); box-shadow: 0 0 8px rgba(var(--c), 0.6); }
+  .prm-ico svg { width: 56%; height: 56%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .prm-t { font-size: calc(var(--s) * 0.034); font-weight: 700; }
+  .prm-s { font-size: calc(var(--s) * 0.026); color: rgba(var(--c), 1); opacity: 0.85; margin-top: 1px; }
+  .prm-center { position: absolute; left: 50%; top: 50%; width: 46%; height: 46%; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(circle at 50% 40%, #16305f 0%, #0a1630 72%); border: 2px solid #2d8bff; box-shadow: 0 0 18px rgba(45,139,255,0.7), inset 0 0 22px rgba(45,139,255,0.35); pointer-events: none; }
+  .prm-center .pldn-robot-body { position: absolute; left: 50%; top: 50%; margin: 0; width: 34px; height: 40px; transform: translate(-50%, -50%) scale(var(--rs, 2.4)); transition: none; }
+  .prm-center .pldn-robot-eye { animation: pldnRobotBlink 9s linear infinite; }
+  .prm-toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 99995; background: rgba(20,24,40,0.94); color: #fff; padding: 10px 16px; border-radius: 14px; font-size: 14px; max-width: 86vw; text-align: center; opacity: 0; transition: opacity 0.2s ease; pointer-events: none; }
+  .prm-toast.show { opacity: 1; }
 
   /* ===== SPLASH (PLDN logosi) ===== */
   #splashScreen {
@@ -9737,6 +9779,15 @@ async function fbOpenChat(info, ensure) {
     let customRest = null;
     let robotX = 0, robotY = 0;
     let dragOffsetX = 0, dragOffsetY = 0;
+    let curScreen = '';
+    let sx = 0, sy = 0, moved = false, lastTap = 0, tapCb = null;
+    function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+    function lsSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) {} }
+    // Oxirgi joy (kenglik/balandlik ulushi) qayta ochilganda saqlanib qoladi
+    try {
+      const sp = JSON.parse(lsGet('pldn_robot_pos') || 'null');
+      if (sp && typeof sp.fx === 'number' && typeof sp.fy === 'number') customRest = { fx: sp.fx, fy: sp.fy };
+    } catch (e) {}
 
     function placeRobot(x, y) {
       robotX = x;
@@ -9753,8 +9804,13 @@ async function fbOpenChat(info, ensure) {
     }
 
     function getRestPoint() {
-      if (customRest) return customRest;
       const rect = phoneFrame.getBoundingClientRect();
+      if (customRest) {
+        return {
+          x: clamp(customRest.fx * rect.width, 20, rect.width - 20),
+          y: clamp(customRest.fy * rect.height, 40, rect.height - 40)
+        };
+      }
       // O'ng chekka, chat ro'yxati ustidagi bo'sh joyda —
       // qo'lda ko'chirilmaguncha shu yerda turadi
       return { x: rect.width - 26, y: rect.height * 0.6 };
@@ -9795,6 +9851,7 @@ async function fbOpenChat(info, ensure) {
         robotEl.style.transition = '';
         robotEl.classList.add('pldn-robot-visible');
         active = true;
+        applyScreen();
 
         setTimeout(() => {
           hidePortal();
@@ -9827,6 +9884,7 @@ async function fbOpenChat(info, ensure) {
     function startDrag(clientX, clientY) {
       if (!active || busy) return;
       dragging = true;
+      sx = clientX; sy = clientY; moved = false;
       robotEl.classList.add('pldn-robot-dragging');
       robotEl.style.transition = 'none';
 
@@ -9837,6 +9895,10 @@ async function fbOpenChat(info, ensure) {
 
     function moveDrag(clientX, clientY) {
       if (!dragging) return;
+      if (!moved) {
+        if (Math.abs(clientX - sx) + Math.abs(clientY - sy) < 10) return;
+        moved = true;
+      }
       const frameRect = phoneFrame.getBoundingClientRect();
       let x = (clientX - frameRect.left) - dragOffsetX;
       let y = (clientY - frameRect.top) - dragOffsetY;
@@ -9849,7 +9911,20 @@ async function fbOpenChat(info, ensure) {
       if (!dragging) return;
       dragging = false;
       robotEl.classList.remove('pldn-robot-dragging');
-      customRest = { x: robotX, y: robotY };
+      if (moved) {
+        const r = phoneFrame.getBoundingClientRect();
+        if (r.width && r.height) {
+          customRest = { fx: robotX / r.width, fy: robotY / r.height };
+          lsSet('pldn_robot_pos', JSON.stringify(customRest));
+        }
+      } else {
+        // Surmasdan bosildi — aylana menyu (ikki marta ishlamasligi uchun himoya)
+        const now = Date.now();
+        if (now - lastTap > 450) {
+          lastTap = now;
+          if (tapCb) { try { tapCb(); } catch (e) { console.error(e); } }
+        }
+      }
     }
 
     function isActive() {
@@ -9860,23 +9935,47 @@ async function fbOpenChat(info, ensure) {
       return dragging;
     }
 
-    // Robot faqat chat ekranlarida ko'rinadi — boshqa (Sozlamalar, Profil va h.k.)
-    // ekranlarga o'tilganda avtomatik yashirinib, hech qanday matn/tugmani
-    // to'smaydi. Chatga qaytilganda yana avvalgi joyida paydo bo'ladi.
-    const chatScreenIds = ['screen4', 'chatDetailScreen'];
+    // Robot barcha ekranlarda ko'rinib turadi (kirish/ro'yxatdan o'tish ekranlari va
+    // hikoya ko'rish oynasidan tashqari). Ilova qayta ochilganda ham (avto-kirish)
+    // birinchi asosiy ekranga o'tilganda o'zi paydo bo'ladi, agar Sozlamalarda o'chirilmagan bo'lsa.
+    const hiddenScreenIds = ['screen1', 'screen2', 'screenPass', 'screenLogin', 'screen3', 'storyViewerScreen'];
 
-    function setVisibleForScreen(screenId) {
-      if (!active || dragging) return;
-      if (chatScreenIds.indexOf(screenId) !== -1) {
-        robotEl.style.opacity = '';
-        robotEl.style.pointerEvents = '';
-      } else {
-        robotEl.style.opacity = '0';
-        robotEl.style.pointerEvents = 'none';
-      }
+    function applyScreen() {
+      if (!active) return;
+      const away = hiddenScreenIds.indexOf(curScreen) !== -1;
+      robotEl.style.opacity = away ? '0' : '';
+      robotEl.style.pointerEvents = away ? 'none' : '';
+      robotEl.classList.toggle('pldn-robot-away', away);
     }
 
-    return { appear, hide, isActive, startDrag, moveDrag, endDrag, isDragging, setVisibleForScreen };
+    function setVisibleForScreen(screenId) {
+      curScreen = screenId;
+      if (dragging) return;
+      if (!active) {
+        if (!busy && hiddenScreenIds.indexOf(screenId) === -1 && lsGet('pldn_robot_on') !== '0') appear();
+        return;
+      }
+      applyScreen();
+    }
+
+    function onTap(fn) { tapCb = fn; }
+
+    // Ekran kengligi o'zgarganda (burilish) robot ekran ichida qolishi uchun.
+    // Faqat kenglik o'zgarsa — klaviatura balandlikni o'zgartirganda robot sakramasin.
+    let lastW = 0;
+    window.addEventListener('resize', () => {
+      const r = phoneFrame.getBoundingClientRect();
+      if (Math.abs(r.width - lastW) < 2) return;
+      lastW = r.width;
+      if (!active || dragging) return;
+      const pt = getRestPoint();
+      robotEl.style.transition = 'none';
+      placeRobot(pt.x, pt.y);
+      void robotEl.offsetWidth;
+      robotEl.style.transition = '';
+    });
+
+    return { appear, hide, isActive, startDrag, moveDrag, endDrag, isDragging, setVisibleForScreen, onTap };
   })();
 
   // Robotni qo'l bilan sudrash uchun hodisalar (sichqoncha/barmoq — pointer events)
@@ -17485,7 +17584,7 @@ async function fbOpenChat(info, ensure) {
       $('vpWakeSt').textContent = txt;
       var hs = (s.running && s.heard) ? T('Oxirgi eshitilgan: ', 'Последнее услышано: ') + '«' + s.heard + '»  ·  ' + T('uyg‘onish: ', 'пробуждений: ') + (s.wakes || 0) : '';
       if (s.running && s.wakeInfo) { hs += (hs ? '\n' : '') + 'wake ' + s.wakeInfo + ' · JS: ' + (window.__pwJs || 0); }
-      hs += (hs ? '\n' : '') + 'kod: ' + (s.code || T('eski (yangilanmagan)', 'старый')) + ' / index: pocket-5.1';
+      hs += (hs ? '\n' : '') + 'kod: ' + (s.code || T('eski (yangilanmagan)', 'старый')) + ' / index: robot-6.0';
       $('vpWakeHeard').style.whiteSpace = 'pre-line';
       $('vpWakeHeard').textContent = hs;
       var tg = $('vpWakeTg');
@@ -18247,6 +18346,159 @@ async function fbOpenChat(info, ensure) {
   }
   reg(rx('^' + APPNOT + "(.+?)(?:\\s+ni)?\\s+(?:och|ochib\\s+ber|oching|ochgin|ishga\\s+tushir\\w*)$"), function (m, s, api) { doOpenApp(m[1], api); });
   reg(rx('^' + APPNOT + '(?:открой|запусти)\\s+(.+)$'), function (m, s, api) { doOpenApp(m[1], api); });
+})();
+</script>
+
+<script>
+// ===== PLDN ROBOT AYLANA MENYUSI ===== VERSION: robot-menu-6.0
+(function () {
+  if (typeof PLDNRobot === 'undefined' || !PLDNRobot.onTap) return;
+  function T(uz, ru) { try { return typeof fbT === 'function' ? fbT(uz, ru) : uz; } catch (e) { return uz; } }
+  var NS = 'http://www.w3.org/2000/svg';
+  var ICO = {
+    book: '<path d="M3 5.5C5.5 4.5 8.5 4.5 12 6c3.5-1.5 6.5-1.5 9-.5V19c-2.5-1-5.5-1-9 .5-3.5-1.5-6.5-1.5-9-.5z"/><path d="M12 6v13.5"/>',
+    mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M9 21h6"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    battery: '<rect x="2.5" y="7" width="16" height="10" rx="2.5"/><path d="M21 10.5v3M7 10.5v3M11 10.5v3"/>',
+    x: '<path d="M6 6l12 12M18 6L6 18"/>'
+  };
+
+  // Menyu bandlari. Yangi funksiya ulash: PLDNRobotMenu.setAction('charge', function () { ... });
+  var ITEMS = [
+    { id: 'kb', ang: -90, c: '42,171,238', ico: 'book', t: ['Bilimlar bazasi', 'База знаний'], s: ['Savollarga javob', 'Ответы на вопросы'], run: openKB },
+    { id: 'settings', ang: -18, c: '52,199,89', ico: 'gear', t: ['Sozlamalar', 'Настройки'], s: ['Boshqaruv va moslamalar', 'Управление'], run: openSettings },
+    { id: 'charge', ang: 54, c: '255,176,32', ico: 'battery', t: ['Quvvatlash rejimi', 'Режим зарядки'], s: ['Tez orada', 'Скоро'], run: function () { toast(T('🔋 Quvvatlash rejimi tez orada qo‘shiladi', '🔋 Режим зарядки скоро появится')); } },
+    { id: 'close', ang: 126, c: '120,160,255', ico: 'x', t: ['Yopish', 'Закрыть'], s: null, run: function () {} },
+    { id: 'voice', ang: 198, c: '160,110,255', ico: 'mic', t: ['Ovoz bilan boshqarish', 'Голосовое управление'], s: ['Buyruqlar orqali', 'Командами'], run: openVoice }
+  ];
+
+  function openKB() {
+    if (typeof window.PLDNBotOpen === 'function') {
+      try { window.PLDNBotOpen(); } catch (e) { toast(T('PLDN Bot ochilmadi', 'PLDN Bot не открылся')); }
+    } else { toast(T('PLDN Bot hali tayyor emas', 'PLDN Bot ещё не готов')); }
+  }
+  function openSettings() {
+    if (typeof goToScreen === 'function') goToScreen('pldnSettingsScreen');
+  }
+  function openVoice() {
+    var f = document.getElementById('pldnVoiceFab');
+    if (f) f.click(); else toast(T('Ovozli boshqaruv topilmadi', 'Голосовое управление не найдено'));
+  }
+
+  var toastEl = null, toastT = 0;
+  function toast(msg) {
+    if (!toastEl) { toastEl = document.createElement('div'); toastEl.className = 'prm-toast'; document.body.appendChild(toastEl); }
+    toastEl.textContent = msg;
+    void toastEl.offsetWidth;
+    toastEl.classList.add('show');
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { toastEl.classList.remove('show'); }, 2400);
+  }
+
+  // ---- DOM
+  var ov = document.createElement('div');
+  ov.id = 'pldnRobotMenu';
+  ov.setAttribute('role', 'dialog');
+  ov.innerHTML = '<div class="prm-wheel" id="prmWheel"><svg class="prm-svg" viewBox="0 0 400 400" id="prmSvg"></svg><div id="prmLabs"></div>' +
+    '<div class="prm-center"><div class="pldn-robot-body"><div class="pldn-robot-head"><div class="pldn-robot-antenna"></div><div class="pldn-robot-eye pldn-robot-eye-left"></div><div class="pldn-robot-eye pldn-robot-eye-right"></div></div>' +
+    '<div class="pldn-robot-torso"></div><div class="pldn-robot-arm pldn-robot-arm-left"></div><div class="pldn-robot-arm pldn-robot-arm-right"></div></div></div></div>';
+  document.body.appendChild(ov);
+  var wheel = ov.querySelector('#prmWheel'), svg = ov.querySelector('#prmSvg'), labs = ov.querySelector('#prmLabs');
+
+  function pt(r, deg) { var a = deg * Math.PI / 180; return [200 + r * Math.cos(a), 200 + r * Math.sin(a)]; }
+  function arc(r0, r1, a0, a1) {
+    var p1 = pt(r1, a0), p2 = pt(r1, a1), p3 = pt(r0, a1), p4 = pt(r0, a0);
+    function f(p) { return p[0].toFixed(1) + ' ' + p[1].toFixed(1); }
+    return 'M' + f(p1) + ' A' + r1 + ' ' + r1 + ' 0 0 1 ' + f(p2) + ' L' + f(p3) + ' A' + r0 + ' ' + r0 + ' 0 0 0 ' + f(p4) + ' Z';
+  }
+  var segs = {};
+  ITEMS.forEach(function (it) {
+    var p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', arc(104, 196, it.ang - 34, it.ang + 34));
+    p.setAttribute('class', 'prm-seg');
+    p.setAttribute('style', '--c:' + it.c);
+    p.addEventListener('pointerdown', function () { p.classList.add('hot'); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (n) { p.addEventListener(n, function () { p.classList.remove('hot'); }); });
+    p.addEventListener('click', function () { choose(it); });
+    svg.appendChild(p);
+    segs[it.id] = p;
+  });
+
+  function buildLabels() {
+    labs.textContent = '';
+    ITEMS.forEach(function (it) {
+      var q = pt(150, it.ang);
+      var d = document.createElement('div');
+      d.className = 'prm-lab';
+      d.style.cssText = '--c:' + it.c + ';left:' + (q[0] / 4) + '%;top:' + (q[1] / 4) + '%';
+      var ic = document.createElement('div'); ic.className = 'prm-ico';
+      ic.innerHTML = '<svg viewBox="0 0 24 24">' + ICO[it.ico] + '</svg>';
+      var t = document.createElement('div'); t.className = 'prm-t'; t.textContent = T(it.t[0], it.t[1]);
+      d.appendChild(ic); d.appendChild(t);
+      if (it.s) { var s2 = document.createElement('div'); s2.className = 'prm-s'; s2.textContent = T(it.s[0], it.s[1]); d.appendChild(s2); }
+      labs.appendChild(d);
+    });
+  }
+
+  var openedAt = 0, closeT = 0;
+  function isOpen() { return ov.classList.contains('open') && !ov.classList.contains('closing'); }
+  function open() {
+    if (isOpen()) return;
+    clearTimeout(closeT);
+    ov.classList.remove('closing');
+    var s = Math.max(240, Math.min(window.innerWidth * 0.94, 440, window.innerHeight * 0.78));
+    wheel.style.width = wheel.style.height = s + 'px';
+    wheel.style.setProperty('--s', s + 'px');
+    wheel.style.setProperty('--rs', (s / 150).toFixed(2));
+    buildLabels();
+    ov.classList.add('open');
+    void ov.offsetWidth;
+    ov.classList.add('show');
+    openedAt = Date.now();
+  }
+  function close() {
+    if (!ov.classList.contains('open')) return;
+    ov.classList.remove('show');
+    ov.classList.add('closing');
+    clearTimeout(closeT);
+    closeT = setTimeout(function () { ov.classList.remove('open'); ov.classList.remove('closing'); }, 200);
+  }
+  function choose(it) {
+    close();
+    try { it.run(); } catch (e) { console.error(e); }
+  }
+
+  // Bo'sh joyni bosish menyuni yopadi (robotni bosgandan keyingi "arvoh" bosishdan himoya bilan)
+  ov.addEventListener('click', function (e) {
+    if (e.target.classList && e.target.classList.contains('prm-seg')) return;
+    if (Date.now() - openedAt < 450) return;
+    close();
+  });
+
+  PLDNRobot.onTap(function () { if (isOpen()) close(); else open(); });
+
+  window.PLDNRobotMenu = {
+    open: open, close: close, isOpen: isOpen,
+    setAction: function (id, fn) { ITEMS.forEach(function (it) { if (it.id === id && typeof fn === 'function') it.run = fn; }); }
+  };
+
+  // Android "orqaga" tugmasi avval menyuni yopadi
+  var prevBack = window.pldnBack;
+  window.pldnBack = function () {
+    if (isOpen()) { close(); return true; }
+    return prevBack ? prevBack.apply(this, arguments) : false;
+  };
+
+  // Robotni yoqish/o'chirish holati qayta ochilganda ham saqlansin
+  try {
+    var inp = document.getElementById('robotToggleInput');
+    if (inp) {
+      inp.checked = window.localStorage.getItem('pldn_robot_on') !== '0';
+      inp.addEventListener('change', function () {
+        try { window.localStorage.setItem('pldn_robot_on', inp.checked ? '1' : '0'); } catch (e) {}
+      });
+    }
+  } catch (e) {}
 })();
 </script>
 
