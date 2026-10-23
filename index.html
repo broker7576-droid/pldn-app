@@ -1,5 +1,5 @@
-<!-- VERSION: 203 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: lock-4.0 | 22-okt-2026 -->
+<!-- VERSION: 202 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: pocket-5.0 | satr: 18223 | 23-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -17269,7 +17269,7 @@ async function fbOpenChat(info, ensure) {
 
   function clean(t) {
     t = String(t || '').replace(/[ʻʼ’‘`´]/g, "'").replace(/\s+/g, ' ').trim();
-    t = t.replace(/^(?:(?:hey|hay|ey|ok)\s+)?(?:pldn|plden|плдн)\s+(?:start|старт|стар)[\s,.:!\-]*/i, '');
+    t = t.replace(/^(?:(?:hey|hay|ey|ok)\s+)?(?:(?:paladin|paladen|paladyn|palladin|pladin|pladen|peladin|паладин)|(?:pldn|plden|плдн)\s+(?:start|старт|стар))[\s,.:!\-]*/i, '');
     t = t.replace(/[.!?]+$/, '').trim();
     return t;
   }
@@ -17424,10 +17424,12 @@ async function fbOpenChat(info, ensure) {
     var row = el('div');
     try { W.setLang(S.lang); } catch (e) {}
     row.style.cssText = 'margin-top:12px;padding-top:10px;border-top:1px solid rgba(128,128,128,.25)';
-    row.innerHTML = '<div style="font-size:15px;font-weight:600">' + T('🔔 «PLDN Start» uyg‘otish iborasi', '🔔 Фраза пробуждения «PLDN Start»') + '</div>' +
+    row.innerHTML = '<div style="font-size:15px;font-weight:600">' + T('🔔 «Paladin» uyg‘otish so‘zi', '🔔 Слово пробуждения «Paladin»') + '</div>' +
       '<div class="vp-status" id="vpWakeSt" style="margin-top:4px"></div>' +
       '<div class="vp-heard" id="vpWakeHeard" style="font-size:13px;min-height:0"></div>' +
       '<div class="vp-actions"><button class="vp-btn pri" id="vpWakeTg"></button><button class="vp-btn" id="vpWakeDbg"></button><button class="vp-btn" id="vpWakeBat">' + T('🔋 Batareya', '🔋 Батарея') + '</button><button class="vp-btn" id="vpLockTg"></button><button class="vp-btn" id="vpLockCs"></button></div>' +
+      '<div class="vp-status" id="vpPkSt" style="margin-top:8px"></div>' +
+      '<div class="vp-actions"><button class="vp-btn pri" id="vpPkTg"></button><button class="vp-btn" id="vpPkSh"></button></div>' +
       '<div class="vp-status" style="font-size:12px;margin-top:6px">' + T('Yoqilganda bildirishnomada «mikrofon yoniq» ko‘rinadi. Ovoz saqlanmaydi, faqat xotirada qayta ishlanadi. Xizmatni ilova ochiq paytda yoqing.', 'При включении в уведомлении видно «микрофон включён». Звук не сохраняется. Включайте при открытом приложении.') + '</div>';
     panel.appendChild(row);
     var note = '', noteT = 0;
@@ -17445,14 +17447,14 @@ async function fbOpenChat(info, ensure) {
       else if (s.model === false) txt = T('Ovoz modeli APK ichida yo‘q (yangi build kerak).', 'В APK нет модели.');
       else if (s.state === 'error') txt = T('Xatolik: ', 'Ошибка: ') + (s.err || '');
       else if (s.state === 'loading') txt = T('Model yuklanmoqda… (birinchi marta bir necha soniya)', 'Загрузка модели…');
-      else if (s.state === 'listening') txt = T('🟢 Tinglayapti — «Paladin» yoki «PLDN Start» deng', '🟢 Слушает — скажите «Paladin» или «PLDN Start»');
+      else if (s.state === 'listening') txt = T('🟢 Tinglayapti — «Paladin» deng', '🟢 Слушает — скажите «Paladin»');
       else if (s.state === 'paused') txt = T('⏸ Vaqtincha to‘xtadi (buyruq/qo‘ng‘iroq/yozuv)', '⏸ Пауза');
       else txt = T('⚪ O‘chiq', '⚪ Выключено');
       if (s.err && s.state === 'paused' && Date.now() >= noteT) txt += ' — ' + s.err;
       $('vpWakeSt').textContent = txt;
       var hs = (s.running && s.heard) ? T('Oxirgi eshitilgan: ', 'Последнее услышано: ') + '«' + s.heard + '»  ·  ' + T('uyg‘onish: ', 'пробуждений: ') + (s.wakes || 0) : '';
       if (s.running && s.wakeInfo) { hs += (hs ? '\n' : '') + 'wake ' + s.wakeInfo + ' · JS: ' + (window.__pwJs || 0); }
-      hs += (hs ? '\n' : '') + 'kod: ' + (s.code || T('eski (yangilanmagan)', 'старый')) + ' / index: lock-4.0';
+      hs += (hs ? '\n' : '') + 'kod: ' + (s.code || T('eski (yangilanmagan)', 'старый')) + ' / index: pocket-5.0';
       $('vpWakeHeard').style.whiteSpace = 'pre-line';
       $('vpWakeHeard').textContent = hs;
       var tg = $('vpWakeTg');
@@ -17462,6 +17464,7 @@ async function fbOpenChat(info, ensure) {
       $('vpLockTg').textContent = lk.on === false ? T('🔓 Qulfda: o‘chiq', '🔓 На блокировке: выкл') : T('🔒 Qulfda: yoniq', '🔒 На блокировке: вкл');
       $('vpLockCs').textContent = lk.cs === false ? T('📞 Qulfda qo‘ng‘iroq/SMS: yo‘q', '📞 Звонки/SMS на блокировке: нет') : T('📞 Qulfda qo‘ng‘iroq/SMS: ha', '📞 Звонки/SMS на блокировке: да');
       $('vpWakeDbg').textContent = (s.running && s.debug) ? T('🧪 Sinov: yoniq', '🧪 Тест: вкл') : T('🧪 Sinov', '🧪 Тест');
+      pkRender();
     }
     $('vpWakeTg').addEventListener('click', function () {
       var s = wakeSt();
@@ -17483,6 +17486,38 @@ async function fbOpenChat(info, ensure) {
     $('vpLockTg').addEventListener('click', function () { try { W.setLock('on', lockSt().on === false); } catch (e) {} render(); });
     $('vpLockCs').addEventListener('click', function () { try { W.setLock('cs', lockSt().cs === false); } catch (e) {} render(); });
     $('vpWakeBat').addEventListener('click', function () { try { W.openSettings('battery'); } catch (e) {} });
+    // ---- 5-bosqich: cho'ntak rejimi tugmalari ----
+    function pkSt() { try { return JSON.parse(window.PldnPocket.status()); } catch (e) { return {}; } }
+    function pkRender() {
+      var PK = window.PldnPocket, st = $('vpPkSt'), tg = $('vpPkTg'), sh = $('vpPkSh');
+      if (!st) return;
+      if (!PK) { st.textContent = T('🎒 Cho‘ntak rejimi: yangi build kerak', '🎒 Режим «в кармане»: нужна новая сборка'); tg.style.display = 'none'; sh.style.display = 'none'; return; }
+      var p = pkSt(), txt;
+      if (!p.hasProx) txt = T('🎒 Bu telefonda yaqinlik sensori yo‘q — rejim ishlamaydi', '🎒 Нет датчика приближения — режим не работает');
+      else if (!p.service) txt = T('🎒 Avval «Paladin» uyg‘otishni yoqing', '🎒 Сначала включите пробуждение «Paladin»');
+      else if (p.on) txt = T('🎒 Cho‘ntak rejimi YONIQ — ', '🎒 Режим «в кармане» ВКЛ — ') + (p.guard ? T('himoya faol', 'защита активна') : (p.near ? T('sensor yopiq, yorug‘', 'датчик закрыт, светло') : T('sensor ochiq', 'датчик открыт')));
+      else txt = T('🎒 Cho‘ntak rejimi o‘chiq', '🎒 Режим «в кармане» выкл');
+      if (p.on) txt += '\n' + T('Ekranni o‘chirish: ', 'Выкл. экрана: ') + (p.screenOffOk ? '✓' : '✗') + ' · ' + T('Qalqon: ', 'Щит: ') + ((p.overlay && p.shieldPref) ? '✓' : '✗') + (p.lux >= 0 ? ' · lux ' + Math.round(p.lux) : '');
+      st.style.whiteSpace = 'pre-line'; st.textContent = txt;
+      tg.style.display = ''; sh.style.display = '';
+      tg.textContent = p.on ? T('⏹ Cho‘ntak: o‘chirish', '⏹ Карман: выкл') : T('🎒 Cho‘ntak: yoqish', '🎒 Карман: вкл');
+      tg.className = 'vp-btn ' + (p.on ? 'bad' : 'pri');
+      sh.textContent = !p.overlay ? T('🛡 Qalqon ruxsati', '🛡 Разрешить щит') : (p.shieldPref ? T('🛡 Qalqon: yoniq', '🛡 Щит: вкл') : T('🛡 Qalqon: o‘chiq', '🛡 Щит: выкл'));
+    }
+    $('vpPkTg').addEventListener('click', function () {
+      var PK = window.PldnPocket; if (!PK) return;
+      var p = pkSt(), r = '';
+      try { r = p.on ? PK.disable() : PK.enable(); } catch (e) { r = 'err:' + e; }
+      if (r === 'nowake') { note = T('Avval «Paladin» uyg‘otishni yoqing.', 'Сначала включите «Paladin».'); noteT = Date.now() + 5000; }
+      else if (r === 'nosensor') { note = T('Yaqinlik sensori topilmadi.', 'Датчик приближения не найден.'); noteT = Date.now() + 5000; }
+      setTimeout(function () { render(); pkSync(); }, 400);
+    });
+    $('vpPkSh').addEventListener('click', function () {
+      var PK = window.PldnPocket; if (!PK) return;
+      var p = pkSt();
+      try { if (!p.overlay) PK.askOverlay(); else PK.setShield(!p.shieldPref); } catch (e) {}
+      setTimeout(render, 500);
+    });
     setInterval(function () { if (panel.className.indexOf('open') >= 0) render(); }, 1500);
     // Ovozli xabar yozilayotganda yoki qo‘ng‘iroq paytida mikrofonni bo‘shatib turamiz
     setInterval(function () {
@@ -17501,6 +17536,41 @@ async function fbOpenChat(info, ensure) {
     }, 2500);
     render();
   })();
+
+  // ---------- 5-bosqich: CHO'NTAK REJIMI (ilova ichidagi himoya + ovozli buyruq) ----------
+  var pkGuardEl = null;
+  function pkSetGuard(g) {
+    if (g && !pkGuardEl) {
+      pkGuardEl = document.createElement('div');
+      pkGuardEl.id = 'pldnPocketGuard';
+      pkGuardEl.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483647;background:rgba(0,0,0,.94);color:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;font:14px sans-serif;touch-action:none;-webkit-user-select:none;user-select:none';
+      pkGuardEl.textContent = '🎒 ' + T('Cho‘ntak rejimi', 'Режим «в кармане»');
+      ['touchstart', 'touchmove', 'touchend', 'click', 'contextmenu'].forEach(function (ev) {
+        pkGuardEl.addEventListener(ev, function (e) { e.preventDefault(); e.stopPropagation(); }, { passive: false });
+      });
+      document.body.appendChild(pkGuardEl);
+    } else if (!g && pkGuardEl) {
+      try { pkGuardEl.parentNode.removeChild(pkGuardEl); } catch (e) {}
+      pkGuardEl = null;
+    }
+  }
+  function pkSync() {
+    try { if (!window.PldnPocket) return; var p = JSON.parse(window.PldnPocket.status()); pkSetGuard(!!(p.on && p.guard)); } catch (e) {}
+  }
+  window.pldnPocketEvent = function (e) { if (e && e.type === 'state') { pkSetGuard(!!(e.on && e.guard)); } };
+  if (window.PldnPocket) { setInterval(function () { if (!document.hidden) pkSync(); }, 2000); }
+  window.PLDNStart.register(/(?:cho['ʻʼ’‘`´]?\s?ntak|chu\s?ntak|чўнтак|чунтак|в\s+кармане|кармана|карман)/i, function (m, s, api) {
+    var PK = window.PldnPocket, n = norm(s);
+    if (!PK) { api.say(T('Cho‘ntak rejimi uchun yangi build kerak.', 'Нужна новая сборка.'), { silent: true }); return; }
+    var off = /(?:^| )(?:ochir\w*|tugat\w*|toxtat\w*|bekor\w*|stop)(?: |$)/.test(n) || /выключ|отключ|убер/i.test(s);
+    var on = /(?:^| )(?:yoq\w*|faol\w*|boshla\w*)(?: |$)/.test(n) || /включ|актив/i.test(s);
+    if (!off && !on) { api.say(T('«Cho‘ntak rejimini yoq» yoki «…o‘chir» deng.', 'Скажите «включи» или «выключи режим в кармане».'), { silent: true }); return; }
+    var r = off ? PK.disable() : PK.enable();
+    if (off) { api.finish(T('Cho‘ntak rejimi o‘chirildi ✓', 'Режим «в кармане» выключен ✓')); return; }
+    if (r === 'nowake') { api.say(T('Avval «Paladin» uyg‘otishni yoqing.', 'Сначала включите «Paladin».'), { silent: true }); return; }
+    if (r === 'nosensor') { api.say(T('Bu telefonda yaqinlik sensori yo‘q.', 'Нет датчика приближения.'), { silent: true }); return; }
+    api.finish(r === 'already' ? T('Cho‘ntak rejimi allaqachon yoniq ✓', 'Режим уже включён ✓') : T('Cho‘ntak rejimi yoqildi ✓', 'Режим «в кармане» включён ✓'));
+  });
 
   // ---------- TINGLASH ----------
   var ERR = {
@@ -17599,8 +17669,8 @@ async function fbOpenChat(info, ensure) {
     return false;
   }
   var HELP = {
-    uz: ['«Aziz bilan chatni och»', '«Azizga salom deb yoz» (yuborishdan oldin so‘raydi)', '«Oxirgi suhbatni och»', '«Keyingi / oldingi suhbat»', '«PLDN botini och»', '«Botga … deb yoz»', '«Sozlamalarni / kontaktlarni / profilni och»', '«Kontaktlardan Aziz ni qidir»', '«Orqaga»', '«Azizga qo‘ng‘iroq qil»', '«Azizga sms yoz: salom» (yuborishdan oldin so‘raydi)', '«7:30 ga budilnik qo‘y»', '«5 daqiqaga taymer qo‘y»', '«Telegramni och»', '«Ovozni 50 foizga qo‘y» / «ovozni oshir»', '«Kamerani och»', '«Wi-Fi / Bluetooth sozlamalarini och»'],
-    ru: ['«Открой чат с Азиз»', '«Напиши Азиз привет» (перед отправкой спросит)', '«Открой последний чат»', '«Открой бот»', '«Открой настройки / контакты / профиль»', '«Назад»', '«Позвони Азиз»', '«Будильник на 7:30»', '«Таймер на 5 минут»', '«Открой Telegram»', '«Открой камеру»']
+    uz: ['«Cho‘ntak rejimini yoq / o‘chir»', '«Aziz bilan chatni och»', '«Azizga salom deb yoz» (yuborishdan oldin so‘raydi)', '«Oxirgi suhbatni och»', '«Keyingi / oldingi suhbat»', '«PLDN botini och»', '«Botga … deb yoz»', '«Sozlamalarni / kontaktlarni / profilni och»', '«Kontaktlardan Aziz ni qidir»', '«Orqaga»', '«Azizga qo‘ng‘iroq qil»', '«Azizga sms yoz: salom» (yuborishdan oldin so‘raydi)', '«7:30 ga budilnik qo‘y»', '«5 daqiqaga taymer qo‘y»', '«Telegramni och»', '«Ovozni 50 foizga qo‘y» / «ovozni oshir»', '«Kamerani och»', '«Wi-Fi / Bluetooth sozlamalarini och»'],
+    ru: ['«Включи / выключи режим в кармане»', '«Открой чат с Азиз»', '«Напиши Азиз привет» (перед отправкой спросит)', '«Открой последний чат»', '«Открой бот»', '«Открой настройки / контакты / профиль»', '«Назад»', '«Позвони Азиз»', '«Будильник на 7:30»', '«Таймер на 5 минут»', '«Открой Telegram»', '«Открой камеру»']
   };
 
   function run(cmd) {
