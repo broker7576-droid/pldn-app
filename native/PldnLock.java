@@ -1,4 +1,4 @@
-// PLDN-FAYL: PldnLock.java | versiya: lock-4.0 | 22-okt-2026
+// PLDN-FAYL: PldnLock.java | versiya: pocket-5.0 | satr: 945 | 23-okt-2026
 package __PKG__;
 
 import android.Manifest;
@@ -484,7 +484,39 @@ public class PldnLock {
         sayEnd(T("Buyruqni tushunmadim.", "Команду не понял."));
     }
 
+    // ---------- 5-bosqich: CHO'NTAK REJIMI (qulfsiz, mahalliy) ----------
+    static final String POCKET_RE = "cho ?ntak\\p{L}*|chu ?ntak\\p{L}*|pocket|\u0447\u043e\u043d\u0442\u0430\u043a\\p{L}*|\u0447\u045e\u043d\u0442\u0430\u043a\\p{L}*|\u0447\u0443\u043d\u0442\u0430\u043a\\p{L}*|\u043a\u0430\u0440\u043c\u0430\u043d\\p{L}*|\u0432 \u043a\u0430\u0440\u043c\u0430\u043d\u0435";
+
+    void doPocket(String n) {
+        boolean off = has(n, "ochir\\p{L}*|tugat\\p{L}*|toxtat\\p{L}*|bekor\\p{L}*|stop|\u0432\u044b\u043a\u043b\u044e\u0447\\p{L}*|\u043e\u0442\u043a\u043b\u044e\u0447\\p{L}*|\u0443\u0431\u0435\u0440\\p{L}*");
+        boolean onn = has(n, "yoq\\p{L}*|faol\\p{L}*|boshla\\p{L}*|\u0432\u043a\u043b\u044e\u0447\\p{L}*|\u0430\u043a\u0442\u0438\u0432\\p{L}*");
+        PldnPocket p = svc.pocket;
+        if (p == null) { sayEnd(T("Cho'ntak rejimi hozir mavjud emas.", "Режим «в кармане» сейчас недоступен.")); return; }
+        if (!off && !onn) {
+            sayEnd(T("Yoqish uchun «cho'ntak rejimini yoq», o'chirish uchun «cho'ntak rejimini o'chir» deng.", "Скажите «включи режим в кармане» или «выключи режим в кармане»."));
+            return;
+        }
+        if (off) {
+            p.disable();
+            sayEnd(T("Cho'ntak rejimi o'chirildi.", "Режим «в кармане» выключен."));
+            return;
+        }
+        String r = p.enable();
+        if ("nosensor".equals(r)) {
+            sayEnd(T("Bu telefonda yaqinlik sensori yo'q, cho'ntak rejimini yoqib bo'lmaydi.", "На этом телефоне нет датчика приближения, режим включить нельзя."));
+        } else if ("already".equals(r)) {
+            sayEnd(T("Cho'ntak rejimi allaqachon yoniq.", "Режим «в кармане» уже включён."));
+        } else {
+            boolean so = p.screenOffSupported();
+            boolean ov = PldnPocket.overlayOk(svc) && sp().getBoolean("pocket_shield", true);
+            String tail = "";
+            if (!so && !ov) { tail = T(" Diqqat: bu telefonda ekranni o'chirish ishlamaydi va qalqon ruxsati yo'q, himoya cheklangan.", " Внимание: защита ограничена."); }
+            sayEnd(T("Cho'ntak rejimi yoqildi.", "Режим «в кармане» включён.") + tail);
+        }
+    }
+
     boolean tryCmd(String un, String n) {
+        if (has(n, POCKET_RE)) { doPocket(n); return true; }
         boolean csOk = !isLocked() || sp().getBoolean("lock_cs", true);
         if (has(n, "sms\\p{L}*|\u0441\u043c\u0441\\p{L}*")) {
             if (!csOk) { needUnlock(un); } else { trySms(un); }
