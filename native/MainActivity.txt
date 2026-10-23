@@ -1,4 +1,4 @@
-// PLDN-FAYL: MainActivity.txt | versiya: lock-4.0 | 22-okt-2026
+// PLDN-FAYL: MainActivity.txt | versiya: pocket-5.0 | satr: 1035 | 23-okt-2026
 package __PKG__;
 
 import android.Manifest;
@@ -857,6 +857,51 @@ public class MainActivity extends BridgeActivity {
             } catch (Throwable e) { return "err:" + e; }
         }
     }
+    public class PldnPocketBridge {
+        @android.webkit.JavascriptInterface
+        public String status() { return PldnPocket.statusJson(MainActivity.this); }
+        @android.webkit.JavascriptInterface
+        public String enable() {
+            PldnPocket p = PldnPocket.cur;
+            if (!PldnWakeService.running || p == null) { return "nowake"; }
+            return p.enable();
+        }
+        @android.webkit.JavascriptInterface
+        public String disable() {
+            PldnPocket p = PldnPocket.cur;
+            if (p != null) { p.disable(); }
+            return "ok";
+        }
+        @android.webkit.JavascriptInterface
+        public boolean overlayGranted() { return PldnPocket.overlayOk(MainActivity.this); }
+        @android.webkit.JavascriptInterface
+        public String askOverlay() {
+            try {
+                android.content.Intent i = new android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:" + getPackageName()));
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return "ok";
+            } catch (Throwable e) { return "err:" + e; }
+        }
+        @android.webkit.JavascriptInterface
+        public void setShield(boolean v) {
+            getSharedPreferences("pldn_wake", android.content.Context.MODE_PRIVATE).edit().putBoolean("pocket_shield", v).apply();
+            PldnPocket p = PldnPocket.cur;
+            if (p != null) { p.reeval(); }
+        }
+    }
+    PldnPocketBridge pldnPocket;
+    final PldnPocket.Listener pocketListener = new PldnPocket.Listener() {
+        public void onPocket(final boolean on, final boolean guard) {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    try {
+                        getBridge().getWebView().evaluateJavascript("window.pldnPocketEvent&&window.pldnPocketEvent({type:'state',on:" + on + ",guard:" + guard + "})", null);
+                    } catch (Throwable e) { }
+                }
+            });
+        }
+    };
     PldnWake pldnWake;
     volatile boolean uiResumed = false;
     volatile long wakePendingAt = 0;
@@ -914,6 +959,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onDestroy() {
         try { if (PldnWakeService.sink == wakeSink) { PldnWakeService.sink = null; } } catch (Throwable e) { }
+        try { if (PldnPocket.listener == pocketListener) { PldnPocket.listener = null; } } catch (Throwable e) { }
         try { if (pldnVoice != null) { pldnVoice.release(); } } catch (Throwable e) { }
         try { if (pldnPhone != null) { pldnPhone.release(); } } catch (Throwable e) { }
         super.onDestroy();
@@ -974,6 +1020,9 @@ public class MainActivity extends BridgeActivity {
         getBridge().getWebView().addJavascriptInterface(pldnPhone, "PldnPhone");
         if (pldnWake == null) { pldnWake = new PldnWake(); }
         getBridge().getWebView().addJavascriptInterface(pldnWake, "PldnWake");
+        if (pldnPocket == null) { pldnPocket = new PldnPocketBridge(); }
+        getBridge().getWebView().addJavascriptInterface(pldnPocket, "PldnPocket");
+        PldnPocket.listener = pocketListener;
         PldnWakeService.sink = wakeSink;
         checkWakeIntent(getIntent());
         getBridge().getWebView().setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
