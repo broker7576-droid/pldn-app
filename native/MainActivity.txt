@@ -1,4 +1,4 @@
-// PLDN-FAYL: MainActivity.txt | versiya: pocket-5.0 | satr: 1035 | 23-okt-2026
+// PLDN-FAYL: MainActivity.txt | versiya: pocket-5.1 | satr: 1121 | 23-okt-2026
 package __PKG__;
 
 import android.Manifest;
@@ -11,6 +11,14 @@ import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
 
 public class MainActivity extends BridgeActivity {
+    // APK yuklash holati: PldnUpdater ob'ekti qayta yaratilsa ham yo'qolmasin
+    static volatile String updState = "idle";
+    static volatile int updPct = 0;
+    static volatile long updBytes = 0;
+    static volatile String updErr = "";
+    static volatile int updGen = 0;
+    static volatile long updProgAt = 0;
+    static volatile java.net.HttpURLConnection updConn = null;
     public class PldnSaver {
         java.io.OutputStream os;
         String path = "";
@@ -106,10 +114,7 @@ public class MainActivity extends BridgeActivity {
         }
     }
     public class PldnUpdater {
-        volatile int pct = 0;
-        volatile long bytes = 0;
-        volatile String state = "idle";
-        volatile String err = "";
+        final int MAX_TRIES = 8;
         @android.webkit.JavascriptInterface
         public boolean canInstall() {
             if (android.os.Build.VERSION.SDK_INT >= 26) { return getPackageManager().canRequestPackageInstalls(); }
@@ -123,27 +128,37 @@ public class MainActivity extends BridgeActivity {
                 startActivity(i);
             } catch (Exception e) { }
         }
-        void fetchApk(String url, java.io.File f, java.io.File marker) throws Exception {
-            long have = 0;
-            String prev = "";
+        String readMarker(java.io.File marker) {
             try {
-                if (marker.exists()) {
-                    java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(marker));
-                    prev = br.readLine();
-                    br.close();
-                }
-            } catch (Exception e) { prev = ""; }
+                if (!marker.exists()) { return ""; }
+                java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(marker));
+                String p = br.readLine();
+                br.close();
+                return p == null ? "" : p;
+            } catch (Exception e) { return ""; }
+        }
+        void fetchApk(String url, java.io.File f, java.io.File marker, int gen) throws Exception {
+            long have = 0;
+            String prev = readMarker(marker);
             if (f.exists() && url.equals(prev)) { have = f.length(); } else if (f.exists()) { f.delete(); }
             java.io.FileWriter fw = new java.io.FileWriter(marker);
             fw.write(url);
             fw.close();
             java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
-            c.setConnectTimeout(15000);
-            c.setReadTimeout(30000);
+            updConn = c;
+            c.setConnectTimeout(10000);
+            c.setReadTimeout(15000);
             c.setInstanceFollowRedirects(true);
             if (have > 0) { c.setRequestProperty("Range", "bytes=" + have + "-"); }
             int code = c.getResponseCode();
-            if (code == 416) { f.delete(); throw new Exception("HTTP 416"); }
+            if (gen != updGen) { try { c.disconnect(); } catch (Exception e) { } throw new Exception("bekor"); }
+            if (code == 416) {
+                // fayl allaqachon to'liq yuklangan
+                try { c.disconnect(); } catch (Exception e) { }
+                if (have > 1000000) { updBytes = have; return; }
+                f.delete();
+                throw new Exception("HTTP 416");
+            }
             if (code != 200 && code != 206) { throw new Exception("HTTP " + code); }
             boolean resumed = (code == 206 && have > 0);
             long got = resumed ? have : 0;
@@ -155,45 +170,65 @@ public class MainActivity extends BridgeActivity {
             int n;
             try {
                 while ((n = in.read(buf)) > 0) {
+                    if (gen != updGen) { throw new Exception("bekor"); }
                     out.write(buf, 0, n);
                     got += n;
-                    bytes = got;
-                    if (total > 0) { pct = (int) (got * 100 / total); }
+                    updBytes = got;
+                    updProgAt = android.os.SystemClock.elapsedRealtime();
+                    if (total > 0) { updPct = (int) (got * 100 / total); }
                 }
             } finally {
                 try { out.close(); } catch (Exception e) { }
                 try { in.close(); } catch (Exception e) { }
+                try { c.disconnect(); } catch (Exception e) { }
             }
             if (total > 0 && got < total) { throw new Exception("uzilib qoldi"); }
             if (got < 1000000) { f.delete(); throw new Exception("fayl kichik: " + got); }
         }
         @android.webkit.JavascriptInterface
         public void download(final String url) {
-            if ("downloading".equals(state)) { return; }
-            state = "downloading"; pct = 0; bytes = 0; err = "";
+            final java.io.File f = new java.io.File(getCacheDir(), "pldn-update.apk");
+            final java.io.File marker = new java.io.File(getCacheDir(), "pldn-update.url");
+            long now = android.os.SystemClock.elapsedRealtime();
+            // faol yuklash bor va oxirgi 40 soniyada harakat bo'lgan: yangidan boshlamaymiz, ilova shunga ulanadi
+            if ("downloading".equals(updState) && now - updProgAt < 40000) { return; }
+            // fayl allaqachon to'liq va shu havoladan: qayta yuklamaymiz
+            if ("done".equals(updState) && f.exists() && f.length() > 1000000 && url.equals(readMarker(marker))) { return; }
+            final int gen = ++updGen;
+            try { if (updConn != null) { updConn.disconnect(); } } catch (Exception e) { }
+            updState = "downloading"; updPct = 0; updBytes = 0; updErr = ""; updProgAt = now;
             new Thread(new Runnable() {
                 public void run() {
-                    java.io.File f = new java.io.File(getCacheDir(), "pldn-update.apk");
-                    java.io.File marker = new java.io.File(getCacheDir(), "pldn-update.url");
                     int tries = 0;
-                    while (true) {
+                    while (gen == updGen) {
                         try {
-                            fetchApk(url, f, marker);
-                            pct = 100;
-                            state = "done";
-                            break;
+                            updErr = "urinish " + (tries + 1) + "/" + MAX_TRIES;
+                            updProgAt = android.os.SystemClock.elapsedRealtime();
+                            fetchApk(url, f, marker, gen);
+                            if (gen != updGen) { return; }
+                            updPct = 100;
+                            updErr = "";
+                            updState = "done";
+                            return;
                         } catch (Exception e) {
+                            if (gen != updGen) { return; }
                             tries++;
-                            if (tries >= 4) { err = String.valueOf(e); state = "error"; break; }
-                            try { Thread.sleep(1500); } catch (Exception x) { }
+                            if (tries >= MAX_TRIES) { updErr = String.valueOf(e); updState = "error"; return; }
+                            try { Thread.sleep(1200 + tries * 400L); } catch (Exception x) { }
                         }
                     }
                 }
             }).start();
         }
         @android.webkit.JavascriptInterface
+        public void cancel() {
+            updGen++;
+            try { if (updConn != null) { updConn.disconnect(); } } catch (Exception e) { }
+            updState = "idle"; updPct = 0; updBytes = 0; updErr = "";
+        }
+        @android.webkit.JavascriptInterface
         public String status() {
-            return state + "|" + pct + "|" + bytes + "|" + err;
+            return updState + "|" + updPct + "|" + updBytes + "|" + updErr;
         }
         @android.webkit.JavascriptInterface
         public String install() {
@@ -857,6 +892,55 @@ public class MainActivity extends BridgeActivity {
             } catch (Throwable e) { return "err:" + e; }
         }
     }
+    public class PldnAudioBridge {
+        boolean modeSet = false;
+        android.media.AudioManager am() { return (android.media.AudioManager) getSystemService(android.content.Context.AUDIO_SERVICE); }
+        @android.webkit.JavascriptInterface
+        public boolean isSpeaker() {
+            try {
+                android.media.AudioManager a = am();
+                if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    android.media.AudioDeviceInfo d = a.getCommunicationDevice();
+                    return d != null && d.getType() == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER;
+                }
+                return a.isSpeakerphoneOn();
+            } catch (Throwable e) { return false; }
+        }
+        /** on=true: tashqi dinamik; on=false: quloqdagi dinamik (ulangan quloqchin bo'lsa, o'sha). */
+        @android.webkit.JavascriptInterface
+        public boolean setSpeaker(boolean on) {
+            try {
+                android.media.AudioManager a = am();
+                if (a.getMode() == android.media.AudioManager.MODE_NORMAL) { a.setMode(android.media.AudioManager.MODE_IN_COMMUNICATION); modeSet = true; }
+                if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    java.util.List<android.media.AudioDeviceInfo> l = a.getAvailableCommunicationDevices();
+                    int[] want = on ? new int[]{ android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                        : new int[]{ android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO, android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                                     android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES, android.media.AudioDeviceInfo.TYPE_USB_HEADSET,
+                                     android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE };
+                    for (int t : want) {
+                        for (android.media.AudioDeviceInfo d : l) {
+                            if (d.getType() == t) { return a.setCommunicationDevice(d); }
+                        }
+                    }
+                    if (!on) { a.clearCommunicationDevice(); return true; }
+                    return false;
+                }
+                a.setSpeakerphoneOn(on);
+                return true;
+            } catch (Throwable e) { return false; }
+        }
+        /** Qo'ng'iroq tugaganda: yo'nalishni tizimga qaytaradi. */
+        @android.webkit.JavascriptInterface
+        public void reset() {
+            try {
+                android.media.AudioManager a = am();
+                if (android.os.Build.VERSION.SDK_INT >= 31) { a.clearCommunicationDevice(); } else { a.setSpeakerphoneOn(false); }
+                if (modeSet) { a.setMode(android.media.AudioManager.MODE_NORMAL); modeSet = false; }
+            } catch (Throwable e) { }
+        }
+    }
+    PldnAudioBridge pldnAudio;
     public class PldnPocketBridge {
         @android.webkit.JavascriptInterface
         public String status() { return PldnPocket.statusJson(MainActivity.this); }
@@ -1020,6 +1104,8 @@ public class MainActivity extends BridgeActivity {
         getBridge().getWebView().addJavascriptInterface(pldnPhone, "PldnPhone");
         if (pldnWake == null) { pldnWake = new PldnWake(); }
         getBridge().getWebView().addJavascriptInterface(pldnWake, "PldnWake");
+        if (pldnAudio == null) { pldnAudio = new PldnAudioBridge(); }
+        getBridge().getWebView().addJavascriptInterface(pldnAudio, "PldnAudio");
         if (pldnPocket == null) { pldnPocket = new PldnPocketBridge(); }
         getBridge().getWebView().addJavascriptInterface(pldnPocket, "PldnPocket");
         PldnPocket.listener = pocketListener;
