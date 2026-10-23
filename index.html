@@ -1,5 +1,5 @@
-<!-- VERSION: 211 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: robot-6.0 | satr: 18506 | 23-okt-2026 -->
+<!-- VERSION: 212 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: robot-battery-7.0 | satr: 18949 | 23-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -2699,6 +2699,80 @@
   .prm-center .pldn-robot-eye { animation: pldnRobotBlink 9s linear infinite; }
   .prm-toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 99995; background: rgba(20,24,40,0.94); color: #fff; padding: 10px 16px; border-radius: 14px; font-size: 14px; max-width: 86vw; text-align: center; opacity: 0; transition: opacity 0.2s ease; pointer-events: none; }
   .prm-toast.show { opacity: 1; }
+
+  /* ===== ROBOT QUVVATLASH OYNASI (batareya) ===== VERSION: robot-battery-7.0 */
+  #pldnBattWin { position: fixed; inset: 0; z-index: 99992; display: none; flex-direction: column; gap: 6px; box-sizing: border-box; padding: calc(env(safe-area-inset-top, 0px) + 8px) 14px calc(env(safe-area-inset-bottom, 0px) + 12px); background: radial-gradient(120% 80% at 50% 16%, #10295a 0%, #081230 55%, #03060f 100%); color: #fff; opacity: 0; transition: opacity 0.2s ease; overflow: hidden; overscroll-behavior: contain; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  #pldnBattWin.open { display: flex; }
+  #pldnBattWin.show { opacity: 1; }
+  .pbw-top { display: flex; align-items: center; gap: 10px; min-height: 44px; flex: 0 0 auto; }
+  .pbw-title { flex: 1; font-size: 18px; font-weight: 700; letter-spacing: 0.3px; }
+  .pbw-x { width: 40px; height: 40px; padding: 0; border-radius: 50%; border: 1.5px solid rgba(120,160,255,0.6); background: rgba(20,40,90,0.6); color: #fff; font-size: 18px; line-height: 1; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+  .pbw-stage { position: relative; flex: 1 1 0; min-height: 210px; overflow: hidden; touch-action: none; }
+  .pbw-hint { position: absolute; left: 0; right: 0; top: 2px; text-align: center; font-size: 13px; line-height: 1.25; color: rgba(190,210,255,0.9); pointer-events: none; z-index: 3; padding: 0 8px; }
+
+  .pbw-dock { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .pbw-plate { position: absolute; inset: 0; border-radius: 26px; background: linear-gradient(180deg, #0b1d42, #060f26); border: 2px solid rgba(45,139,255,0.55); box-shadow: 0 0 18px rgba(45,139,255,0.25), inset 0 0 22px rgba(45,139,255,0.18); transition: border-color 0.2s, box-shadow 0.2s; }
+  .pbw-dock.near .pbw-plate { border-color: rgba(90,190,255,0.95); box-shadow: 0 0 26px rgba(45,139,255,0.6), inset 0 0 26px rgba(45,139,255,0.35); }
+  .pbw-dock.ready .pbw-plate { border-color: #7fe0ff; box-shadow: 0 0 34px rgba(80,200,255,0.85), inset 0 0 30px rgba(80,200,255,0.5); }
+  .pbw-pin { position: absolute; bottom: -7px; width: 16px; height: 8px; border-radius: 2px; background: #2d8bff; box-shadow: 0 0 6px #2d8bff; }
+  .pbw-pin.pl { left: 26%; } .pbw-pin.pr { right: 26%; }
+  .pbw-ring, .pbw-burst { position: absolute; inset: -2px; border-radius: 28px; border: 2px solid rgba(80,200,255,0.8); opacity: 0; transform: scale(1); }
+  .pbw-stage.charging .pbw-ring { animation: pbwWave 2.4s ease-out infinite; }
+  .pbw-stage.charging .pbw-ring.r2 { animation-delay: 1.2s; }
+  .pbw-dock.burst .pbw-burst { border-width: 3px; border-color: #7fe0ff; animation: pbwBurst 0.7s ease-out; }
+  .pbw-zap { position: absolute; width: 2px; height: 16px; border-radius: 2px; background: #cfeeff; box-shadow: 0 0 6px #5cc8ff, 0 0 12px #2d8bff; opacity: 0; }
+  .pbw-zap.z0 { left: -5px; top: 18%; transform: rotate(18deg); }
+  .pbw-zap.z1 { right: -5px; top: 28%; transform: rotate(-20deg); }
+  .pbw-zap.z2 { left: -5px; top: 62%; transform: rotate(-16deg); }
+  .pbw-zap.z3 { right: -5px; top: 70%; transform: rotate(22deg); }
+  .pbw-zap.z4 { left: 30%; top: -9px; transform: rotate(70deg); }
+  .pbw-zap.z5 { right: 30%; bottom: -9px; transform: rotate(80deg); }
+  .pbw-stage.charging .pbw-zap { animation: pbwZap 1.3s linear infinite; }
+  .pbw-stage.charging .pbw-zap.z1 { animation-delay: 0.25s; } .pbw-stage.charging .pbw-zap.z2 { animation-delay: 0.55s; }
+  .pbw-stage.charging .pbw-zap.z3 { animation-delay: 0.8s; } .pbw-stage.charging .pbw-zap.z4 { animation-delay: 1s; } .pbw-stage.charging .pbw-zap.z5 { animation-delay: 0.4s; }
+  .pbw-stage.dead .pbw-plate { border-color: rgba(255,69,58,0.7); box-shadow: 0 0 20px rgba(255,69,58,0.3), inset 0 0 22px rgba(255,69,58,0.18); animation: pbwDead 2s ease-in-out infinite; }
+  @keyframes pbwWave { 0% { opacity: 0.8; transform: scale(1); } 100% { opacity: 0; transform: scale(1.4); } }
+  @keyframes pbwBurst { 0% { opacity: 0.95; transform: scale(1); } 100% { opacity: 0; transform: scale(1.5); } }
+  @keyframes pbwZap { 0%, 12%, 100% { opacity: 0; } 4% { opacity: 1; } 8% { opacity: 0.2; } 10% { opacity: 1; } }
+  @keyframes pbwDead { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+  .pbw-ghost, .pbw-rob { position: absolute; left: 0; top: 0; }
+  .pbw-ghost { pointer-events: none; opacity: 0.6; filter: brightness(0) drop-shadow(0 0 1.5px rgba(110,190,255,0.95)) drop-shadow(0 0 7px rgba(45,139,255,0.55)); transition: opacity 0.2s; }
+  .pbw-ghost .pldn-robot-eye, .pbw-ghost .pldn-robot-antenna::after { animation: none; }
+  .pbw-rob { z-index: 2; touch-action: none; cursor: grab; will-change: transform; }
+  .pbw-rob.grab { cursor: grabbing; }
+  .pbw-rob.seated { filter: drop-shadow(0 0 10px rgba(45,139,255,0.85)); }
+  .pbw-stage.docked .pbw-ghost { opacity: 0; }
+  .pbw-ghost .pldn-robot-body, .pbw-rob .pldn-robot-body { position: absolute; left: 0; top: 0; margin: 0; width: 34px; height: 40px; transform: scale(var(--k, 2.4)); transform-origin: 0 0; transition: none; will-change: auto; }
+  .pbw-rob .pldn-robot-eye { animation: pldnRobotBlink 9s linear infinite; transform-origin: 50% 50%; }
+  .pbw-rob.dead .pldn-robot-body { filter: grayscale(1) brightness(0.6); }
+  .pbw-rob.dead .pldn-robot-eye { animation: none; background: #3a3f4a; box-shadow: none; transform: scaleY(0.25); }
+  .pbw-rob.dead .pldn-robot-antenna::after { background: #3a3f4a; box-shadow: none; }
+
+  .pbw-info { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; }
+  .pbw-card { --c: 45,139,255; border-radius: 16px; padding: 10px 14px; background: rgba(10,24,56,0.72); border: 1.5px solid rgba(var(--c), 0.55); box-shadow: 0 0 12px rgba(var(--c), 0.18); }
+  .pbw-k { font-size: 12px; font-weight: 700; color: rgb(var(--c)); letter-spacing: 0.2px; }
+  .pbw-v { font-size: 17px; font-weight: 700; margin-top: 2px; }
+  .pbw-use { --c: 52,199,89; }
+  .pbw-chg { --c: 255,176,32; }
+  .pbw-row1 { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  .pbw-pct { font-size: 40px; font-weight: 800; line-height: 1.05; transform-origin: 0 50%; }
+  .pbw-state { font-size: 13px; font-weight: 700; color: rgb(var(--c)); text-align: right; padding-bottom: 4px; }
+  .pbw-bar { display: grid; grid-template-columns: repeat(20, 1fr); gap: 2px; height: 14px; transform-origin: 50% 50%; }
+  .pbw-bar i { border-radius: 3px; background: rgba(255,255,255,0.1); }
+  .pbw-bar i.on { background: rgb(var(--c)); box-shadow: 0 0 6px rgba(var(--c), 0.8); }
+  .pbw-bar.pulse { animation: pbwPulse 0.6s ease-out; }
+  .pbw-pct.pop { animation: pbwPop 0.6s ease-out; }
+  @keyframes pbwPulse { 0% { transform: scaleY(1); } 35% { transform: scaleY(1.55); } 100% { transform: scaleY(1); } }
+  @keyframes pbwPop { 0% { transform: scale(1); } 35% { transform: scale(1.12); } 100% { transform: scale(1); } }
+  #pldnBattWin[data-lv="ok"] .pbw-main { --c: 45,139,255; }
+  #pldnBattWin[data-lv="mid"] .pbw-main { --c: 255,204,0; }
+  #pldnBattWin[data-lv="low"] .pbw-main, #pldnBattWin[data-lv="dead"] .pbw-main { --c: 255,69,58; }
+  #pldnBattWin[data-mode="charging"] .pbw-main { --c: 0,214,255; }
+  #pldnBattWin[data-mode="full"] .pbw-main { --c: 52,199,89; }
+  @media (prefers-reduced-motion: reduce) {
+    .pbw-ring, .pbw-zap, .pbw-rob .pldn-robot-eye, .pbw-plate { animation: none !important; }
+  }
 
   /* ===== SPLASH (PLDN logosi) ===== */
   #splashScreen {
@@ -17584,7 +17658,7 @@ async function fbOpenChat(info, ensure) {
       $('vpWakeSt').textContent = txt;
       var hs = (s.running && s.heard) ? T('Oxirgi eshitilgan: ', 'Последнее услышано: ') + '«' + s.heard + '»  ·  ' + T('uyg‘onish: ', 'пробуждений: ') + (s.wakes || 0) : '';
       if (s.running && s.wakeInfo) { hs += (hs ? '\n' : '') + 'wake ' + s.wakeInfo + ' · JS: ' + (window.__pwJs || 0); }
-      hs += (hs ? '\n' : '') + 'kod: ' + (s.code || T('eski (yangilanmagan)', 'старый')) + ' / index: robot-6.0';
+      hs += (hs ? '\n' : '') + 'kod: ' + (s.code || T('eski (yangilanmagan)', 'старый')) + ' / index: battery-7.0';
       $('vpWakeHeard').style.whiteSpace = 'pre-line';
       $('vpWakeHeard').textContent = hs;
       var tg = $('vpWakeTg');
@@ -18367,7 +18441,7 @@ async function fbOpenChat(info, ensure) {
   var ITEMS = [
     { id: 'kb', ang: -90, c: '42,171,238', ico: 'book', t: ['Bilimlar bazasi', 'База знаний'], s: ['Savollarga javob', 'Ответы на вопросы'], run: openKB },
     { id: 'settings', ang: -18, c: '52,199,89', ico: 'gear', t: ['Sozlamalar', 'Настройки'], s: ['Boshqaruv va moslamalar', 'Управление'], run: openSettings },
-    { id: 'charge', ang: 54, c: '255,176,32', ico: 'battery', t: ['Quvvatlash rejimi', 'Режим зарядки'], s: ['Tez orada', 'Скоро'], run: function () { toast(T('🔋 Quvvatlash rejimi tez orada qo‘shiladi', '🔋 Режим зарядки скоро появится')); } },
+    { id: 'charge', ang: 54, c: '255,176,32', ico: 'battery', t: ['Quvvatlash rejimi', 'Режим зарядки'], s: ['Batareya va quvvat', 'Батарея и заряд'], run: function () { toast(T('🔋 Quvvatlash rejimi tez orada qo‘shiladi', '🔋 Режим зарядки скоро появится')); } },
     { id: 'close', ang: 126, c: '120,160,255', ico: 'x', t: ['Yopish', 'Закрыть'], s: null, run: function () {} },
     { id: 'voice', ang: 198, c: '160,110,255', ico: 'mic', t: ['Ovoz bilan boshqarish', 'Голосовое управление'], s: ['Buyruqlar orqali', 'Командами'], run: openVoice }
   ];
@@ -18499,6 +18573,375 @@ async function fbOpenChat(info, ensure) {
       });
     }
   } catch (e) {}
+})();
+// ===== PLDN ROBOT BATAREYA VA QUVVATLASH ===== VERSION: robot-battery-7.0
+// Hisob-kitob vaqt farqiga asoslangan: diskka faqat holat o'zgarganda yoziladi (joylash/chiqarish),
+// foiz esa "baza foiz + o'tgan vaqt x tezlik" formulasi bilan har safar qayta hisoblanadi.
+// Shuning uchun ilova yopiq turganda ham, telefon qayta yoqilganda ham to'g'ri chiqadi.
+
+// <<MODEL
+var PLDNBattModel = (function () {
+  var CHARGE_SEC = 4800;      // 0% -> 100%: 80 daqiqa (1% = 48 soniya)
+  var DRAIN_SEC = 86400;      // 100% -> 0%: 24 soat
+  var USE_FULL_SEC = 86400;   // 100% quvvat = 24 soat ishlash
+  var KEY = 'pldn_batt_v1';
+
+  function clamp(p) { return p < 0 ? 0 : (p > 100 ? 100 : p); }
+
+  // st = { p: baza foiz, t: baza vaqt (ms), slot: uyachadami, cs: quvvatlash boshlangan vaqt }
+  function pctAt(st, now) {
+    var dt = (now - st.t) / 1000;
+    if (!(dt > 0)) dt = 0;
+    var p = st.slot ? st.p + dt * 100 / CHARGE_SEC : st.p - dt * 100 / DRAIN_SEC;
+    return clamp(p);
+  }
+  function useSec(p) { return p / 100 * USE_FULL_SEC; }
+  function chargeSec(p) { return (100 - p) * CHARGE_SEC / 100; }
+
+  function fmtUse(p, T) {
+    var mins = Math.floor(useSec(p) / 60 + 1e-6);
+    if (mins <= 0) return p > 0 ? T('1 daqiqadan kam', 'меньше минуты') : '0 ' + T('soat', 'ч');
+    var h = Math.floor(mins / 60), m = mins % 60, a = [];
+    if (h) a.push(h + ' ' + T('soat', 'ч'));
+    if (m) a.push(m + ' ' + T('daqiqa', 'мин'));
+    return a.join(' ');
+  }
+  function fmtCharge(p, T) {
+    var s = Math.ceil(chargeSec(p) - 1e-6);
+    if (s <= 0) return '0 ' + T('soniya', 'сек');
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60, a = [];
+    if (h) a.push(h + ' ' + T('soat', 'ч'));
+    if (m) a.push(m + ' ' + T('daqiqa', 'мин'));
+    if (sec) a.push(sec + ' ' + T('soniya', 'сек'));
+    return a.join(' ');
+  }
+
+  // store = { get(k), set(k, v) }, nowFn = () => ms
+  function create(store, nowFn) {
+    var stored = null;
+    try { stored = JSON.parse(store.get(KEY) || 'null'); } catch (e) { stored = null; }
+    var st, fresh = false, now0 = nowFn();
+    if (stored && isFinite(stored.p) && isFinite(stored.t)) {
+      var t0 = +stored.t; if (t0 > now0) t0 = now0; // soat orqaga surilgan bo'lsa
+      st = { p: clamp(+stored.p), t: t0, slot: !!stored.slot, cs: isFinite(stored.cs) ? +stored.cs : 0 };
+    } else {
+      st = { p: 100, t: now0, slot: false, cs: 0 }; // yangi robot: to'liq quvvat bilan
+      fresh = true;
+    }
+    function save() { try { store.set(KEY, JSON.stringify({ v: 1, p: st.p, t: st.t, slot: st.slot, cs: st.cs })); } catch (e) {} }
+    function cur() { return pctAt(st, nowFn()); }
+    function rebase(newSlot) {
+      var now = nowFn();
+      st.p = pctAt(st, now);
+      st.t = now;
+      if (newSlot !== st.slot) { st.cs = newSlot ? now : 0; st.slot = newSlot; }
+      save();
+    }
+    if (fresh) save();
+    return {
+      cur: cur,
+      slot: function () { return st.slot; },
+      plug: function () { if (!st.slot) rebase(true); },     // faqat uyachaga joylashganda quvvatlash boshlanadi
+      unplug: function () { if (st.slot) rebase(false); },   // chiqarilishi bilan to'xtaydi, yig'ilgan foiz saqlanadi
+      save: save,
+      raw: function () { return { p: st.p, t: st.t, slot: st.slot, cs: st.cs }; }
+    };
+  }
+  return { create: create, pctAt: pctAt, useSec: useSec, chargeSec: chargeSec, fmtUse: fmtUse, fmtCharge: fmtCharge, CHARGE_SEC: CHARGE_SEC, DRAIN_SEC: DRAIN_SEC };
+})();
+// MODEL>>
+
+(function () {
+  if (typeof PLDNRobot === 'undefined') return;
+  var BM = PLDNBattModel;
+  function T(uz, ru) { try { return typeof fbT === 'function' ? fbT(uz, ru) : uz; } catch (e) { return uz; } }
+  var store = {
+    get: function (k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { window.localStorage.setItem(k, v); } catch (e) {} }
+  };
+  var S = BM.create(store, Date.now);
+
+  // ---- vaqt chegarasi: 100% yoki 0% ga yetganda (faqat ilova ochiq bo'lsa ishlaydi, bitta setTimeout)
+  var edgeT = 0, isOpen = false, tickT = 0, lastKind = kind(S.cur());
+  function kind(p) { return p <= 0 ? 'dead' : (p >= 100 ? 'full' : 'mid'); }
+  var toastEl = null, toastT = 0;
+  function toast(msg) {
+    if (!toastEl) { toastEl = document.createElement('div'); toastEl.className = 'prm-toast'; toastEl.style.zIndex = 99996; document.body.appendChild(toastEl); }
+    toastEl.textContent = msg; void toastEl.offsetWidth; toastEl.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(function () { toastEl.classList.remove('show'); }, 3000);
+  }
+  function announce() {
+    var k = kind(S.cur());
+    if (k === lastKind) return;
+    lastKind = k;
+    if (isOpen) return; // oyna ochiq bo'lsa, holat oynaning o'zida ko'rinadi
+    if (k === 'dead') toast(T('🪫 Robot quvvati tugadi', '🪫 Заряд робота закончился'));
+    else if (k === 'full') toast(T('🔋 Robot to‘liq quvvatlandi', '🔋 Робот полностью заряжен'));
+  }
+  function schedEdge() {
+    clearTimeout(edgeT);
+    var p = S.cur(), ms;
+    if (S.slot()) { if (p >= 100) return; ms = BM.chargeSec(p) * 1000; }
+    else { if (p <= 0) return; ms = BM.useSec(p) * 1000; }
+    edgeT = setTimeout(function () { announce(); if (isOpen) render(true); schedEdge(); }, Math.min(ms + 80, 2147000000));
+  }
+  schedEdge();
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) return;
+    announce(); schedEdge(); if (isOpen) render(true);
+  });
+
+  // ---- DOM (birinchi ochilganda quriladi)
+  var ov, stage, dock, ghost, rob, hint, pctEl, stEl, bar, segs = [], useEl, fullEl, mainCard;
+  var W = 0, H = 0, rw = 0, rh = 0, cx = 0, cy = 0, hx = 0, hy = 0, MAG = 0, SNAP = 0, k = 2.4;
+  var pos = { x: 0, y: 0 }, D = null, seating = false, nearState = 0, cache = {}, lastSegs = -1, closeT = 0, openedAt = 0;
+
+  function botBody() {
+    var src = document.querySelector('#pldnRobot .pldn-robot-body');
+    if (src) return src.cloneNode(true); // mavjud robot elementining nusxasi — tashqi ko'rinish o'zgarmaydi
+    var d = document.createElement('div');
+    d.className = 'pldn-robot-body';
+    d.innerHTML = '<div class="pldn-robot-head"><div class="pldn-robot-antenna"></div><div class="pldn-robot-eye pldn-robot-eye-left"></div><div class="pldn-robot-eye pldn-robot-eye-right"></div></div><div class="pldn-robot-torso"></div><div class="pldn-robot-arm pldn-robot-arm-left"></div><div class="pldn-robot-arm pldn-robot-arm-right"></div>';
+    return d;
+  }
+  function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; }
+
+  function build() {
+    ov = el('div'); ov.id = 'pldnBattWin'; ov.setAttribute('role', 'dialog');
+    var top = el('div', 'pbw-top');
+    var title = el('div', 'pbw-title'); title.id = 'pbwTitle';
+    var x = el('button', 'pbw-x', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'close');
+    top.appendChild(title); top.appendChild(x);
+
+    stage = el('div', 'pbw-stage');
+    hint = el('div', 'pbw-hint');
+    dock = el('div', 'pbw-dock');
+    dock.appendChild(el('div', 'pbw-ring'));
+    dock.appendChild(el('div', 'pbw-ring r2'));
+    dock.appendChild(el('div', 'pbw-plate'));
+    dock.appendChild(el('div', 'pbw-burst'));
+    dock.appendChild(el('i', 'pbw-pin pl'));
+    dock.appendChild(el('i', 'pbw-pin pr'));
+    for (var z = 0; z < 6; z++) dock.appendChild(el('i', 'pbw-zap z' + z));
+    ghost = el('div', 'pbw-ghost'); ghost.appendChild(botBody());
+    rob = el('div', 'pbw-rob'); rob.appendChild(botBody());
+    stage.appendChild(hint); stage.appendChild(dock); stage.appendChild(ghost); stage.appendChild(rob);
+
+    var info = el('div', 'pbw-info');
+    mainCard = el('div', 'pbw-card pbw-main');
+    var r1 = el('div', 'pbw-row1');
+    var left = el('div'); var k1 = el('div', 'pbw-k'); k1.id = 'pbwK1'; pctEl = el('div', 'pbw-pct');
+    left.appendChild(k1); left.appendChild(pctEl);
+    stEl = el('div', 'pbw-state');
+    r1.appendChild(left); r1.appendChild(stEl);
+    bar = el('div', 'pbw-bar');
+    for (var i = 0; i < 20; i++) { var s = el('i'); bar.appendChild(s); segs.push(s); }
+    mainCard.appendChild(r1); mainCard.appendChild(bar);
+
+    var c2 = el('div', 'pbw-card pbw-use'); var k2 = el('div', 'pbw-k'); k2.id = 'pbwK2'; useEl = el('div', 'pbw-v');
+    c2.appendChild(k2); c2.appendChild(useEl);
+    var c3 = el('div', 'pbw-card pbw-chg'); var k3 = el('div', 'pbw-k'); k3.id = 'pbwK3'; fullEl = el('div', 'pbw-v');
+    c3.appendChild(k3); c3.appendChild(fullEl);
+    info.appendChild(mainCard); info.appendChild(c2); info.appendChild(c3);
+
+    ov.appendChild(top); ov.appendChild(stage); ov.appendChild(info);
+    document.body.appendChild(ov);
+
+    x.addEventListener('click', function () { close(); });
+    bindDrag();
+  }
+
+  function setTxt(e, key, v) { if (cache[key] !== v) { cache[key] = v; e.textContent = v; } }
+  function labels() {
+    setTxt(ov.querySelector('#pbwTitle'), 'ttl', '🔋 ' + T('Quvvatlash rejimi', 'Режим зарядки'));
+    setTxt(ov.querySelector('#pbwK1'), 'k1', T('Robot quvvati', 'Заряд робота'));
+    setTxt(ov.querySelector('#pbwK2'), 'k2', '🕒 ' + T('Foydalanishga qolgan vaqt', 'Время работы'));
+    setTxt(ov.querySelector('#pbwK3'), 'k3', '⚡ ' + T('100% gacha quvvatlanish', 'До 100% заряда'));
+  }
+
+  // ---- joylashuv: robot va uyacha o'lchamlari ekranga moslanadi
+  function layout() {
+    W = stage.clientWidth; H = stage.clientHeight;
+    if (!W || !H) return;
+    k = Math.max(1.2, Math.min(3.2, H * 0.3 / 40, W * 0.4 / 34, (H - 38) / 106.5));
+    rw = 34 * k; rh = 40 * k;
+    stage.style.setProperty('--k', k.toFixed(3));
+    ghost.style.width = rob.style.width = rw + 'px';
+    ghost.style.height = rob.style.height = rh + 'px';
+    var pw = 52 * k, ph = 58 * k;
+    dock.style.width = pw + 'px'; dock.style.height = ph + 'px';
+    var plateCY = H - ph / 2 - 12;
+    cx = W / 2; cy = plateCY + 5.5 * k;              // robot markazi (antenna hisobga olingan)
+    hx = W / 2; hy = 31 * k + 26;                     // robot uyachadan tashqarida turadigan joy
+    dock.style.transform = 'translate3d(' + (cx - pw / 2) + 'px,' + (plateCY - ph / 2) + 'px,0)';
+    ghost.style.transform = 'translate3d(' + (cx - rw / 2) + 'px,' + (cy - rh / 2) + 'px,0)';
+    MAG = rh * 0.95; SNAP = rh * 0.5;
+    rob.style.transition = 'none';
+    if (S.slot()) { setRob(cx, cy); setSeated(true); } else { setRob(hx, hy); setSeated(false); }
+  }
+  function setRob(x, y) {
+    pos.x = x; pos.y = y;
+    rob.style.transform = 'translate3d(' + (x - rw / 2).toFixed(1) + 'px,' + (y - rh / 2).toFixed(1) + 'px,0)';
+  }
+  function setSeated(on) { rob.classList.toggle('seated', on); stage.classList.toggle('docked', on); }
+  function clampN(v, a, b) { return v < a ? a : (v > b ? b : v); }
+
+  // ---- robotni sudrash (pointer events + touch-action:none: sahifa siljimaydi)
+  function bindDrag() {
+    var rect = null;
+    rob.addEventListener('pointerdown', function (e) {
+      if (seating || D) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      e.preventDefault();
+      try { rob.setPointerCapture(e.pointerId); } catch (er) {}
+      rect = stage.getBoundingClientRect();
+      D = { id: e.pointerId, ox: (e.clientX - rect.left) - pos.x, oy: (e.clientY - rect.top) - pos.y, sx: e.clientX, sy: e.clientY, started: !S.slot(), d: Infinity };
+      rob.style.transition = 'none';
+      rob.classList.add('grab');
+    });
+    rob.addEventListener('pointermove', function (e) {
+      if (!D || e.pointerId !== D.id) return;
+      e.preventDefault();
+      if (!D.started) {
+        if (Math.abs(e.clientX - D.sx) + Math.abs(e.clientY - D.sy) < 8) return;
+        D.started = true;
+        unplug(); // uyachadan chiqarilishi bilan quvvatlash to'xtaydi
+      }
+      var x = clampN((e.clientX - rect.left) - D.ox, rw / 2, W - rw / 2);
+      var y = clampN((e.clientY - rect.top) - D.oy, rh / 2 + 8 * k, H - rh / 2);
+      var dx = cx - x, dy = cy - y, d = Math.sqrt(dx * dx + dy * dy);
+      var t = d < MAG ? 1 - d / MAG : 0;
+      var pull = Math.min(1, Math.pow(t, 1.3) * 1.1);   // magnitli tortilish
+      setRob(x + dx * pull, y + dy * pull);
+      D.d = d;
+      var ns = d < SNAP ? 2 : (d < MAG ? 1 : 0);
+      if (ns !== nearState) { nearState = ns; dock.classList.toggle('near', ns === 1); dock.classList.toggle('ready', ns === 2); refreshHint(); }
+    });
+    function release(e) {
+      if (!D || (e && e.pointerId !== D.id)) return;
+      var d = D; D = null;
+      rob.classList.remove('grab');
+      try { rob.releasePointerCapture(d.id); } catch (er) {}
+      if (!d.started) return;                       // docked robotni shunchaki bosish — hech narsa o'zgarmaydi
+      if (d.d < SNAP) seat();
+      else { nearState = 0; dock.classList.remove('near', 'ready'); refreshHint(); }
+    }
+    rob.addEventListener('pointerup', release);
+    rob.addEventListener('pointercancel', release);
+    rob.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  }
+
+  function seat() {
+    seating = true;
+    rob.style.transition = 'transform .3s cubic-bezier(.2,1.25,.4,1)';
+    setRob(cx, cy);
+    setTimeout(function () {
+      seating = false;
+      rob.style.transition = 'none';
+      plug();
+    }, 330);
+  }
+  function plug() {
+    S.plug(); schedEdge();
+    setSeated(true);
+    nearState = 0; dock.classList.remove('near', 'ready');
+    dock.classList.remove('burst'); void dock.offsetWidth; dock.classList.add('burst');
+    try { if (navigator.vibrate) navigator.vibrate(25); } catch (e) {}
+    render(true);
+  }
+  function unplug() {
+    S.unplug(); schedEdge();
+    setSeated(false);
+    render(true);
+  }
+
+  // ---- ko'rsatkichlar
+  function refreshHint() {
+    if (!ov) return;
+    var p = S.cur(), m;
+    if (D && D.started) m = nearState === 2 ? T('Qo‘yib yuboring — joyiga tushadi', 'Отпустите — встанет на место') : T('Robotni uyachaga olib keling', 'Поднесите робота к ячейке');
+    else if (S.slot()) m = p >= 100 ? T('Robot to‘liq quvvatlandi', 'Робот полностью заряжен') : T('Quvvatlanmoqda · chiqarish uchun robotni torting', 'Идёт зарядка · потяните робота, чтобы вынуть');
+    else if (p <= 0) m = T('🪫 Quvvat tugadi. Robotni uyachaga sudrab joylang', '🪫 Заряд закончился. Перетащите робота в ячейку');
+    else m = T('Robotni ushlab, uyachaga sudrab joylang', 'Возьмите робота и перетащите в ячейку');
+    setTxt(hint, 'h', m);
+  }
+  function render(force) {
+    if (!ov) return;
+    var p = S.cur(), slot = S.slot();
+    var ip = Math.min(100, Math.floor(p + 1e-6));
+    var dead = p <= 0, full = p >= 100, charging = slot && !full;
+    var lv = dead ? 'dead' : (ip <= 20 ? 'low' : (ip <= 50 ? 'mid' : 'ok'));
+    var mode = charging ? 'charging' : (full ? 'full' : 'idle');
+    var key = lv + '|' + mode + '|' + slot;
+    if (force || key !== cache.key) {
+      cache.key = key;
+      ov.setAttribute('data-lv', lv); ov.setAttribute('data-mode', mode);
+      stage.classList.toggle('charging', charging);
+      stage.classList.toggle('dead', dead && !slot);
+      rob.classList.toggle('dead', dead && !slot);
+      labels();
+    }
+    setTxt(pctEl, 'pct', ip + '%');
+    var st;
+    if (dead && !slot) st = T('Quvvat tugadi', 'Заряд закончился');
+    else if (slot) st = full ? T('To‘liq quvvatlangan ✓', 'Полностью заряжен ✓') : T('Quvvatlanmoqda ⚡', 'Заряжается ⚡');
+    else st = full ? T('To‘liq quvvatlangan', 'Полностью заряжен') : T('Quvvatlanmayapti', 'Не заряжается');
+    setTxt(stEl, 'st', st);
+    setTxt(useEl, 'use', BM.fmtUse(p, T));
+    setTxt(fullEl, 'full', charging ? BM.fmtCharge(p, T) : (slot && full ? T('To‘liq quvvatlangan ✓', 'Полностью заряжен ✓') : T('Quvvatlanmayapti', 'Не заряжается')));
+    // har 5% da ko'rsatkich (20 ta bo'lak) yangilanadi va yengil effekt beradi
+    var n = Math.floor(ip / 5);
+    if (n !== lastSegs) {
+      for (var i = 0; i < 20; i++) segs[i].classList.toggle('on', i < n);
+      if (lastSegs !== -1 && !force) {
+        bar.classList.remove('pulse'); pctEl.classList.remove('pop'); void bar.offsetWidth;
+        bar.classList.add('pulse'); pctEl.classList.add('pop');
+      }
+      lastSegs = n;
+    }
+    if (!D) refreshHint();
+  }
+
+  // ---- ochish / yopish (yopish batareya holatini o'zgartirmaydi)
+  function open() {
+    if (isOpen) return;
+    if (!ov) build();
+    clearTimeout(closeT);
+    isOpen = true; openedAt = Date.now();
+    ov.classList.remove('closing'); ov.classList.add('open');
+    cache = {}; lastSegs = -1;
+    render(true); layout(); render(true);
+    void ov.offsetWidth; ov.classList.add('show');
+    if (window.ResizeObserver) { if (!ro) ro = new ResizeObserver(onResize); ro.observe(stage); } else window.addEventListener('resize', onResize);
+    clearInterval(tickT);
+    tickT = setInterval(function () { if (!document.hidden) render(false); }, 1000);
+  }
+  function close() {
+    if (!isOpen) return;
+    isOpen = false;
+    clearInterval(tickT); tickT = 0;
+    if (ro) ro.disconnect(); else window.removeEventListener('resize', onResize);
+    D = null; nearState = 0; dock.classList.remove('near', 'ready'); rob.classList.remove('grab');
+    ov.classList.remove('show');
+    closeT = setTimeout(function () { if (!isOpen) ov.classList.remove('open'); }, 200);
+  }
+  var resizeT = 0, ro = null;
+  function onResize() { clearTimeout(resizeT); resizeT = setTimeout(function () { if (isOpen && !D && !seating && stage.clientWidth && (stage.clientWidth !== W || stage.clientHeight !== H)) { layout(); render(true); } }, 80); }
+
+  // Android "orqaga" tugmasi avval quvvatlash oynasini yopadi
+  var prevBack = window.pldnBack;
+  window.pldnBack = function () {
+    if (isOpen) { close(); return true; }
+    return prevBack ? prevBack.apply(this, arguments) : false;
+  };
+
+  window.PLDNBattery = {
+    open: open, close: close, isOpen: function () { return isOpen; },
+    percent: function () { return S.cur(); },
+    charging: function () { return S.slot() && S.cur() < 100; },
+    model: BM
+  };
+  if (window.PLDNRobotMenu && PLDNRobotMenu.setAction) PLDNRobotMenu.setAction('charge', open);
 })();
 </script>
 
