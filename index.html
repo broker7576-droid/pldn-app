@@ -1,5 +1,5 @@
-<!-- VERSION: 217 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: robot-emo-10.0 | satr: 19419 | 23-okt-2026 -->
+<!-- VERSION: 213 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: robot-emo-10.1 | satr: 19422 | 23-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -19097,7 +19097,7 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== PLDN EMOTSIYA: IKKI ROBOT PORTALI (3D) ===== VERSION: emo-portal-1.0
+// ===== PLDN EMOTSIYA: IKKI ROBOT PORTALI (3D) ===== VERSION: emo-portal-1.1
 // Chat sarlavhasidagi ❤️ tugmasi → Firestore 'emotions' hujjati → ikkala telefonda bir xil vaqt jadvali (video oqimi yo'q).
 // Yangi emotsiya qo'shish: PLDNEmotions.register('id', { dur, openDur, closeAt, closeDur, tc1, tc2, pose: function (t) { return { o, h, hv }; } })
 (function () {
@@ -19228,7 +19228,7 @@ var PLDNBattModel = (function () {
       var hp = (t % 1.15) / 1.15, hs = 1 + .09 * bump(hp, .12, .12) + .06 * bump(hp, .38, .12), i;
       hf.g.visible = hv > .01; hf.g.position.set(mx, my + 3.7 * ks, ks); hf.g.scale.setScalar(Math.max(.001, hv * hs * ks));
       sm.p.opacity = .55 + 3 * (hs - 1);
-      pl.intensity = hv * (1.2 + 8 * (hs - 1)); pl.position.set(mx, my, 8 * ks); mat.heart.emissiveIntensity = .6 + 3 * (hs - 1);
+      pl.intensity = hv * (.5 + 4 * (hs - 1)); pl.position.set(mx, my, 8 * ks); mat.heart.emissiveIntensity = .6 + 3 * (hs - 1);
       for (i = 0; i < 6; i++) {
         var f = hf.fl[i], u = (t - (E.heartT + i * .4)) / 2.4;
         if (u < 0 || u > 1) { f.o.visible = false; continue; }
@@ -19347,7 +19347,10 @@ var PLDNBattModel = (function () {
         if (s.ctl) s.ctl.abort();
         else { if (s.role === 'sender') toast(T('Emotsiya bekor qilindi', 'Эмоция отменена')); endSession(null); }
       }
-    }, function (e) { console.error(e); });
+    }, function (e) {
+      console.error(e);
+      if (S === s && !s.ctl) { fail(T('Emotsiyani kuzatib bo‘lmadi: ', 'Не удалось отследить эмоцию: ') + errText(e)); endSession('cancelled'); }
+    });
   }
   function send(type) {
     var E = EMO[type]; if (!E || busy) return;
@@ -19360,9 +19363,9 @@ var PLDNBattModel = (function () {
     var s = S = { ref: fbDb.collection('emotions').doc(), role: 'sender', E: E, chatId: chat.id, state: 'start' };
     loadThree(function () {
       if (S !== s) return;
-      watch(s);
       s.ref.set({ from: me.uid, to: chat.otherUid, type: type, status: 'start', createdAt: fbSrvTs() }).then(function () {
         if (S !== s) return;
+        watch(s);
         s.wait = setTimeout(function () {
           if (S === s && !s.ctl) { toast(T('Ikkinchi foydalanuvchi hozir javob bermadi', 'Собеседник сейчас не отвечает')); endSession('cancelled'); }
         }, 9000);
