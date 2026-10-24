@@ -1,5 +1,5 @@
-<!-- VERSION: 216 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: robot-love3d-9.0 | satr: 19096 | 23-okt-2026 -->
+<!-- VERSION: 213 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: robot-emo-10.0 | satr: 19419 | 23-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -2701,6 +2701,7 @@
   .prm-toast.show { opacity: 1; }
   /* ===== PLDN ROBOT SEVGI EMOTSIYASI (3D) ===== VERSION: love3d-2.0 */
   .pl3-fx { position: fixed; z-index: 99980; pointer-events: none; }
+  .emo-cv { position: fixed; left: 0; top: 0; width: 100%; height: 100%; z-index: 99981; pointer-events: none; }
 
   /* ===== ROBOT QUVVATLASH OYNASI (batareya) ===== VERSION: robot-battery-7.0 */
   #pldnBattWin { position: fixed; inset: 0; z-index: 99992; display: none; flex-direction: column; gap: 6px; box-sizing: border-box; padding: calc(env(safe-area-inset-top, 0px) + 8px) 14px calc(env(safe-area-inset-bottom, 0px) + 12px); background: radial-gradient(120% 80% at 50% 16%, #10295a 0%, #081230 55%, #03060f 100%); color: #fff; opacity: 0; transition: opacity 0.2s ease; overflow: hidden; overscroll-behavior: contain; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -3214,6 +3215,7 @@
       </div>
       <button class="call-hdr-btn" id="callAudioBtn" aria-label="Qo'ng'iroq">📞</button>
       <button class="call-hdr-btn" id="callVideoBtn" aria-label="Video qo'ng'iroq">🎥</button>
+      <button class="call-hdr-btn" id="emoBtn" aria-label="Emotsiya">❤️</button>
     </div>
 
     <div class="messages-area" id="messagesArea"></div>
@@ -11125,6 +11127,7 @@ async function fbOpenChat(info, ensure) {
     const isg = isG(c.type);
     $('callAudioBtn').style.display = isg ? 'none' : '';
     $('callVideoBtn').style.display = isg ? 'none' : '';
+    $('emoBtn').style.display = isg ? 'none' : '';
     if (window.pldnPdfBtn) window.pldnPdfBtn.style.display = 'none';
     const post = !isg || canPost(c);
     bar.style.display = post ? '' : 'none';
@@ -11140,6 +11143,7 @@ async function fbOpenChat(info, ensure) {
     if (metaUnsub) { try { metaUnsub(); } catch (_) {} metaUnsub = null; }
     $('callAudioBtn').style.display = '';
     $('callVideoBtn').style.display = '';
+    $('emoBtn').style.display = '';
     if (window.pldnPdfBtn) window.pldnPdfBtn.style.display = 'none';
     bar.style.display = '';
     ro.style.display = 'none';
@@ -19090,6 +19094,325 @@ var PLDNBattModel = (function () {
     raf = requestAnimationFrame(frame);
   }
   window.PLDNLove3D = { play: play, isPlaying: function () { return busy; } };
+})();
+</script>
+<script>
+// ===== PLDN EMOTSIYA: IKKI ROBOT PORTALI (3D) ===== VERSION: emo-portal-1.0
+// Chat sarlavhasidagi ❤️ tugmasi → Firestore 'emotions' hujjati → ikkala telefonda bir xil vaqt jadvali (video oqimi yo'q).
+// Yangi emotsiya qo'shish: PLDNEmotions.register('id', { dur, openDur, closeAt, closeDur, tc1, tc2, pose: function (t) { return { o, h, hv }; } })
+(function () {
+  if (typeof fbAuth === 'undefined' || !fbAuth || typeof fbDb === 'undefined' || !fbDb) return;
+  var PI = Math.PI, busy = false, loading = false, EMO = {}, S = null, unsubIn = null, startedUid = null;
+  function T(uz, ru) { try { return fbT(uz, ru); } catch (e) { return uz; } }
+  function ss(x) { x = x < 0 ? 0 : x > 1 ? 1 : x; return x * x * (3 - 2 * x); }
+  function lerp(a, b, e) { return a + (b - a) * e; }
+  function bump(p, c, w) { return Math.max(0, 1 - Math.abs(p - c) / w); }
+  function noop() {}
+  function uid() { return (fbAuth.currentUser && fbAuth.currentUser.uid) || ''; }
+  function fail(m) { try { alert(T('PLDN ilovasi xatosi: ', 'Ошибка приложения PLDN: ') + m); } catch (e) {} }
+  function errText(e) {
+    if (e && e.code === 'permission-denied') return T("Ruxsat yo'q (Firestore qoidalariga 'emotions' qismini qo'shing)", 'Нет доступа (добавьте правила emotions в Firestore)');
+    return String((e && (e.message || e.code)) || e);
+  }
+  var toastEl = null, toastT = 0;
+  function toast(m) {
+    if (!toastEl) { toastEl = document.createElement('div'); toastEl.className = 'prm-toast'; toastEl.style.zIndex = 99996; document.body.appendChild(toastEl); }
+    toastEl.textContent = m; void toastEl.offsetWidth; toastEl.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(function () { toastEl.classList.remove('show'); }, 2600);
+  }
+  function loadThree(cb, err) {
+    if (window.THREE) return cb();
+    if (loading) return;
+    loading = true;
+    var s = document.createElement('script'); s.src = 'three.min.js';
+    s.onload = function () { loading = false; cb(); };
+    s.onerror = function () { loading = false; fail(T('3D kutubxona (three.min.js) topilmadi', '3D-библиотека (three.min.js) не найдена')); if (err) err(); };
+    document.head.appendChild(s);
+  }
+
+  // ---- Emotsiyalar ro'yxati. Vaqtlar soniyada: ikkala telefon uchun bir xil
+  EMO.love = {
+    dur: 14.2, openDur: 3.0, closeAt: 12.8, closeDur: 1.3, tc1: 3.4, tc2: 11.4, heartT: 6.6,
+    pose: function (t) {
+      return { o: ss((t - 5.2) / .8) - ss((t - 9.0) / .8), h: ss((t - 6.0) / 1.0) - ss((t - 8.9) / .8), hv: ss((t - 6.6) / .8) - ss((t - 9.0) / .8) };
+    }
+  };
+
+  // ---- 3D ijro (har telefonda mahalliy). role: 'sender' | 'receiver'
+  function play(E, role, chatId, onAbort, done) {
+    var THREE = window.THREE, W = window.innerWidth, HS = window.innerHeight, U = 10, KM = 2, SP = 4.6;
+    var robotEl = document.getElementById('pldnRobot'), bodyEl = robotEl && robotEl.querySelector('.pldn-robot-body');
+    var r = bodyEl ? bodyEl.getBoundingClientRect() : null, okR = !!(r && r.width > 10);
+    var hx = okR ? r.left + r.width / 2 : W * .82, hy = okR ? r.top + r.height / 2 : HS * .72;
+    var H = { x: (hx - W / 2) / U, y: (HS / 2 - hy) / U }, PC = { x: 0, y: (HS / 2 - HS * .4) / U };
+    var dirC = PC.x >= H.x ? 1 : -1, P0 = { x: H.x + dirC * 7, y: H.y + 1 };
+    var PWu = Math.min(W * .86, 300) / U, PHu = PWu * 1.3, sgn = dirC;
+    if (hx + sgn * SP * KM * U < 40 || hx + sgn * SP * KM * U > W - 40) sgn = -sgn;
+    var M = { x: H.x + sgn * SP * KM, y: H.y };
+    var cv = document.createElement('canvas'); cv.className = 'emo-cv'; document.body.appendChild(cv);
+    var R;
+    try { R = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true }); }
+    catch (e) { if (cv.parentNode) cv.parentNode.removeChild(cv); throw e; }
+    R.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75)); R.setSize(W, HS, false); R.setClearColor(0x000000, 0);
+    var S1 = new THREE.Scene(), S2 = new THREE.Scene(), mc = new THREE.PerspectiveCamera(35, W / HS, .1, 1000), pc = new THREE.PerspectiveCamera(40, PWu / PHu, .1, 200);
+    mc.position.set(0, 0, (HS / U) / (2 * Math.tan(17.5 * PI / 180))); mc.lookAt(0, 0, 0);
+    pc.position.set(0, .6, 16.8);
+    S2.background = new THREE.Color(0x0a0820);
+    var RT = new THREE.WebGLRenderTarget(256, Math.round(256 * PHu / PWu), { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat });
+
+    function rbox(w, h, d, rad, b) {
+      var iw = w - 2 * b, ih = h - 2 * b, rr = Math.min(rad, iw / 2, ih / 2), x = iw / 2, y = ih / 2, s = new THREE.Shape();
+      s.moveTo(-x + rr, -y); s.lineTo(x - rr, -y); s.quadraticCurveTo(x, -y, x, -y + rr); s.lineTo(x, y - rr); s.quadraticCurveTo(x, y, x - rr, y);
+      s.lineTo(-x + rr, y); s.quadraticCurveTo(-x, y, -x, y - rr); s.lineTo(-x, -y + rr); s.quadraticCurveTo(-x, -y, -x + rr, -y);
+      var g = new THREE.ExtrudeGeometry(s, { depth: d - 2 * b, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 3, curveSegments: 8 });
+      g.center(); return g;
+    }
+    function heartGeo(d, b) {
+      var s = new THREE.Shape(); s.moveTo(.25, .25); s.bezierCurveTo(.25, .25, .2, 0, 0, 0); s.bezierCurveTo(-.3, 0, -.3, .35, -.3, .35);
+      s.bezierCurveTo(-.3, .55, -.1, .77, .25, .95); s.bezierCurveTo(.6, .77, .8, .55, .8, .35); s.bezierCurveTo(.8, .35, .8, 0, .5, 0); s.bezierCurveTo(.35, 0, .25, .25, .25, .25);
+      var g = new THREE.ExtrudeGeometry(s, { depth: d, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 4, curveSegments: 12 });
+      g.rotateZ(PI); g.center(); return g;
+    }
+    function smat(rgb) {
+      var c = document.createElement('canvas'); c.width = c.height = 64; var g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gr.addColorStop(0, 'rgba(' + rgb + ',.85)'); gr.addColorStop(.35, 'rgba(' + rgb + ',.3)'); gr.addColorStop(1, 'rgba(' + rgb + ',0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+      return new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    }
+    function spr(m, w, h) { var s = new THREE.Sprite(m); s.scale.set(w, h || w, 1); return s; }
+    var sm = { b: smat('42,171,238'), g: smat('52,199,89'), v: smat('122,92,255'), p: smat('255,54,125'), c: smat('60,220,255'), w: smat('255,255,255') };
+    var geo = { body: rbox(3.0, 2.2, 1.6, .9, .25), head: rbox(2.6, 2.0, 1.8, .8, .2), eye: new THREE.SphereGeometry(.3, 16, 12), orb: new THREE.SphereGeometry(.25, 16, 12),
+      ant: new THREE.CylinderGeometry(.1, .1, .7, 10), jt: new THREE.SphereGeometry(.25, 12, 10), arm: new THREE.CylinderGeometry(.25, .25, .7, 12), heart: heartGeo(.3, .12), mini: heartGeo(.2, .08) };
+    function MS(o) { return new THREE.MeshStandardMaterial(o); }
+    // Ranglar va o'lchamlar ilovadagi CSS robotdan (1 birlik = 10px): bosh 26x20, tana 30x22, ingichka yon qo'llar, binafsha antenna
+    var mat = { head: MS({ color: 0xc4c9cf, metalness: .35, roughness: .35 }), body: MS({ color: 0xb0b5bb, metalness: .35, roughness: .38 }), arm: MS({ color: 0xa6abb1, metalness: .35, roughness: .4 }),
+      ant: MS({ color: 0x9aa0a6, metalness: .4, roughness: .4 }), eb: MS({ color: 0x2AABEE, emissive: 0x2AABEE, emissiveIntensity: 1.1, roughness: .2 }),
+      eg: MS({ color: 0x34C759, emissive: 0x34C759, emissiveIntensity: 1.1, roughness: .2 }), orb: MS({ color: 0x7A5CFF, emissive: 0x7A5CFF, emissiveIntensity: 1.2, roughness: .2 }),
+      heart: MS({ color: 0xff2f70, emissive: 0xd0104a, emissiveIntensity: .7, roughness: .25, metalness: .1 }) };
+    function mkRobot(scene) {
+      var g = new THREE.Group(); g.visible = false; scene.add(g);
+      function A(gm, m, x, y, z, p) { var o = new THREE.Mesh(gm, m); o.position.set(x, y, z); (p || g).add(o); return o; }
+      A(geo.body, mat.body, 0, -.9, 0);
+      var head = new THREE.Group(); head.position.set(0, 1, 0); g.add(head);
+      A(geo.head, mat.head, 0, 0, 0, head);
+      function eye(m, sp, x) { var e = new THREE.Group(); e.position.set(x, 0, .9); head.add(e); A(geo.eye, m, 0, 0, 0, e).scale.z = .45; var s = spr(sp, 1.3); s.position.set(0, 0, .25); e.add(s); return e; }
+      var eb = eye(mat.eb, sm.b, -.5), eg = eye(mat.eg, sm.g, .5);
+      A(geo.ant, mat.ant, 0, 1.35, 0, head);
+      var orb = A(geo.orb, mat.orb, 0, 1.85, 0, head), og = spr(sm.v, 1.6); og.position.set(0, 1.85, 0); head.add(og);
+      function arm(s) { var p = new THREE.Group(); p.position.set(s * 1.75, -.35, 0); g.add(p); A(geo.jt, mat.arm, 0, 0, 0, p); A(geo.arm, mat.arm, 0, -.35, 0, p); A(geo.jt, mat.arm, 0, -.7, 0, p); return p; }
+      return { g: g, head: head, eb: eb, eg: eg, orb: orb, aL: arm(-1), aR: arm(1), ph: Math.random() * 3 };
+    }
+    function put(rb, x, y, z, k, th) { rb.g.visible = k > .02; rb.g.position.set(x, y, z); rb.g.scale.setScalar(Math.max(k, .001)); rb.g.rotation.y = th; }
+    function limbs(rb, o, h, t) {
+      var a = -.6 * o * (1 - h) - 1.15 * h, b = -.85 * o * (1 - h) + .45 * h, px = 1.75 - .7 * h, pz = .45 * h;
+      rb.aL.position.set(-px, -.35, pz); rb.aR.position.set(px, -.35, pz); rb.aL.rotation.set(a, 0, b); rb.aR.rotation.set(a, 0, -b);
+      rb.head.rotation.x = .12 * h; rb.head.rotation.z = Math.sin(t * 1.2 + rb.ph) * .03;
+      var bp = (t + rb.ph) % 5.8; rb.eb.scale.y = rb.eg.scale.y = (bp > 2.6 && bp < 2.76) ? .12 : 1;
+      rb.orb.scale.setScalar(1 + .08 * (Math.sin(t * PI + rb.ph) * .5 + .5));
+    }
+    function lights(sc, dist) {
+      sc.add(new THREE.HemisphereLight(0xcfe0ff, 0x1a2146, 1));
+      var k = new THREE.DirectionalLight(0xffffff, .9); k.position.set(4, 6, 8); sc.add(k);
+      var rm = new THREE.DirectionalLight(0x4a78ff, .8); rm.position.set(-6, 3, -5); sc.add(rm);
+      var pl = new THREE.PointLight(0xff3a7a, 0, dist); sc.add(pl); return pl;
+    }
+    function mkHeart(scene) {
+      var g = new THREE.Group(); g.visible = false; scene.add(g);
+      var m = new THREE.Mesh(geo.heart, mat.heart); m.scale.setScalar(.9); g.add(m);
+      var gl = spr(sm.p, 3.4); gl.position.z = -.4; g.add(gl);
+      var fl = [], i;
+      for (i = 0; i < 6; i++) { var fm = MS({ color: 0xff79b4, emissive: 0xff3478, emissiveIntensity: .8, transparent: true, opacity: 0 }), o = new THREE.Mesh(geo.mini, fm); o.visible = false; scene.add(o); fl.push({ o: o, m: fm }); }
+      return { g: g, fl: fl };
+    }
+    var HOX = [-2.2, 2.2, -1.2, 1.4, .2, -.6], HOY = [0, .4, -.6, -.3, .8, -1];
+    function heartFx(hf, pl, t, hv, mx, my, ks) {
+      var hp = (t % 1.15) / 1.15, hs = 1 + .09 * bump(hp, .12, .12) + .06 * bump(hp, .38, .12), i;
+      hf.g.visible = hv > .01; hf.g.position.set(mx, my + 3.7 * ks, ks); hf.g.scale.setScalar(Math.max(.001, hv * hs * ks));
+      sm.p.opacity = .55 + 3 * (hs - 1);
+      pl.intensity = hv * (1.2 + 8 * (hs - 1)); pl.position.set(mx, my, 8 * ks); mat.heart.emissiveIntensity = .6 + 3 * (hs - 1);
+      for (i = 0; i < 6; i++) {
+        var f = hf.fl[i], u = (t - (E.heartT + i * .4)) / 2.4;
+        if (u < 0 || u > 1) { f.o.visible = false; continue; }
+        f.o.visible = true; f.o.position.set(mx + HOX[i] * ks, my + (2.2 + HOY[i]) * ks + u * 3.2 * ks, 1.5 * ks);
+        f.m.opacity = u < .15 ? u / .15 : u > .75 ? (1 - u) / .25 * .9 : .9; f.o.scale.setScalar(.22 * ks * (.5 + u * .75)); f.o.rotation.z = Math.sin(u * PI * 2 + i) * .3;
+      }
+    }
+    // Robotlar: A = yuboruvchining roboti, B = qabul qiluvchining roboti. 1 = asosiy (ekran) olam, 2 = portal ichidagi olam
+    var pl1 = lights(S1, 80), pl2 = lights(S2, 24);
+    var A1 = mkRobot(S1), B1 = mkRobot(S1), A2 = mkRobot(S2), B2 = mkRobot(S2), hf1 = mkHeart(S1), hf2 = mkHeart(S2);
+    // Portal (asosiy olamda): ichida S2 sahna tasviri, oval chegarada qoladi
+    var disc = new THREE.Mesh(new THREE.CircleGeometry(1, 48), new THREE.MeshBasicMaterial({ map: RT.texture })); S1.add(disc);
+    var rim = new THREE.Mesh(new THREE.TorusGeometry(1, .02, 10, 64), new THREE.MeshBasicMaterial({ color: 0x5be8ff })); S1.add(rim);
+    var rim2 = new THREE.Mesh(new THREE.TorusGeometry(1.07, .012, 8, 64), new THREE.MeshBasicMaterial({ color: 0x9a7bff, transparent: true, opacity: .7 })); S1.add(rim2);
+    var halo = spr(sm.c, 1); S1.add(halo); var flash = spr(sm.w, 1); S1.add(flash);
+    var sparks = [], i;
+    for (i = 0; i < 14; i++) { var sp = spr(sm.c, 1); S1.add(sp); sparks.push(sp); }
+    // Portal ichidagi "boshqa olam": pol to'ri, yulduzlar, oqib keluvchi halqalar (chuqurlik hissi)
+    var grid = new THREE.GridHelper(40, 40, 0x3a7bff, 0x1b2b66); grid.position.y = -2.6; S2.add(grid);
+    var sp3 = [], j; for (j = 0; j < 140; j++) sp3.push((Math.random() - .5) * 28, (Math.random() - .5) * 20, -5 - Math.random() * 22);
+    var sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(sp3, 3));
+    S2.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0x9ad8ff, size: .18, transparent: true, opacity: .8 })));
+    var rings = [], rg = new THREE.TorusGeometry(9, .05, 8, 48);
+    for (j = 0; j < 5; j++) { var rr = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ color: j % 2 ? 0x8a6bff : 0x3cdcff, transparent: true, opacity: .55 })); S2.add(rr); rings.push(rr); }
+
+    function update(t) {
+      var Pp = t < E.closeAt ? ss(t / E.openDur) : 1 - ss((t - E.closeAt) / E.closeDur);
+      var px = lerp(P0.x, PC.x, Pp), py = lerp(P0.y, PC.y, Pp), rx = PWu / 2 * Pp, ry = PHu / 2 * Pp, pv = Pp > .01, k;
+      [disc, rim, rim2, halo, flash].forEach(function (o) { o.visible = pv; });
+      disc.position.set(px, py, -1); disc.scale.set(rx, ry, 1); rim.position.set(px, py, -.95); rim.scale.set(rx, ry, 1); rim2.position.set(px, py, -.95); rim2.scale.set(rx, ry, 1);
+      halo.position.set(px, py, -1.1); halo.scale.set(rx * 2.7, ry * 2.7, 1); sm.c.opacity = .5 + .2 * Math.sin(t * 3);
+      flash.position.set(px, py, -.8); flash.scale.set(rx * 1.6, ry * 1.6, 1); sm.w.opacity = Math.max(bump(t, E.tc1, .35), bump(t, E.tc2, .35)) * .9;
+      for (i = 0; i < sparks.length; i++) { var ph = i / sparks.length * PI * 2 + t * .9; sparks[i].visible = pv; sparks[i].position.set(px + rx * Math.cos(ph), py + ry * Math.sin(ph), -.9); sparks[i].scale.setScalar(.9 + .4 * Math.sin(t * 4 + i)); }
+      var ps = E.pose(t), tb = ss((t - 3.6) / 1.4) - ss((t - 10.6) / 1.2), inside = t >= E.tc1 && t < E.tc2, fl = Math.sin(t * 2.094), e, e2, ee, f1, f2;
+      if (role === 'sender') {
+        // A: egasining roboti portalga kiradi va qaytadi; ichkarida (qabul qiluvchi olamida) B bilan uchrashadi
+        if (!inside) {
+          var kH = 1 + .6 * ss(t / 1.5), x, y, z, th;
+          if (t < E.tc1) { e = ss((t - 1.8) / 1.6); x = lerp(H.x, px, e); y = lerp(H.y, py, e) + 3 * Math.sin(PI * e); z = -4 * ss((e - .55) / .45); k = lerp(kH, .45, e); th = dirC * (1 - e); }
+          else { e2 = ss((t - E.tc2) / 1.4); x = lerp(PC.x, H.x, e2); y = lerp(PC.y, H.y, e2) + 3 * Math.sin(PI * e2); z = -4 * (1 - ss(e2 * 1.6)); k = lerp(.45, 1, e2); th = 0; }
+          put(A1, x, y + fl * .15 * k, z, k, th); limbs(A1, 0, 0, t);
+        } else A1.g.visible = false;
+        B1.g.visible = false;
+        f1 = ss((t - E.tc1) / 1.8); f2 = ss((t - 9.8) / 1.6); ee = f1 * (1 - f2);
+        if (inside) { put(A2, lerp(0, -SP / 2, ee), lerp(-.3, 0, ee) + fl * .15, lerp(7, 0, ee), 1, 1.25 * ee); limbs(A2, ps.o, ps.h, t); } else A2.g.visible = false;
+        put(B2, SP / 2, Math.sin(t * 2.094 + 1) * .15, 0, 1, -1.25 * tb); limbs(B2, ps.o, ps.h, t + 1);
+        heartFx(hf2, pl2, t, ps.hv, 0, 0, 1); hf1.g.visible = false; pl1.intensity = 0;
+      } else {
+        // B: qabul qiluvchining o'z roboti joyida qoladi; A portal ichidan chiqib kelib, birga emotsiya bajaradi
+        var kB = 1 + (KM - 1) * (ss(t / 1.5) - ss((t - 12.3) / 1.5));
+        put(B1, H.x, H.y + fl * .15 * kB, 0, kB, sgn * 1.25 * tb); limbs(B1, ps.o, ps.h, t + 1);
+        f1 = ss((t - E.tc1) / 1.8); f2 = ss((t - 9.8) / 1.6); ee = f1 * (1 - f2);
+        if (inside) { put(A1, lerp(PC.x, M.x, ee), lerp(PC.y, M.y, ee) + 3 * Math.sin(PI * ee) + fl * .15 * KM * ee, -4 * (1 - ss(ee * 1.6)), KM * lerp(.45, 1, ee), -sgn * 1.25 * ee); limbs(A1, ps.o, ps.h, t); } else A1.g.visible = false;
+        // portal ichi = yuboruvchining olami: roboti portalga yaqinlashadi (va keyin qaytib keladi)
+        if (!inside) { var g1 = ss((t - 1.8) / 1.6), g2 = ss((t - E.tc2) / 1.4), gg = t < E.tc1 ? g1 : 1 - g2; put(A2, 0, lerp(0, -.3, gg), lerp(-3, 7, gg), 1, 0); limbs(A2, 0, 0, t); } else A2.g.visible = false;
+        B2.g.visible = false;
+        heartFx(hf1, pl1, t, ps.hv, (H.x + M.x) / 2, H.y, KM); hf2.g.visible = false; pl2.intensity = 0;
+      }
+      pc.position.x = Math.sin(t * .7) * .9; pc.lookAt(0, .4, 0);
+      for (j = 0; j < rings.length; j++) { rings[j].position.z = -6 - ((t * 3 + j * 4) % 20); rings[j].rotation.z = t * .3 + j; }
+      if (pv) { R.setRenderTarget(RT); R.render(S2, pc); R.setRenderTarget(null); }
+      R.render(S1, mc);
+    }
+
+    var t0 = 0, raf = 0, ended = false, abortAt = 0;
+    function finish(status) {
+      if (ended) return; ended = true; cancelAnimationFrame(raf);
+      try { [S1, S2].forEach(function (sc) { sc.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); }); RT.dispose(); R.dispose(); if (R.forceContextLoss) R.forceContextLoss(); } catch (e) {}
+      if (cv.parentNode) cv.parentNode.removeChild(cv);
+      if (robotEl) robotEl.style.visibility = '';
+      if (done) done(status);
+    }
+    function frame(now) {
+      if (ended) return;
+      if (!t0) { t0 = now; if (robotEl) robotEl.style.visibility = 'hidden'; }
+      var t = (now - t0) / 1000;
+      if (abortAt) { var fd = 1 - (now - abortAt) / 450; if (fd <= 0) { finish('abort'); return; } cv.style.opacity = fd; }
+      else if (t >= E.dur) { finish('done'); return; }
+      else if (role === 'sender' && chatId && typeof fbCurrentChat !== 'undefined' && (!fbCurrentChat || fbCurrentChat.id !== chatId)) ctl.abort();
+      try { update(Math.min(t, E.dur)); } catch (e) { console.error(e); finish('error'); return; }
+      raf = requestAnimationFrame(frame);
+    }
+    var ctl = {
+      abort: function () { if (abortAt || ended) return; abortAt = performance.now(); if (onAbort) onAbort(); },
+      kill: function () { finish('kill'); }
+    };
+    raf = requestAnimationFrame(frame);
+    return ctl;
+  }
+
+  // ---- Seans va server bilan sinxronlash (Firestore: emotions/{id})
+  function endSession(write) {
+    var s = S; if (!s) return; S = null; busy = false; clearTimeout(s.wait);
+    if (s.unsub) { try { s.unsub(); } catch (e) {} }
+    if (s.ctl) { var c = s.ctl; s.ctl = null; try { c.kill(); } catch (e) {} }
+    if (write && s.ref && s.state !== 'cancelled' && s.state !== 'done') s.ref.update({ status: write, endedBy: uid() }).catch(noop);
+  }
+  function begin(s) {
+    if (S !== s || s.ctl) return;
+    try {
+      s.ctl = play(s.E, s.role, s.chatId, function () {
+        if (S === s && s.state !== 'cancelled') { s.state = 'cancelled'; s.ref.update({ status: 'cancelled', endedBy: uid() }).catch(noop); }
+      }, function (st) {
+        if (S !== s) return;
+        s.ctl = null; endSession(st === 'done' ? (s.role === 'sender' ? 'done' : null) : st === 'error' ? 'cancelled' : null);
+      });
+    } catch (e) { console.error(e); fail(T('Emotsiyani boshlab bo‘lmadi: ', 'Не удалось запустить эмоцию: ') + errText(e)); endSession('cancelled'); }
+  }
+  function watch(s) {
+    s.unsub = s.ref.onSnapshot(function (snap) {
+      var d = snap.data(); if (!d || S !== s) return;
+      if (d.status === 'play') {
+        if (s.state === 'start') { s.state = 'play'; if (s.role === 'sender' && !snap.metadata.hasPendingWrites) begin(s); }
+      } else if (d.status === 'cancelled' && s.state !== 'cancelled') {
+        s.state = 'cancelled';
+        if (s.ctl) s.ctl.abort();
+        else { if (s.role === 'sender') toast(T('Emotsiya bekor qilindi', 'Эмоция отменена')); endSession(null); }
+      }
+    }, function (e) { console.error(e); });
+  }
+  function send(type) {
+    var E = EMO[type]; if (!E || busy) return;
+    var chat = (typeof fbCurrentChat !== 'undefined') ? fbCurrentChat : null, me = fbAuth.currentUser;
+    if (!me) { fail(T('Avval hisobga kiring', 'Сначала войдите в аккаунт')); return; }
+    if (!chat || !chat.otherUid) { fail(T('Emotsiya faqat shaxsiy chatda mumkin', 'Эмоция возможна только в личном чате')); return; }
+    var co = document.getElementById('pldnCallOv');
+    if (co && co.classList.contains('open')) { toast(T("Qo'ng'iroq paytida emotsiya yuborib bo'lmaydi", 'Во время звонка эмоцию отправить нельзя')); return; }
+    busy = true;
+    var s = S = { ref: fbDb.collection('emotions').doc(), role: 'sender', E: E, chatId: chat.id, state: 'start' };
+    loadThree(function () {
+      if (S !== s) return;
+      watch(s);
+      s.ref.set({ from: me.uid, to: chat.otherUid, type: type, status: 'start', createdAt: fbSrvTs() }).then(function () {
+        if (S !== s) return;
+        s.wait = setTimeout(function () {
+          if (S === s && !s.ctl) { toast(T('Ikkinchi foydalanuvchi hozir javob bermadi', 'Собеседник сейчас не отвечает')); endSession('cancelled'); }
+        }, 9000);
+      }).catch(function (e) { fail(T('Emotsiya yuborilmadi: ', 'Эмоция не отправлена: ') + errText(e)); endSession(null); });
+    }, function () { endSession(null); });
+  }
+  function onIncoming(ref, d) {
+    var E = EMO[d.type], co = document.getElementById('pldnCallOv');
+    if (!E || busy || document.hidden || (co && co.classList.contains('open'))) { ref.update({ status: 'cancelled', endedBy: uid() }).catch(noop); return; }
+    busy = true;
+    var s = S = { ref: ref, role: 'receiver', E: E, chatId: '', state: 'start' };
+    loadThree(function () {
+      if (S !== s) return;
+      watch(s);
+      var w0 = performance.now();
+      ref.update({ status: 'play', playAt: fbSrvTs() }).then(function () {
+        if (S !== s) return;
+        // Yuboruvchi "play" ni server orqali oladi: bir tomonlama kechikish (RTT/2) hisobga olinib, ikkalasi deyarli bir vaqtda boshlaydi
+        s.wait = setTimeout(function () { begin(s); }, Math.min((performance.now() - w0) / 2, 600));
+      }).catch(function (e) { console.error(e); endSession(null); });
+    }, function () { ref.update({ status: 'cancelled', endedBy: uid() }).catch(noop); endSession(null); });
+  }
+  function startFor(u) {
+    if (startedUid === u) return;
+    startedUid = u;
+    if (unsubIn) { try { unsubIn(); } catch (e) {} unsubIn = null; }
+    if (S) endSession('cancelled');
+    unsubIn = fbDb.collection('emotions').where('to', '==', u).where('status', '==', 'start').onSnapshot(function (snap) {
+      snap.docChanges().forEach(function (ch) {
+        if (ch.type !== 'added') return;
+        var d = ch.doc.data(), ts = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
+        if (!ts || Date.now() - ts > 45000) return; // eski taklif
+        onIncoming(ch.doc.ref, d);
+      });
+    }, function (e) { console.error('Emotsiya tinglash xatosi', e); });
+  }
+  fbAuth.onAuthStateChanged(function (u) {
+    if (u && u.uid) startFor(u.uid);
+    else { startedUid = null; if (unsubIn) { try { unsubIn(); } catch (e) {} unsubIn = null; } if (S) endSession(null); }
+  });
+
+  var btn = document.getElementById('emoBtn');
+  if (btn) btn.addEventListener('click', function () { send('love'); });
+  // Android "orqaga": emotsiya davomida bosilsa, xavfsiz yakunlanadi
+  var prevBack = window.pldnBack;
+  window.pldnBack = function () {
+    if (S && S.ctl) { S.ctl.abort(); return true; }
+    return prevBack ? prevBack.apply(this, arguments) : false;
+  };
+  window.PLDNEmotions = { send: send, register: function (id, def) { EMO[id] = def; }, isBusy: function () { return busy; } };
 })();
 </script>
 </body>
