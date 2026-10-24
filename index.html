@@ -1,5 +1,5 @@
-<!-- VERSION: 219 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: robot-emo-10.2 | satr: 19409 | 23-okt-2026 -->
+<!-- VERSION: 220 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: gift-emo-1.0 | satr: 19521 | 24-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -19097,7 +19097,7 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== PLDN EMOTSIYA: IKKI ROBOT PORTALI (3D) ===== VERSION: emo-portal-1.2
+// ===== PLDN EMOTSIYA: IKKI ROBOT PORTALI (3D) ===== VERSION: emo-portal-1.3 (love + gift)
 // Chat sarlavhasidagi ❤️ tugmasi → Firestore 'emotions' hujjati → ikkala telefonda bir xil vaqt jadvali (video oqimi yo'q).
 // Yangi emotsiya qo'shish: PLDNEmotions.register('id', { dur, openDur, closeAt, closeDur, tc1, tc2, pose: function (t) { return { o, h, hv }; } })
 (function () {
@@ -19132,15 +19132,33 @@ var PLDNBattModel = (function () {
 
   // ---- Emotsiyalar ro'yxati. Vaqtlar soniyada: ikkala telefon uchun bir xil
   EMO.love = {
+    ic: '❤️', nm: function () { return T('Sevgi', 'Любовь'); },
     dur: 14.2, openDur: 3.0, closeAt: 12.8, closeDur: 1.3, tc1: 3.4, tc2: 11.4, heartT: 6.6,
     pose: function (t) {
       return { o: ss((t - 5.2) / .8) - ss((t - 9.0) / .8), h: ss((t - 6.0) / 1.0) - ss((t - 8.9) / .8), hv: ss((t - 6.6) / .8) - ss((t - 9.0) / .8) };
     }
   };
 
+  // ---- Sovg'a emotsiyasi: yuboruvchi roboti atirgul va atir beradi, qabul qiluvchi roboti xursand bo'lib oladi (portal ichida)
+  function amx(p, q, e) { return { a: lerp(p.a, q.a, e), b: lerp(p.b, q.b, e), px: lerp(p.px, q.px, e), pz: lerp(p.pz, q.pz, e) }; }
+  var G_REST = { a: 0, b: 0, px: 1.75, pz: 0 }, G_OFFER = { a: -1.3, b: .5, px: 1.3, pz: .4 }, G_REACH = { a: -1.4, b: .38, px: 1.4, pz: .36 },
+    G_HOLD = { a: -1.2, b: .6, px: 1.05, pz: .45 }, G_CHEER = { a: -2.6, b: .3, px: 1.75, pz: 0 };
+  EMO.gift = {
+    ic: '🌹', nm: function () { return T('Atirgul va atir', 'Роза и духи'); }, gift: true, sp: 3.4,
+    dur: 15.4, openDur: 3.0, closeAt: 14.0, closeDur: 1.3, tc1: 3.4, tc2: 12.6, lv: 11.0, to: 11.8, heartT: 8.9,
+    pose: function (t) {
+      var joy = ss((t - 8.4) / .4) - ss((t - 11.0) / .5), hop = ss((t - 8.6) / .3) - ss((t - 10.8) / .4);
+      var A = amx(amx(amx(G_REST, G_OFFER, ss((t - 5.2) / .8)), G_CHEER, ss((t - 8.7) / .6)), G_REST, ss((t - 10.7) / .6));
+      var B = amx(amx(G_REST, G_REACH, ss((t - 6.0) / .9)), G_HOLD, ss((t - 8.3) / .8));
+      A.hx = 0; A.joy = .6 * joy; A.hz = .08 * Math.sin(t * 5) * joy; A.hop = .3 * Math.abs(Math.sin((t - 8.8) * 4.2)) * hop;
+      B.hx = .22 * ss((t - 8.4) / .6); B.joy = joy; B.hz = .1 * Math.sin(t * 4.4) * joy; B.hop = .4 * Math.abs(Math.sin((t - 8.5) * 5)) * hop;
+      return { o: 0, h: 0, hv: 0, A: A, B: B };
+    }
+  };
+
   // ---- 3D ijro (har telefonda mahalliy). role: 'sender' | 'receiver'
   function play(E, role, chatId, onAbort, done) {
-    var THREE = window.THREE, W = window.innerWidth, HS = window.innerHeight, U = 10, KM = 2, SP = 4.6;
+    var THREE = window.THREE, W = window.innerWidth, HS = window.innerHeight, U = 10, KM = 2, SP = E.sp || 4.6;
     var robotEl = document.getElementById('pldnRobot'), bodyEl = robotEl && robotEl.querySelector('.pldn-robot-body');
     var r = bodyEl ? bodyEl.getBoundingClientRect() : null, okR = !!(r && r.width > 10);
     var hx = okR ? r.left + r.width / 2 : W * .82, hy = okR ? r.top + r.height / 2 : HS * .72;
@@ -19200,11 +19218,12 @@ var PLDNBattModel = (function () {
       return { g: g, head: head, eb: eb, eg: eg, orb: orb, aL: arm(-1), aR: arm(1), ph: Math.random() * 3 };
     }
     function put(rb, x, y, z, k, th) { rb.g.visible = k > .02; rb.g.position.set(x, y, z); rb.g.scale.setScalar(Math.max(k, .001)); rb.g.rotation.y = th; }
-    function limbs(rb, o, h, t) {
-      var a = -.6 * o * (1 - h) - 1.15 * h, b = -.85 * o * (1 - h) + .45 * h, px = 1.75 - .7 * h, pz = .45 * h;
+    function limbs(rb, o, h, t, ov) {
+      var a = -.6 * o * (1 - h) - 1.15 * h, b = -.85 * o * (1 - h) + .45 * h, px = 1.75 - .7 * h, pz = .45 * h, hx = .12 * h, hz = 0, js = 0;
+      if (ov) { a = ov.a; b = ov.b; px = ov.px; pz = ov.pz; hx = ov.hx || 0; hz = ov.hz || 0; js = ov.joy || 0; }
       rb.aL.position.set(-px, -.35, pz); rb.aR.position.set(px, -.35, pz); rb.aL.rotation.set(a, 0, b); rb.aR.rotation.set(a, 0, -b);
-      rb.head.rotation.x = .12 * h; rb.head.rotation.z = Math.sin(t * 1.2 + rb.ph) * .03;
-      var bp = (t + rb.ph) % 5.8; rb.eb.scale.y = rb.eg.scale.y = (bp > 2.6 && bp < 2.76) ? .12 : 1;
+      rb.head.rotation.x = hx; rb.head.rotation.z = Math.sin(t * 1.2 + rb.ph) * .03 + hz;
+      var bp = (t + rb.ph) % 5.8; rb.eb.scale.y = rb.eg.scale.y = ((bp > 2.6 && bp < 2.76) ? .12 : 1) * (1 - .5 * js); rb.eb.scale.x = rb.eg.scale.x = 1 + .15 * js;
       rb.orb.scale.setScalar(1 + .08 * (Math.sin(t * PI + rb.ph) * .5 + .5));
     }
     function lights(sc, dist) {
@@ -19234,9 +19253,81 @@ var PLDNBattModel = (function () {
         f.m.opacity = u < .15 ? u / .15 : u > .75 ? (1 - u) / .25 * .9 : .9; f.o.scale.setScalar(.22 * ks * (.5 + u * .75)); f.o.rotation.z = Math.sin(u * PI * 2 + i) * .3;
       }
     }
+    // ---- Sovg'a (atirgul + atir): faqat E.gift bo'lganda yaratiladi. Dunyo koordinatalarida yuradi, kamera tomonga qaragan
+    var gm = null;
+    function mkGift() {
+      var i, g = new THREE.Group(), rose = new THREE.Group(), head = new THREE.Group(), bot = new THREE.Group();
+      if (!gm) {
+        geo.stem = new THREE.CylinderGeometry(.045, .055, 1.6, 8); geo.leaf = new THREE.SphereGeometry(.2, 10, 8); geo.petal = new THREE.SphereGeometry(.26, 10, 8);
+        geo.bud = new THREE.SphereGeometry(.2, 12, 10); geo.bot = rbox(.8, .85, .55, .22, .09); geo.liq = rbox(.62, .55, .38, .16, .05); geo.neck = new THREE.CylinderGeometry(.13, .13, .2, 12);
+        geo.cap = new THREE.CylinderGeometry(.16, .16, .3, 14); geo.noz = new THREE.CylinderGeometry(.045, .045, .12, 8); geo.lab = new THREE.PlaneGeometry(.46, .3);
+        gm = {
+          p1: MS({ color: 0xe3123f, emissive: 0x6a0018, emissiveIntensity: .55, roughness: .4, side: THREE.DoubleSide }),
+          p2: MS({ color: 0xff3a68, emissive: 0x8a0024, emissiveIntensity: .55, roughness: .4, side: THREE.DoubleSide }),
+          stem: MS({ color: 0x2fbf6a, emissive: 0x0b4f26, emissiveIntensity: .5, roughness: .5 }),
+          glass: MS({ color: 0xa8dcff, transparent: true, opacity: .45, roughness: .1, metalness: .1, depthWrite: false }),
+          liq: MS({ color: 0xff7fb0, emissive: 0xff3a7a, emissiveIntensity: .45, roughness: .3, transparent: true, opacity: .92 }),
+          cap: MS({ color: 0xf2c26b, emissive: 0x6b4a10, emissiveIntensity: .35, metalness: .7, roughness: .3 }),
+          lab: new THREE.MeshBasicMaterial({ color: 0xfff0f5 }),
+          gl: smat('255,120,170')
+        };
+      }
+      g.visible = false;
+      var st = new THREE.Mesh(geo.stem, gm.stem); st.position.set(0, -.1, 0); rose.add(st);
+      [[.17, -.4, -.7], [-.16, -.62, .7]].forEach(function (L) { var lf = new THREE.Mesh(geo.leaf, gm.stem); lf.scale.set(1.7, .3, .8); lf.position.set(L[0], L[1], 0); lf.rotation.z = L[2]; rose.add(lf); });
+      function petal(R, y, ph, tilt, m, sc) {
+        var pv = new THREE.Group(), p = new THREE.Mesh(geo.petal, m);
+        pv.position.set(Math.cos(ph) * R, y, Math.sin(ph) * R); pv.rotation.y = PI / 2 - ph;
+        p.scale.set(1, 1.15 * sc, .38); p.rotation.x = tilt; p.position.y = .12 * sc; pv.add(p); head.add(pv);
+      }
+      for (i = 0; i < 5; i++) petal(.2, -.04, i * PI * 2 / 5, .5, gm.p1, 1);
+      for (i = 0; i < 4; i++) petal(.11, .05, i * PI * 2 / 4 + .4, .25, gm.p2, .9);
+      for (i = 0; i < 3; i++) petal(.05, .1, i * PI * 2 / 3, .08, gm.p1, .75);
+      var bd = new THREE.Mesh(geo.bud, gm.p2); bd.scale.set(.7, .85, .7); bd.position.y = .14; head.add(bd);
+      head.position.set(0, .78, 0); head.scale.setScalar(.9); rose.add(head);
+      rose.position.set(-.34, 0, 0); rose.rotation.z = .08; g.add(rose);
+      function bm(gx, m, x, y, z) { var o = new THREE.Mesh(gx, m); o.position.set(x, y, z); bot.add(o); return o; }
+      bm(geo.bot, gm.glass, 0, 0, 0); bm(geo.liq, gm.liq, 0, -.1, 0); bm(geo.neck, gm.cap, 0, .525, 0); bm(geo.cap, gm.cap, 0, .775, 0); bm(geo.noz, gm.cap, 0, .985, 0); bm(geo.lab, gm.lab, 0, -.08, .285);
+      bot.position.set(.36, -.3, 0); bot.rotation.z = -.06; g.add(bot);
+      var gl = spr(gm.gl, 3.4); gl.position.set(0, .1, -.6); g.add(gl);
+      return { g: g, rose: rose, bot: bot };
+    }
+    function wpos(rb, lx, ly, lz) {
+      var g = rb.g, k = g.scale.x, c = Math.cos(g.rotation.y), s = Math.sin(g.rotation.y);
+      return { x: g.position.x + k * (lx * c + lz * s), y: g.position.y + k * ly, z: g.position.z + k * (-lx * s + lz * c) };
+    }
+    var GC = { x: 0, y: -.55, z: .45 };
+    function giftFx(t, own1) {
+      var sc = ss((t - 5.4) / .6) * (1 + .14 * bump(t, 6.0, .35)), wa = wpos(A2, 0, -.6, 1.05), wb = wpos(B2, 0, -.62, 1.05),
+        m1 = ss((t - 6.5) / 1.5), m2 = ss((t - 8.4) / 1.1), gx = lerp(lerp(wa.x, GC.x, m1), wb.x, m2),
+        gy = lerp(lerp(wa.y, GC.y, m1), wb.y, m2) + .35 * Math.sin(PI * m1) * (1 - m2) + .2 * Math.sin(PI * m2), gz = lerp(lerp(wa.z, GC.z, m1), wb.z, m2),
+        vis = sc > .02 && !(role === 'receiver' && t >= E.tc2), n, u, mo, wo, s1;
+      gift2.g.visible = vis;
+      if (vis) {
+        gift2.g.position.set(gx, gy, gz); gift2.g.scale.setScalar(sc); gift2.g.rotation.z = Math.sin(t * 2.6) * .04; gift2.rose.rotation.z = .08 + Math.sin(t * 3) * .05;
+        gm.gl.opacity = .4 + .15 * Math.sin(t * 4);
+      }
+      for (n = 0; n < mist.length; n++) {
+        mo = mist[n]; u = ((t - 8.9 - n * .13) % 1.05) / 1.05;
+        if (!vis || t < 8.9 || t > 10.9 || u < 0) { mo.s.visible = false; continue; }
+        mo.s.visible = true; mo.s.position.set(gx + (.36 - .55 * u + .16 * Math.sin(n * 3.1 + u * 5)) * sc, gy + (.68 + .95 * u) * sc, gz + .2);
+        mo.s.scale.setScalar(.3 + 1.5 * u); mo.m.opacity = .75 * (u < .12 ? u / .12 : 1 - (u - .12) / .88);
+      }
+      // Qabul qiluvchi telefonida robot portaldan sovg'a bilan chiqadi (asosiy olamda)
+      if (role === 'receiver' && t >= E.tc2) {
+        wo = wpos(own1, 0, -.62, 1.05); s1 = own1.g.scale.x * (1 - ss((t - 13.2) / .7));
+        gift1.g.visible = s1 > .02;
+        if (gift1.g.visible) { gift1.g.position.set(wo.x, wo.y, wo.z); gift1.g.scale.setScalar(s1); gift1.g.rotation.z = Math.sin(t * 2.6) * .04; }
+      } else gift1.g.visible = false;
+    }
     // Robotlar: A = yuboruvchining roboti, B = qabul qiluvchining roboti. 1 = asosiy (ekran) olam, 2 = portal ichidagi olam
     var pl1 = lights(S1, 80), pl2 = lights(S2, 24);
     var A1 = mkRobot(S1), B1 = mkRobot(S1), A2 = mkRobot(S2), B2 = mkRobot(S2), hf2 = mkHeart(S2);
+    var gift2 = null, gift1 = null, mist = [], mi;
+    if (E.gift) {
+      gift2 = mkGift(); S2.add(gift2.g); gift1 = mkGift(); S1.add(gift1.g);
+      for (mi = 0; mi < 8; mi++) { var mm = smat('200,235,255'), ms = spr(mm, 1); ms.visible = false; S2.add(ms); mist.push({ s: ms, m: mm }); }
+    }
     // Portal (asosiy olamda): ichida S2 sahna tasviri, oval chegarada qoladi
     var disc = new THREE.Mesh(new THREE.CircleGeometry(1, 48), new THREE.MeshBasicMaterial({ map: RT.texture })); S1.add(disc);
     var rim = new THREE.Mesh(new THREE.TorusGeometry(1, .02, 10, 64), new THREE.MeshBasicMaterial({ color: 0x5be8ff })); S1.add(rim);
@@ -19260,20 +19351,22 @@ var PLDNBattModel = (function () {
       halo.position.set(px, py, -1.1); halo.scale.set(rx * 2.7, ry * 2.7, 1); sm.c.opacity = .5 + .2 * Math.sin(t * 3);
       flash.position.set(px, py, -.8); flash.scale.set(rx * 1.6, ry * 1.6, 1); sm.w.opacity = Math.max(bump(t, E.tc1, .35), bump(t, E.tc2, .35)) * .9;
       for (i = 0; i < sparks.length; i++) { var ph = i / sparks.length * PI * 2 + t * .9; sparks[i].visible = pv; sparks[i].position.set(px + rx * Math.cos(ph), py + ry * Math.sin(ph), -.9); sparks[i].scale.setScalar(.9 + .4 * Math.sin(t * 4 + i)); }
-      var ps = E.pose(t), tb = ss((t - 3.6) / 1.4) - ss((t - 10.6) / 1.2), inside = t >= E.tc1 && t < E.tc2, fl = Math.sin(t * 2.094), e, e2, ee, f1, f2;
+      var ps = E.pose(t), tb = ss((t - 3.6) / 1.4) - ss((t - (E.to || 10.6)) / 1.2), inside = t >= E.tc1 && t < E.tc2, fl = Math.sin(t * 2.094), e, e2, ee, f1, f2;
       // Ikkala telefonda bir xil: o'z robot portalga kiradi, ikkinchi foydalanuvchining roboti portal ichida kutib turadi, birga emotsiya bajarishadi
       var own1 = role === 'sender' ? A1 : B1, oth1 = role === 'sender' ? B1 : A1, ownIn = role === 'sender' ? A2 : B2, othIn = role === 'sender' ? B2 : A2, side = role === 'sender' ? -1 : 1;
+      var pOwn = role === 'sender' ? ps.A : ps.B, pOth = role === 'sender' ? ps.B : ps.A;
       oth1.g.visible = false;
       if (!inside) {
         var kH = 1 + .6 * ss(t / 1.5), x, y, z, th;
         if (t < E.tc1) { e = ss((t - 1.8) / 1.6); x = lerp(H.x, px, e); y = lerp(H.y, py, e) + 3 * Math.sin(PI * e); z = -4 * ss((e - .55) / .45); k = lerp(kH, .45, e); th = dirC * (1 - e); }
         else { e2 = ss((t - E.tc2) / 1.4); x = lerp(PC.x, H.x, e2); y = lerp(PC.y, H.y, e2) + 3 * Math.sin(PI * e2); z = -4 * (1 - ss(e2 * 1.6)); k = lerp(.45, 1, e2); th = 0; }
-        put(own1, x, y + fl * .15 * k, z, k, th); limbs(own1, 0, 0, t);
+        put(own1, x, y + fl * .15 * k, z, k, th); limbs(own1, 0, (E.gift && role === 'receiver' && t >= E.tc2) ? 1 : 0, t);
       } else own1.g.visible = false;
-      f1 = ss((t - E.tc1) / 1.8); f2 = ss((t - 9.8) / 1.6); ee = f1 * (1 - f2);
-      if (inside) { put(ownIn, lerp(0, side * SP / 2, ee), lerp(-.3, 0, ee) + fl * .15, lerp(7, 0, ee), 1, -side * 1.25 * ee); limbs(ownIn, ps.o, ps.h, t); } else ownIn.g.visible = false;
-      put(othIn, -side * SP / 2, Math.sin(t * 2.094 + 1) * .15, 0, 1, side * 1.25 * tb); limbs(othIn, ps.o, ps.h, t + 1);
-      heartFx(hf2, pl2, t, ps.hv, 0, 0, 1); pl1.intensity = 0;
+      f1 = ss((t - E.tc1) / 1.8); f2 = ss((t - (E.lv || 9.8)) / 1.6); ee = f1 * (1 - f2);
+      if (inside) { put(ownIn, lerp(0, side * SP / 2, ee), lerp(-.3, 0, ee) + fl * .15 + (pOwn && pOwn.hop || 0), lerp(7, 0, ee), 1, -side * 1.25 * ee); limbs(ownIn, ps.o, ps.h, t, pOwn); } else ownIn.g.visible = false;
+      put(othIn, -side * SP / 2, Math.sin(t * 2.094 + 1) * .15 + (pOth && pOth.hop || 0), 0, 1, side * 1.25 * tb); limbs(othIn, ps.o, ps.h, t + 1, pOth);
+      heartFx(hf2, pl2, t, ps.hv, E.gift ? SP / 2 : 0, 0, 1); pl1.intensity = 0;
+      if (E.gift) giftFx(t, own1);
       pc.position.x = Math.sin(t * .7) * .9; pc.lookAt(0, .4, 0);
       for (j = 0; j < rings.length; j++) { rings[j].position.z = -6 - ((t * 3 + j * 4) % 20); rings[j].rotation.z = t * .3 + j; }
       if (pv) { R.setRenderTarget(RT); R.render(S2, pc); R.setRenderTarget(null); }
@@ -19394,8 +19487,27 @@ var PLDNBattModel = (function () {
     else { startedUid = null; if (unsubIn) { try { unsubIn(); } catch (e) {} unsubIn = null; } if (S) endSession(null); }
   });
 
-  var btn = document.getElementById('emoBtn');
-  if (btn) btn.addEventListener('click', function () { send('love'); });
+  var btn = document.getElementById('emoBtn'), pick = null;
+  function closePick() { if (pick) { if (pick.parentNode) pick.parentNode.removeChild(pick); pick = null; document.removeEventListener('pointerdown', outPick, true); } }
+  function outPick(e) { if (pick && !pick.contains(e.target) && e.target !== btn) closePick(); }
+  function openPick() {
+    if (pick) { closePick(); return; }
+    if (busy) return;
+    var r = btn.getBoundingClientRect(), d = document.createElement('div');
+    d.style.cssText = 'position:fixed;z-index:99990;top:' + Math.round(r.bottom + 6) + 'px;right:' + Math.max(8, Math.round(window.innerWidth - r.right)) + 'px;min-width:200px;background:var(--bg-elevated,#fff);color:var(--text-primary,#000);border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.28);padding:6px 0;overflow:hidden';
+    Object.keys(EMO).forEach(function (id) {
+      var E = EMO[id]; if (!E.nm) return;
+      var row = document.createElement('div'), ic = document.createElement('span'), tx = document.createElement('span');
+      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 16px;font-size:16px;cursor:pointer';
+      ic.style.cssText = 'font-size:22px;width:28px;text-align:center'; ic.textContent = E.ic || '✨'; tx.textContent = E.nm();
+      row.appendChild(ic); row.appendChild(tx);
+      row.addEventListener('click', function () { closePick(); send(id); });
+      d.appendChild(row);
+    });
+    document.body.appendChild(d); pick = d;
+    document.addEventListener('pointerdown', outPick, true);
+  }
+  if (btn) btn.addEventListener('click', openPick);
   // Android "orqaga": emotsiya davomida bosilsa, xavfsiz yakunlanadi
   var prevBack = window.pldnBack;
   window.pldnBack = function () {
