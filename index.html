@@ -1,5 +1,5 @@
-<!-- VERSION: 218 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: robot-emo-10.1 | satr: 19422 | 23-okt-2026 -->
+<!-- VERSION: 213 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: robot-emo-10.2 | satr: 19409 | 23-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -19097,7 +19097,7 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== PLDN EMOTSIYA: IKKI ROBOT PORTALI (3D) ===== VERSION: emo-portal-1.1
+// ===== PLDN EMOTSIYA: IKKI ROBOT PORTALI (3D) ===== VERSION: emo-portal-1.2
 // Chat sarlavhasidagi ❤️ tugmasi → Firestore 'emotions' hujjati → ikkala telefonda bir xil vaqt jadvali (video oqimi yo'q).
 // Yangi emotsiya qo'shish: PLDNEmotions.register('id', { dur, openDur, closeAt, closeDur, tc1, tc2, pose: function (t) { return { o, h, hv }; } })
 (function () {
@@ -19146,9 +19146,7 @@ var PLDNBattModel = (function () {
     var hx = okR ? r.left + r.width / 2 : W * .82, hy = okR ? r.top + r.height / 2 : HS * .72;
     var H = { x: (hx - W / 2) / U, y: (HS / 2 - hy) / U }, PC = { x: 0, y: (HS / 2 - HS * .4) / U };
     var dirC = PC.x >= H.x ? 1 : -1, P0 = { x: H.x + dirC * 7, y: H.y + 1 };
-    var PWu = Math.min(W * .86, 300) / U, PHu = PWu * 1.3, sgn = dirC;
-    if (hx + sgn * SP * KM * U < 40 || hx + sgn * SP * KM * U > W - 40) sgn = -sgn;
-    var M = { x: H.x + sgn * SP * KM, y: H.y };
+    var PWu = Math.min(W * .86, 300) / U, PHu = PWu * 1.3;
     var cv = document.createElement('canvas'); cv.className = 'emo-cv'; document.body.appendChild(cv);
     var R;
     try { R = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true }); }
@@ -19238,7 +19236,7 @@ var PLDNBattModel = (function () {
     }
     // Robotlar: A = yuboruvchining roboti, B = qabul qiluvchining roboti. 1 = asosiy (ekran) olam, 2 = portal ichidagi olam
     var pl1 = lights(S1, 80), pl2 = lights(S2, 24);
-    var A1 = mkRobot(S1), B1 = mkRobot(S1), A2 = mkRobot(S2), B2 = mkRobot(S2), hf1 = mkHeart(S1), hf2 = mkHeart(S2);
+    var A1 = mkRobot(S1), B1 = mkRobot(S1), A2 = mkRobot(S2), B2 = mkRobot(S2), hf2 = mkHeart(S2);
     // Portal (asosiy olamda): ichida S2 sahna tasviri, oval chegarada qoladi
     var disc = new THREE.Mesh(new THREE.CircleGeometry(1, 48), new THREE.MeshBasicMaterial({ map: RT.texture })); S1.add(disc);
     var rim = new THREE.Mesh(new THREE.TorusGeometry(1, .02, 10, 64), new THREE.MeshBasicMaterial({ color: 0x5be8ff })); S1.add(rim);
@@ -19263,30 +19261,19 @@ var PLDNBattModel = (function () {
       flash.position.set(px, py, -.8); flash.scale.set(rx * 1.6, ry * 1.6, 1); sm.w.opacity = Math.max(bump(t, E.tc1, .35), bump(t, E.tc2, .35)) * .9;
       for (i = 0; i < sparks.length; i++) { var ph = i / sparks.length * PI * 2 + t * .9; sparks[i].visible = pv; sparks[i].position.set(px + rx * Math.cos(ph), py + ry * Math.sin(ph), -.9); sparks[i].scale.setScalar(.9 + .4 * Math.sin(t * 4 + i)); }
       var ps = E.pose(t), tb = ss((t - 3.6) / 1.4) - ss((t - 10.6) / 1.2), inside = t >= E.tc1 && t < E.tc2, fl = Math.sin(t * 2.094), e, e2, ee, f1, f2;
-      if (role === 'sender') {
-        // A: egasining roboti portalga kiradi va qaytadi; ichkarida (qabul qiluvchi olamida) B bilan uchrashadi
-        if (!inside) {
-          var kH = 1 + .6 * ss(t / 1.5), x, y, z, th;
-          if (t < E.tc1) { e = ss((t - 1.8) / 1.6); x = lerp(H.x, px, e); y = lerp(H.y, py, e) + 3 * Math.sin(PI * e); z = -4 * ss((e - .55) / .45); k = lerp(kH, .45, e); th = dirC * (1 - e); }
-          else { e2 = ss((t - E.tc2) / 1.4); x = lerp(PC.x, H.x, e2); y = lerp(PC.y, H.y, e2) + 3 * Math.sin(PI * e2); z = -4 * (1 - ss(e2 * 1.6)); k = lerp(.45, 1, e2); th = 0; }
-          put(A1, x, y + fl * .15 * k, z, k, th); limbs(A1, 0, 0, t);
-        } else A1.g.visible = false;
-        B1.g.visible = false;
-        f1 = ss((t - E.tc1) / 1.8); f2 = ss((t - 9.8) / 1.6); ee = f1 * (1 - f2);
-        if (inside) { put(A2, lerp(0, -SP / 2, ee), lerp(-.3, 0, ee) + fl * .15, lerp(7, 0, ee), 1, 1.25 * ee); limbs(A2, ps.o, ps.h, t); } else A2.g.visible = false;
-        put(B2, SP / 2, Math.sin(t * 2.094 + 1) * .15, 0, 1, -1.25 * tb); limbs(B2, ps.o, ps.h, t + 1);
-        heartFx(hf2, pl2, t, ps.hv, 0, 0, 1); hf1.g.visible = false; pl1.intensity = 0;
-      } else {
-        // B: qabul qiluvchining o'z roboti joyida qoladi; A portal ichidan chiqib kelib, birga emotsiya bajaradi
-        var kB = 1 + (KM - 1) * (ss(t / 1.5) - ss((t - 12.3) / 1.5));
-        put(B1, H.x, H.y + fl * .15 * kB, 0, kB, sgn * 1.25 * tb); limbs(B1, ps.o, ps.h, t + 1);
-        f1 = ss((t - E.tc1) / 1.8); f2 = ss((t - 9.8) / 1.6); ee = f1 * (1 - f2);
-        if (inside) { put(A1, lerp(PC.x, M.x, ee), lerp(PC.y, M.y, ee) + 3 * Math.sin(PI * ee) + fl * .15 * KM * ee, -4 * (1 - ss(ee * 1.6)), KM * lerp(.45, 1, ee), -sgn * 1.25 * ee); limbs(A1, ps.o, ps.h, t); } else A1.g.visible = false;
-        // portal ichi = yuboruvchining olami: roboti portalga yaqinlashadi (va keyin qaytib keladi)
-        if (!inside) { var g1 = ss((t - 1.8) / 1.6), g2 = ss((t - E.tc2) / 1.4), gg = t < E.tc1 ? g1 : 1 - g2; put(A2, 0, lerp(0, -.3, gg), lerp(-3, 7, gg), 1, 0); limbs(A2, 0, 0, t); } else A2.g.visible = false;
-        B2.g.visible = false;
-        heartFx(hf1, pl1, t, ps.hv, (H.x + M.x) / 2, H.y, KM); hf2.g.visible = false; pl2.intensity = 0;
-      }
+      // Ikkala telefonda bir xil: o'z robot portalga kiradi, ikkinchi foydalanuvchining roboti portal ichida kutib turadi, birga emotsiya bajarishadi
+      var own1 = role === 'sender' ? A1 : B1, oth1 = role === 'sender' ? B1 : A1, ownIn = role === 'sender' ? A2 : B2, othIn = role === 'sender' ? B2 : A2, side = role === 'sender' ? -1 : 1;
+      oth1.g.visible = false;
+      if (!inside) {
+        var kH = 1 + .6 * ss(t / 1.5), x, y, z, th;
+        if (t < E.tc1) { e = ss((t - 1.8) / 1.6); x = lerp(H.x, px, e); y = lerp(H.y, py, e) + 3 * Math.sin(PI * e); z = -4 * ss((e - .55) / .45); k = lerp(kH, .45, e); th = dirC * (1 - e); }
+        else { e2 = ss((t - E.tc2) / 1.4); x = lerp(PC.x, H.x, e2); y = lerp(PC.y, H.y, e2) + 3 * Math.sin(PI * e2); z = -4 * (1 - ss(e2 * 1.6)); k = lerp(.45, 1, e2); th = 0; }
+        put(own1, x, y + fl * .15 * k, z, k, th); limbs(own1, 0, 0, t);
+      } else own1.g.visible = false;
+      f1 = ss((t - E.tc1) / 1.8); f2 = ss((t - 9.8) / 1.6); ee = f1 * (1 - f2);
+      if (inside) { put(ownIn, lerp(0, side * SP / 2, ee), lerp(-.3, 0, ee) + fl * .15, lerp(7, 0, ee), 1, -side * 1.25 * ee); limbs(ownIn, ps.o, ps.h, t); } else ownIn.g.visible = false;
+      put(othIn, -side * SP / 2, Math.sin(t * 2.094 + 1) * .15, 0, 1, side * 1.25 * tb); limbs(othIn, ps.o, ps.h, t + 1);
+      heartFx(hf2, pl2, t, ps.hv, 0, 0, 1); pl1.intensity = 0;
       pc.position.x = Math.sin(t * .7) * .9; pc.lookAt(0, .4, 0);
       for (j = 0; j < rings.length; j++) { rings[j].position.z = -6 - ((t * 3 + j * 4) % 20); rings[j].rotation.z = t * .3 + j; }
       if (pv) { R.setRenderTarget(RT); R.render(S2, pc); R.setRenderTarget(null); }
