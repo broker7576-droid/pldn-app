@@ -1,5 +1,5 @@
 <!-- VERSION: 226 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-3.0 | satr: 20408 | 25-okt-2026 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-4.0 | satr: 20478 | 25-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -19518,7 +19518,7 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-7-bosqich: xona, kino yuklash, uzatish, sinxron ijro, chat ===== VERSION: kino-3.0
+// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-7-bosqich + to'liq ekran: xona, kino yuklash, uzatish, sinxron ijro, chat ===== VERSION: kino-4.0
 // Firestore: kinoRooms/{id} { owner, members:[uid], names:{uid:ism}, title, createdAt, updatedAt }
 // Kino fayli VPS'da (kino.js, /kino): yuklash, HTTP Range bilan uzatish, WebSocket orqali sinxron ijro. Chat: Firestore (kinoRooms/{id}/messages), ovozli/video xabar fayllari VPS'da. Jonli ovoz keyingi bosqichda.
 (function () {
@@ -19588,6 +19588,20 @@ var PLDNBattModel = (function () {
     '.kz-ib{border:0;background:transparent;font-size:22px;width:40px;height:40px;flex:0 0 auto;color:#2AABEE;display:flex;align-items:center;justify-content:center;padding:0}' +
     '.kz-rec{flex:1;display:flex;align-items:center;gap:10px;color:var(--text-primary);font-size:16px;height:40px}.kz-rd{color:#ff3b30}' +
     '.kz-typing .kz-player{aspect-ratio:auto;height:96px}.kz-typing .kz-mem{display:none}' +
+    '.kz-cb{width:34px}' +
+    '.kz-fo{display:none}' +
+    '#kinoScreen.kz-fs .kz-fo{display:flex}' +
+    '#kinoScreen.kz-fs .kz-player{position:fixed;left:0;top:0;width:100vw;height:100vh;height:100dvh;max-height:none;aspect-ratio:auto;z-index:100000}' +
+    '#kinoScreen.kz-fs .kz-mem,#kinoScreen.kz-fs .kz-msgs,#kinoScreen.kz-fs .kz-st,#kinoScreen.kz-fs .kz-bar{display:none}' +
+    '#kinoScreen.kz-fs .kz-ctl{padding-bottom:calc(6px + env(safe-area-inset-bottom));padding-left:max(8px,env(safe-area-inset-left));padding-right:max(8px,env(safe-area-inset-right))}' +
+    '#kinoScreen.kz-fs .kz-top{padding-top:max(6px,env(safe-area-inset-top));padding-left:max(8px,env(safe-area-inset-left))}' +
+    '#kinoScreen.kz-fschat .kz-msgs{display:flex;position:fixed;z-index:100001;left:0;right:0;bottom:calc(64px + var(--kz-kb,0px));height:34vh;background:rgba(0,0,0,.5)}' +
+    '#kinoScreen.kz-fschat .kz-bar{display:flex;position:fixed;z-index:100001;left:0;right:0;bottom:var(--kz-kb,0px);background:rgba(0,0,0,.7);padding-bottom:calc(8px + env(safe-area-inset-bottom))}' +
+    '#kinoScreen.kz-fschat .kz-bar textarea{max-height:44px;background:rgba(255,255,255,.16);color:#fff}' +
+    '#kinoScreen.kz-fschat .kz-m:not(.me){background:rgba(255,255,255,.2);color:#fff}' +
+    '#kinoScreen.kz-fschat .kz-ctl{top:0;bottom:auto;background:linear-gradient(rgba(0,0,0,.8),transparent)}' +
+    '#kinoScreen.kz-fschat .kz-top{top:92px}' +
+    '@media (orientation:landscape){#kinoScreen.kz-fschat .kz-msgs{left:auto;width:42vw;top:92px;height:auto;bottom:calc(64px + var(--kz-kb,0px))}#kinoScreen.kz-fschat .kz-bar{left:auto;width:42vw}}' +
     '.kz-chip{flex:0 0 auto;border-radius:16px;background:var(--bg-card);color:var(--text-primary);padding:7px 12px;font-size:13px;white-space:nowrap}' +
     '.kz-chip.add{background:#2AABEE;color:#fff;font-weight:700}' +
     '.kz-cnt{flex:0 0 auto;font-size:12px;color:var(--text-secondary);padding-right:2px}' +
@@ -19890,6 +19904,7 @@ var PLDNBattModel = (function () {
   function enterPlayer(r) { if (P.room === r.id && !P.dead) return; leavePlayer(); P.room = r.id; P.dead = false; buildPlayerUI(); connect(); }
   function leavePlayer() {
     if (P.dead && !P.room) return;
+    exitFS(); natKeep(false);
     P.dead = true; clearTimeout(P.rt); clearInterval(P.pingT); clearInterval(P.tick); clearTimeout(P.ctlT);
     var ws = P.ws; P.ws = null; P.wsOpen = false; if (ws) { try { ws.close(); } catch (_) {} }
     if (P.video) { try { P.video.pause(); P.video.removeAttribute('src'); P.video.load(); } catch (_) {} }
@@ -19940,7 +19955,7 @@ var PLDNBattModel = (function () {
     }
     if (m.type === 'state') {
       if (m.now && !P.samples.length) P.off = m.now - Date.now();
-      P.st = m.state; applyMovie(); sync(true); updateOverlay(); tickUI(); showCtl(); return;
+      P.st = m.state; applyMovie(); sync(true); updateOverlay(); tickUI(); showCtl(); natKeep(!!(P.st && P.st.playing)); return;
     }
     if (m.type === 'presence') { S.online = m.online || []; var r = curRoom(); if (r) renderMembers(r); return; }
     if (m.type === 'upload') {
@@ -19972,13 +19987,17 @@ var PLDNBattModel = (function () {
     var bar = h('div', 'kz-ctl hide');
     var seek = h('input', 'kz-seek'); seek.type = 'range'; seek.min = 0; seek.max = 1000; seek.value = 0;
     var play = h('button', 'kz-cb', '▶'), back = h('button', 'kz-cb', '⏪'), fwd = h('button', 'kz-cb', '⏩'), pick = h('button', 'kz-cb', '🎞');
+    var fsb = h('button', 'kz-cb', '⛶'), chb = h('button', 'kz-cb kz-fo', '💬'), rot = h('button', 'kz-cb kz-fo', '↻');
     var time = h('span', 'kz-time', '0:00 / 0:00');
     var vol = h('input', 'kz-vol'); vol.type = 'range'; vol.min = 0; vol.max = 100; vol.value = Math.round(v.volume * 100);
     var r1 = h('div', 'kz-row'), r2 = h('div', 'kz-row');
-    r1.append(seek); r2.append(back, play, fwd, time, h('span', 'kz-sp'), h('span', '', '🔊'), vol, pick);
+    vol.style.width = '56px'; r1.append(seek, h('span', '', '🔊'), vol); r2.append(back, play, fwd, time, h('span', 'kz-sp'), chb, rot, pick, fsb);
     bar.append(r1, r2);
     pl.append(v, tap, top, ov, bar);
-    P.video = v; P.ui = { ov: ov, top: top, bar: bar, seek: seek, play: play, time: time };
+    P.video = v; P.ui = { ov: ov, top: top, bar: bar, seek: seek, play: play, time: time, fs: fsb, chat: chb };
+    fsb.addEventListener('click', function () { if (F.on) exitFS(); else enterFS(); });
+    chb.addEventListener('click', toggleFsChat);
+    rot.addEventListener('click', rotateFS);
     tap.addEventListener('click', function () { if (P.ui.bar.classList.contains('hide')) showCtl(); else P.ui.bar.classList.add('hide'); });
     bar.addEventListener('click', function () { showCtl(); });
     play.addEventListener('click', function () { if (!P.st || !P.st.movieId) return; ctl(P.st.playing ? 'pause' : 'play'); });
@@ -20254,6 +20273,7 @@ var PLDNBattModel = (function () {
           var el = msgEl(id, d); C.map[id] = el;
           C.list.insertBefore(el, C.list.children[ch.newIndex] || null);
           if (d.from === myUid()) mineAdded = true;
+          else if (!first && F.on && !F.chat) { F.unread++; updateFsUI(); }
         } else if (ch.type === 'modified') {
           var e2 = C.map[id], t = e2 && e2.querySelector('.kz-mt'); if (t) t.textContent = hm(d.createdAt);
         } else if (ch.type === 'removed') {
@@ -20379,6 +20399,55 @@ var PLDNBattModel = (function () {
   }
   window.addEventListener('resize', function () { scrollBottom(false); });
 
+  // ===== TO'LIQ EKRAN (6-bosqich): faqat shu qurilmaga ta'sir qiladi =====
+  var F = { on: false, chat: false, land: true, unread: 0 };
+  function nat() { return window.PldnFull || null; }
+  function natEnter(l) { var n = nat(); if (n) { try { n.enter(!!l); } catch (_) {} } }
+  function natExit() { var n = nat(); if (n) { try { n.exit(); } catch (_) {} } }
+  function natLand(l) { var n = nat(); if (n) { try { n.setLandscape(!!l); } catch (_) {} } }
+  function natKeep(on) { var n = nat(); if (n) { try { n.keepOn(!!on); } catch (_) {} } }
+  function fsClasses() {
+    var s = $('kinoScreen'); if (!s) return;
+    s.classList.toggle('kz-fs', F.on); s.classList.toggle('kz-fschat', F.on && F.chat);
+    if (!F.on) document.documentElement.style.removeProperty('--kz-kb');
+  }
+  function updateFsUI() {
+    var u = P.ui; if (!u) return;
+    u.fs.textContent = F.on ? '✕' : '⛶';
+    u.chat.textContent = F.unread > 0 ? '💬' + F.unread : '💬';
+  }
+  function enterFS() {
+    if (F.on) return;
+    if (!(P.st && P.st.movieId)) { toast(T('Avval kino tanlang', 'Сначала выберите кино')); return; }
+    var v = P.video;
+    F.land = !(v && v.videoWidth && v.videoHeight && v.videoHeight > v.videoWidth);
+    F.on = true; F.chat = false; F.unread = 0;
+    fsClasses(); natEnter(F.land); updateFsUI(); showCtl();
+  }
+  function exitFS() {
+    if (!F.on) return;
+    F.on = false; F.chat = false; F.unread = 0;
+    fsClasses(); natExit(); updateFsUI();
+    if (C.ta) C.ta.blur();
+    setTimeout(function () { scrollBottom(true); }, 150);
+  }
+  function toggleFsChat() {
+    F.chat = !F.chat; if (F.chat) F.unread = 0;
+    fsClasses(); updateFsUI(); showCtl();
+    if (F.chat) setTimeout(function () { scrollBottom(true); }, 60);
+  }
+  function rotateFS() { F.land = !F.land; natLand(F.land); }
+  if (window.visualViewport) {
+    var vvp = window.visualViewport;
+    var kbf = function () {
+      if (!F.on) return;
+      var d = Math.max(0, Math.round(window.innerHeight - vvp.height - vvp.offsetTop));
+      document.documentElement.style.setProperty('--kz-kb', d + 'px');
+      if (d > 0) scrollBottom(true);
+    };
+    vvp.addEventListener('resize', kbf); vvp.addEventListener('scroll', kbf);
+  }
+
   // ---------- ochish / orqaga ----------
   rowEl.addEventListener('click', function () { S.roomId = ''; goToScreen('kinoScreen'); startList(); render(); });
   $('kzMore').addEventListener('click', menuSheet);
@@ -20392,6 +20461,7 @@ var PLDNBattModel = (function () {
     var sc = $('kinoScreen');
     if (sc && sc.classList.contains('active')) {
       if (closeSheet()) return true;
+      if (F.on) { if (F.chat) { F.chat = false; fsClasses(); updateFsUI(); } else exitFS(); return true; }
       if (S.roomId) { S.roomId = ''; render(); return true; }
       goToScreen('pldnSettingsScreen'); return true;
     }
@@ -20401,7 +20471,7 @@ var PLDNBattModel = (function () {
   C.list.addEventListener('scroll', function () { C.stick = C.list.scrollHeight - C.list.scrollTop - C.list.clientHeight < 60; });
   buildBar();
   render();
-  window.PLDNKino = { version: 'kino-3.0', maxMembers: MAX, currentRoom: curRoom };
+  window.PLDNKino = { version: 'kino-4.0', maxMembers: MAX, currentRoom: curRoom };
 })();
 </script>
 </body>
