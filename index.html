@@ -1,5 +1,5 @@
-<!-- VERSION: 220 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: gift-emo-1.0 | satr: 19521 | 24-okt-2026 -->
+<!-- VERSION: 221 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-1.0 | satr: 19827 | 25-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -19515,6 +19515,312 @@ var PLDNBattModel = (function () {
     return prevBack ? prevBack.apply(this, arguments) : false;
   };
   window.PLDNEmotions = { send: send, register: function (id, def) { EMO[id] = def; }, isBusy: function () { return busy; } };
+})();
+</script>
+<script>
+// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-2-bosqich: xona, a'zolar, interfeys ===== VERSION: kino-1.0
+// Firestore: kinoRooms/{id} { owner, members:[uid], names:{uid:ism}, title, createdAt, updatedAt }
+// Kino fayli, sinxron ijro, chat va jonli ovoz keyingi bosqichlarda ulanadi (VPS orqali).
+(function () {
+  'use strict';
+  if (typeof fbT !== 'function' || typeof goToScreen !== 'function') return;
+  var MAX = 10;
+  var T = function (uz, ru) { return fbT(uz, ru); };
+  var $ = function (id) { return document.getElementById(id); };
+  function h(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function myUid() { var u = (typeof fbAuth !== 'undefined' && fbAuth) ? fbAuth.currentUser : null; return u ? u.uid : ''; }
+  function fv() { return firebase.firestore.FieldValue; }
+  function toast(m) {
+    var d = h('div', 'kz-toast', m); document.body.appendChild(d);
+    setTimeout(function () { d.style.opacity = '0'; }, 2200); setTimeout(function () { d.remove(); }, 2700);
+  }
+  function nameOf(v) { try { return fbDisplayName(v || {}); } catch (_) { return (v && v.username) ? 'PLDN/-' + v.username : '?'; } }
+  function askYes(msg) {
+    if (typeof pldnConfirm === 'function') return pldnConfirm(msg);
+    return Promise.resolve(window.confirm(msg));
+  }
+
+  var S = { rooms: [], roomId: '', unsub: null, listUid: '', err: '' };
+
+  var st = document.createElement('style');
+  st.textContent =
+    '#kinoScreen{padding:0;align-items:stretch;overflow:hidden}' +
+    '.kz-body{flex:1 1 0;min-height:0;display:flex;flex-direction:column}' +
+    '.kz-lobby{flex:1 1 0;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 12px 24px}' +
+    '.kz-card{background:var(--bg-card);border-radius:14px;padding:12px 14px;margin-bottom:10px;color:var(--text-primary);cursor:pointer}' +
+    '.kz-card:active{opacity:.75}' +
+    '.kz-h{font-size:16px;font-weight:700;word-break:break-word}' +
+    '.kz-t{font-size:13px;line-height:1.35;color:var(--text-secondary);margin-top:3px;word-break:break-word}' +
+    '.kz-btn{border:0;border-radius:12px;padding:12px 16px;font-size:15px;font-weight:600;background:#2AABEE;color:#fff;width:100%;margin-top:8px}' +
+    '.kz-btn.sec{background:var(--bg-elevated);color:#2AABEE}.kz-btn.red{background:#ff3b30}.kz-btn:disabled{opacity:.5}' +
+    '.kz-room{flex:1 1 0;min-height:0;display:flex;flex-direction:column}' +
+    '.kz-player{flex:0 0 auto;width:100%;aspect-ratio:16/9;max-height:42vh;background:#000;color:#9aa0a6;display:flex;align-items:center;justify-content:center;text-align:center;padding:12px;font-size:14px;line-height:1.4}' +
+    '.kz-mem{flex:0 0 auto;display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:8px 12px;border-bottom:1px solid var(--divider-color);align-items:center}' +
+    '.kz-chip{flex:0 0 auto;border-radius:16px;background:var(--bg-card);color:var(--text-primary);padding:7px 12px;font-size:13px;white-space:nowrap}' +
+    '.kz-chip.add{background:#2AABEE;color:#fff;font-weight:700}' +
+    '.kz-cnt{flex:0 0 auto;font-size:12px;color:var(--text-secondary);padding-right:2px}' +
+    '.kz-chat{flex:1 1 0;min-height:0;overflow-y:auto;padding:18px 16px;text-align:center;color:var(--text-secondary);font-size:14px}' +
+    '.kz-bar{flex:0 0 auto;display:flex;gap:8px;padding:8px 10px calc(8px + env(safe-area-inset-bottom));background:var(--bg-elevated)}' +
+    '.kz-bar input{flex:1;min-width:0;border:0;border-radius:18px;padding:10px 14px;font-size:16px;background:var(--bg-card);color:var(--text-primary)}' +
+    '.kz-more{margin-left:auto;width:40px;height:40px;border:0;border-radius:50%;background:transparent;color:var(--text-primary);font-size:24px;font-weight:700;line-height:1;display:none;align-items:center;justify-content:center}' +
+    '.kz-ov{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100001;display:flex;align-items:flex-end}' +
+    '.kz-sheet{width:100%;max-height:82%;overflow-y:auto;background:var(--bg-elevated);color:var(--text-primary);border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}' +
+    '.kz-in{width:100%;box-sizing:border-box;border:1px solid var(--border-color-strong);background:var(--bg-card);color:var(--text-primary);border-radius:12px;padding:11px 12px;font-size:16px;margin-top:8px}' +
+    '.kz-mi{padding:14px 4px;font-size:16px;border-top:1px solid var(--divider-color);cursor:pointer}' +
+    '.kz-mi:first-of-type{border-top:0}.kz-mi.red{color:#ff3b30}.kz-mi:active{opacity:.6}' +
+    '.kz-warn{background:rgba(255,149,0,.16);border-radius:12px;padding:9px 12px;margin-bottom:10px;font-size:14px;line-height:1.35;color:var(--text-primary)}' +
+    '.kz-toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);max-width:86%;background:rgba(30,30,30,.92);color:#fff;padding:9px 14px;border-radius:14px;font-size:14px;z-index:100002;transition:opacity .4s;text-align:center}';
+  document.head.appendChild(st);
+
+  var BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>';
+  var scr = h('div', 'screen'); scr.id = 'kinoScreen';
+  scr.innerHTML = '<div class="chat-detail-header"><button class="chat-back-btn" id="kzBack">' + BACK + '</button>' +
+    '<div class="chat-detail-info"><div class="chat-detail-name" id="kzTitle"></div></div>' +
+    '<button class="kz-more" id="kzMore" aria-label="Menu">&#8942;</button></div>' +
+    '<div class="kz-body"><div class="kz-lobby" id="kzLobby"></div>' +
+    '<div class="kz-room" id="kzRoom" style="display:none">' +
+    '<div class="kz-player" id="kzPlayer"></div><div class="kz-mem" id="kzMem"></div>' +
+    '<div class="kz-chat" id="kzChat"></div>' +
+    '<div class="kz-bar"><input id="kzInput" disabled></div></div></div>';
+  var anchor = $('pldnSettingsScreen');
+  if (!anchor || !anchor.parentNode) return;
+  anchor.parentNode.appendChild(scr);
+
+  // sozlamalardagi qator
+  var rowEl = h('div', 'settings-item'); rowEl.id = 'kinoRow';
+  var rowLabel = h('span', 'settings-label');
+  rowEl.append(h('span', 'settings-icon', '🎬'), rowLabel, h('span', 'settings-arrow', '›'));
+  var after = $('pldnSavedVideosRow');
+  if (after && after.parentNode) after.parentNode.insertBefore(rowEl, after.nextSibling);
+  else { var grp = document.querySelector('#pldnSettingsScreen .settings-group'); if (grp) grp.appendChild(rowEl); else return; }
+
+  function sheet(build) {
+    closeSheet();
+    var ov = h('div', 'kz-ov'), sh = h('div', 'kz-sheet'); ov.appendChild(sh);
+    ov.addEventListener('click', function (e) { if (e.target === ov) closeSheet(); });
+    S.ov = ov; build(sh); document.body.appendChild(ov);
+  }
+  function closeSheet() { if (S.ov) { S.ov.remove(); S.ov = null; return true; } return false; }
+
+  // ---------- Firestore: xonalar ro'yxati ----------
+  function startList() {
+    var u = myUid();
+    if (!u || typeof fbDb === 'undefined' || !fbDb) { S.err = T('Avval hisobga kiring', 'Сначала войдите в аккаунт'); render(); return; }
+    if (S.unsub && S.listUid === u) return;
+    if (S.unsub) { try { S.unsub(); } catch (_) {} S.unsub = null; S.roomId = ''; }
+    S.listUid = u; S.err = '';
+    S.unsub = fbDb.collection('kinoRooms').where('members', 'array-contains', u).onSnapshot(function (snap) {
+      S.err = '';
+      S.rooms = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+      S.rooms.sort(function (a, b) { return tms(b.updatedAt || b.createdAt) - tms(a.updatedAt || a.createdAt); });
+      if (S.roomId && !curRoom()) { S.roomId = ''; toast(T('Xona yopildi yoki siz chiqarildingiz', 'Комната закрыта или вас удалили')); }
+      render();
+    }, function (e) {
+      console.error('Kinozona ro\'yxati', e);
+      S.err = (e && e.code === 'permission-denied')
+        ? T('Firestore qoidalariga kinoRooms bloki hali qo\'shilmagan.', 'В правила Firestore ещё не добавлен блок kinoRooms.')
+        : T('Xonalarni yuklab bo\'lmadi. Internetni tekshiring.', 'Не удалось загрузить комнаты. Проверьте интернет.');
+      S.unsub = null; render();
+    });
+  }
+  function tms(t) { return (t && t.toMillis) ? t.toMillis() : Date.now(); }
+  function curRoom() { for (var i = 0; i < S.rooms.length; i++) if (S.rooms[i].id === S.roomId) return S.rooms[i]; return null; }
+  function isOwner(r) { return r && r.owner === myUid(); }
+
+  // ---------- amallar ----------
+  async function createRoom(title) {
+    var u = myUid(); if (!u) return;
+    var me = {}; try { me = (await fbGetUser(u)) || {}; } catch (_) {}
+    var nm = nameOf(me), names = {}; names[u] = nm;
+    try {
+      var ref = await fbDb.collection('kinoRooms').add({
+        owner: u, members: [u], names: names,
+        title: (title || '').trim() || (nm + ' · ' + T('Kinozona', 'Кинозона')),
+        createdAt: fv().serverTimestamp(), updatedAt: fv().serverTimestamp()
+      });
+      S.roomId = ref.id; render();
+    } catch (e) { toast(errText(e)); }
+  }
+  function errText(e) {
+    if (e && e.code === 'permission-denied') return T('Ruxsat yo\'q (Firestore qoidalarini tekshiring)', 'Нет доступа (проверьте правила Firestore)');
+    if (e && e.code === 'unavailable') return T('Internet aloqasi yo\'q', 'Нет подключения к интернету');
+    return T('Xatolik yuz berdi', 'Произошла ошибка');
+  }
+  async function addMember(id, nm) {
+    var r = curRoom(); if (!r) return T('Xona topilmadi', 'Комната не найдена');
+    if (!isOwner(r)) return T('Faqat xona egasi qo\'sha oladi', 'Добавлять может только владелец');
+    if ((r.members || []).indexOf(id) >= 0) return T('Bu foydalanuvchi allaqachon xonada', 'Пользователь уже в комнате');
+    if ((r.members || []).length >= MAX) return T('Xona to\'lgan (10 ta)', 'Комната заполнена (10)');
+    var up = { members: fv().arrayUnion(id), updatedAt: fv().serverTimestamp() };
+    up['names.' + id] = nm;
+    try { await fbDb.collection('kinoRooms').doc(r.id).update(up); } catch (e) { return errText(e); }
+    return '';
+  }
+  async function addByUsername(raw) {
+    var q = String(raw || '').trim().toLowerCase().replace(/^pldn\/-?/, '').replace(/[^a-z0-9]/g, '');
+    if (q.length < 4) return T('Username kamida 4 ta belgi', 'Имя пользователя — минимум 4 символа');
+    var snap;
+    try { snap = await fbDb.collection('users').where('username', '==', q).limit(1).get(); } catch (e) { return errText(e); }
+    if (snap.empty) return T('Bunday foydalanuvchi topilmadi', 'Пользователь не найден');
+    var d = snap.docs[0];
+    return addMember(d.id, nameOf(d.data()));
+  }
+  async function leaveRoom(r) {
+    var u = myUid(), up = { members: fv().arrayRemove(u), updatedAt: fv().serverTimestamp() };
+    up['names.' + u] = fv().delete();
+    try { await fbDb.collection('kinoRooms').doc(r.id).update(up); S.roomId = ''; render(); } catch (e) { toast(errText(e)); }
+  }
+  async function kick(r, id) {
+    var up = { members: fv().arrayRemove(id), updatedAt: fv().serverTimestamp() };
+    up['names.' + id] = fv().delete();
+    try { await fbDb.collection('kinoRooms').doc(r.id).update(up); } catch (e) { toast(errText(e)); }
+  }
+  async function deleteRoom(r) {
+    try { await fbDb.collection('kinoRooms').doc(r.id).delete(); S.roomId = ''; render(); } catch (e) { toast(errText(e)); }
+  }
+
+  // ---------- oynalar ----------
+  function newRoomSheet() {
+    sheet(function (sh) {
+      sh.appendChild(h('div', 'kz-h', T('Yangi Kinozona xonasi', 'Новая комната Кинозоны')));
+      var inp = h('input', 'kz-in'); inp.maxLength = 30; inp.placeholder = T('Xona nomi (ixtiyoriy)', 'Название комнаты (необязательно)');
+      var b = h('button', 'kz-btn', T('Yaratish', 'Создать'));
+      b.addEventListener('click', function () { b.disabled = true; closeSheet(); createRoom(inp.value); });
+      sh.append(inp, b);
+    });
+  }
+  function addSheet() {
+    var r = curRoom(); if (!r || !isOwner(r)) return;
+    sheet(function (sh) {
+      sh.appendChild(h('div', 'kz-h', T('A\'zo qo\'shish', 'Добавить участника')));
+      sh.appendChild(h('div', 'kz-t', T('Xonada ' + (r.members || []).length + '/' + MAX + ' kishi', 'В комнате ' + (r.members || []).length + '/' + MAX)));
+      var inp = h('input', 'kz-in'); inp.placeholder = 'PLDN/-username'; inp.autocapitalize = 'none'; inp.autocomplete = 'off';
+      var msg = h('div', 'kz-t'); msg.style.color = '#ff3b30';
+      var b = h('button', 'kz-btn', T('Qo\'shish', 'Добавить'));
+      b.addEventListener('click', async function () {
+        b.disabled = true; msg.textContent = '';
+        var err = await addByUsername(inp.value);
+        b.disabled = false;
+        if (err) { msg.textContent = err; return; }
+        closeSheet(); toast('✅ ' + T('Qo\'shildi', 'Добавлен'));
+      });
+      sh.append(inp, b, msg);
+      sh.appendChild(h('div', 'kz-h', T('Chatlaringizdan', 'Из ваших чатов'))).style.marginTop = '16px';
+      var list = h('div'); sh.appendChild(list); list.appendChild(h('div', 'kz-t', T('Yuklanmoqda…', 'Загрузка…')));
+      loadChatPeers(r, list);
+    });
+  }
+  async function loadChatPeers(r, list) {
+    var u = myUid(), peers = [];
+    try {
+      var snap = await fbDb.collection('chats').where('members', 'array-contains', u).limit(40).get();
+      snap.docs.forEach(function (d) {
+        var c = d.data() || {};
+        if (c.type && c.type !== 'dm') return;
+        var o = (c.members || []).filter(function (x) { return x !== u; });
+        if (o.length === 1 && (r.members || []).indexOf(o[0]) < 0 && peers.indexOf(o[0]) < 0) peers.push(o[0]);
+      });
+    } catch (e) { list.textContent = ''; list.appendChild(h('div', 'kz-t', errText(e))); return; }
+    list.textContent = '';
+    if (!peers.length) { list.appendChild(h('div', 'kz-t', T('Qo\'shish mumkin bo\'lgan chat topilmadi', 'Нет чатов для добавления'))); return; }
+    peers.forEach(async function (pid) {
+      var v = {}; try { v = (await fbGetUser(pid)) || {}; } catch (_) {}
+      var nm = nameOf(v), row = h('div', 'kz-mi', '👤 ' + nm);
+      row.addEventListener('click', async function () {
+        if (row.dataset.busy) return; row.dataset.busy = '1';
+        var err = await addMember(pid, nm);
+        if (err) { toast(err); row.dataset.busy = ''; return; }
+        row.remove(); toast('✅ ' + T('Qo\'shildi', 'Добавлен'));
+      });
+      list.appendChild(row);
+    });
+  }
+  function memberSheet(r, id) {
+    if (!isOwner(r) || id === r.owner) return;
+    sheet(function (sh) {
+      sh.appendChild(h('div', 'kz-h', (r.names && r.names[id]) || '?'));
+      var it = h('div', 'kz-mi red', '🚫 ' + T('Xonadan chiqarish', 'Удалить из комнаты'));
+      it.addEventListener('click', async function () { closeSheet(); if (await askYes(T('Foydalanuvchi xonadan chiqarilsinmi?', 'Удалить пользователя из комнаты?'))) kick(r, id); });
+      sh.appendChild(it);
+    });
+  }
+  function menuSheet() {
+    var r = curRoom(); if (!r) return;
+    sheet(function (sh) {
+      if (isOwner(r)) {
+        var a = h('div', 'kz-mi', '➕ ' + T('A\'zo qo\'shish', 'Добавить участника'));
+        a.addEventListener('click', function () { addSheet(); }); sh.appendChild(a);
+        var d = h('div', 'kz-mi red', '🗑 ' + T('Xonani o\'chirish', 'Удалить комнату'));
+        d.addEventListener('click', async function () { closeSheet(); if (await askYes(T('Xona hamma uchun o\'chirilsinmi?', 'Удалить комнату для всех?'))) deleteRoom(r); });
+        sh.appendChild(d);
+      } else {
+        var l = h('div', 'kz-mi red', '🚪 ' + T('Xonadan chiqish', 'Выйти из комнаты'));
+        l.addEventListener('click', async function () { closeSheet(); if (await askYes(T('Xonadan chiqasizmi?', 'Выйти из комнаты?'))) leaveRoom(r); });
+        sh.appendChild(l);
+      }
+    });
+  }
+
+  // ---------- chizish ----------
+  function render() {
+    rowLabel.textContent = T('Kinozona', 'Кинозона');
+    var r = curRoom(), lobby = $('kzLobby'), room = $('kzRoom'), more = $('kzMore');
+    $('kzTitle').textContent = r ? ('🎬 ' + (r.title || 'Kinozona')) : ('🎬 ' + T('Kinozona', 'Кинозона'));
+    more.style.display = r ? 'flex' : 'none';
+    lobby.style.display = r ? 'none' : 'block'; room.style.display = r ? 'flex' : 'none';
+    if (r) { renderRoom(r); return; }
+    lobby.textContent = '';
+    if (S.err) lobby.appendChild(h('div', 'kz-warn', S.err));
+    lobby.appendChild(h('div', 'kz-t', T('Do\'stlaringiz bilan bir xonada bitta kinoni birga ko\'ring (10 kishigacha).', 'Смотрите одно кино вместе с друзьями в одной комнате (до 10 человек).')));
+    var nb = h('button', 'kz-btn', '＋ ' + T('Yangi xona yaratish', 'Создать комнату'));
+    nb.addEventListener('click', newRoomSheet); lobby.appendChild(nb);
+    if (S.rooms.length) { var t = h('div', 'kz-h', T('Xonalarim', 'Мои комнаты')); t.style.margin = '18px 0 8px'; lobby.appendChild(t); }
+    S.rooms.forEach(function (x) {
+      var c = h('div', 'kz-card'); c.appendChild(h('div', 'kz-h', '🎬 ' + (x.title || 'Kinozona')));
+      var own = (x.names && x.names[x.owner]) || '';
+      c.appendChild(h('div', 'kz-t', (x.members || []).length + '/' + MAX + ' · ' + T('Egasi: ', 'Владелец: ') + own));
+      c.addEventListener('click', function () { S.roomId = x.id; render(); });
+      lobby.appendChild(c);
+    });
+  }
+  function renderRoom(r) {
+    var pl = $('kzPlayer'), mem = $('kzMem'), chat = $('kzChat');
+    pl.textContent = T('Kino hali tanlanmagan.\nKino yuklash keyingi bosqichda ulanadi.', 'Кино ещё не выбрано.\nЗагрузка кино подключается на следующем этапе.');
+    pl.style.whiteSpace = 'pre-line';
+    chat.textContent = T('Xona chati keyingi bosqichda ulanadi.', 'Чат комнаты подключится на следующем этапе.');
+    $('kzInput').placeholder = T('Xabar yozish…', 'Написать сообщение…');
+    mem.textContent = '';
+    mem.appendChild(h('span', 'kz-cnt', (r.members || []).length + '/' + MAX));
+    (r.members || []).forEach(function (id) {
+      var chip = h('div', 'kz-chip', (id === r.owner ? '👑 ' : '') + ((r.names && r.names[id]) || '?') + (id === myUid() ? ' (' + T('siz', 'вы') + ')' : ''));
+      chip.addEventListener('click', function () { memberSheet(r, id); });
+      mem.appendChild(chip);
+    });
+    if (isOwner(r) && (r.members || []).length < MAX) {
+      var ad = h('div', 'kz-chip add', '＋ ' + T('Qo\'shish', 'Добавить')); ad.addEventListener('click', addSheet); mem.appendChild(ad);
+    }
+  }
+
+  // ---------- ochish / orqaga ----------
+  rowEl.addEventListener('click', function () { S.roomId = ''; goToScreen('kinoScreen'); startList(); render(); });
+  $('kzMore').addEventListener('click', menuSheet);
+  $('kzBack').addEventListener('click', function () {
+    if (closeSheet()) return;
+    if (S.roomId) { S.roomId = ''; render(); return; }
+    goToScreen('pldnSettingsScreen');
+  });
+  var prevBack = window.pldnBack;
+  window.pldnBack = function () {
+    var sc = $('kinoScreen');
+    if (sc && sc.classList.contains('active')) {
+      if (closeSheet()) return true;
+      if (S.roomId) { S.roomId = ''; render(); return true; }
+      goToScreen('pldnSettingsScreen'); return true;
+    }
+    return prevBack ? prevBack.apply(this, arguments) : false;
+  };
+  render();
+  window.PLDNKino = { version: 'kino-1.0', maxMembers: MAX, currentRoom: curRoom };
 })();
 </script>
 </body>
