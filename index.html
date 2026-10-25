@@ -1,5 +1,5 @@
-<!-- VERSION: 221 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-1.0 | satr: 19827 | 25-okt-2026 -->
+<!-- VERSION: 222 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-2.0 | satr: 20179 | 25-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -19518,9 +19518,9 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-2-bosqich: xona, a'zolar, interfeys ===== VERSION: kino-1.0
+// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-5-bosqich: xona, kino yuklash, uzatish, sinxron ijro ===== VERSION: kino-2.0
 // Firestore: kinoRooms/{id} { owner, members:[uid], names:{uid:ism}, title, createdAt, updatedAt }
-// Kino fayli, sinxron ijro, chat va jonli ovoz keyingi bosqichlarda ulanadi (VPS orqali).
+// Kino fayli VPS'da (kino.js, /kino): yuklash, HTTP Range bilan uzatish, WebSocket orqali sinxron ijro. Chat va jonli ovoz keyingi bosqichlarda.
 (function () {
   'use strict';
   if (typeof fbT !== 'function' || typeof goToScreen !== 'function') return;
@@ -19540,7 +19540,7 @@ var PLDNBattModel = (function () {
     return Promise.resolve(window.confirm(msg));
   }
 
-  var S = { rooms: [], roomId: '', unsub: null, listUid: '', err: '' };
+  var S = { rooms: [], roomId: '', unsub: null, listUid: '', err: '', online: [] };
 
   var st = document.createElement('style');
   st.textContent =
@@ -19554,8 +19554,23 @@ var PLDNBattModel = (function () {
     '.kz-btn{border:0;border-radius:12px;padding:12px 16px;font-size:15px;font-weight:600;background:#2AABEE;color:#fff;width:100%;margin-top:8px}' +
     '.kz-btn.sec{background:var(--bg-elevated);color:#2AABEE}.kz-btn.red{background:#ff3b30}.kz-btn:disabled{opacity:.5}' +
     '.kz-room{flex:1 1 0;min-height:0;display:flex;flex-direction:column}' +
-    '.kz-player{flex:0 0 auto;width:100%;aspect-ratio:16/9;max-height:42vh;background:#000;color:#9aa0a6;display:flex;align-items:center;justify-content:center;text-align:center;padding:12px;font-size:14px;line-height:1.4}' +
+    '.kz-player{flex:0 0 auto;position:relative;overflow:hidden;width:100%;aspect-ratio:16/9;max-height:42vh;background:#000;color:#cfd3d8;font-size:14px;line-height:1.4}' +
     '.kz-mem{flex:0 0 auto;display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:8px 12px;border-bottom:1px solid var(--divider-color);align-items:center}' +
+    '.kz-video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}' +
+    '.kz-tap{position:absolute;inset:0;z-index:1}' +
+    '.kz-ov-c{position:absolute;inset:0;z-index:2;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:12px}' +
+    '.kz-pick{border:0;border-radius:20px;padding:10px 18px;background:#2AABEE;color:#fff;font-size:15px;font-weight:600}.kz-pick.sec{background:rgba(255,255,255,.18)}' +
+    '.kz-ov-c .kz-h{color:#fff}' +
+    '.kz-top{position:absolute;left:0;right:0;top:0;z-index:4;display:flex;flex-wrap:wrap;gap:6px;padding:6px 8px;pointer-events:none}' +
+    '.kz-badge{background:rgba(0,0,0,.65);color:#fff;border-radius:12px;padding:4px 10px;font-size:12px;pointer-events:auto}' +
+    '.kz-ctl{position:absolute;left:0;right:0;bottom:0;z-index:3;padding:4px 8px 2px;background:linear-gradient(transparent,rgba(0,0,0,.78));display:flex;flex-direction:column;transition:opacity .25s}' +
+    '.kz-ctl.hide{opacity:0;pointer-events:none}' +
+    '.kz-row{display:flex;align-items:center;gap:4px;color:#fff;font-size:12px}' +
+    '.kz-cb{border:0;background:transparent;color:#fff;font-size:19px;width:40px;height:36px;display:flex;align-items:center;justify-content:center;padding:0}' +
+    '.kz-seek{flex:1;min-width:0;accent-color:#2AABEE;height:22px;margin:0}' +
+    '.kz-vol{width:64px;accent-color:#2AABEE;height:22px;margin:0}' +
+    '.kz-sp{flex:1}.kz-time{white-space:nowrap;margin-left:4px}' +
+    '.kz-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:#8e8e93}.kz-dot.on{background:#34c759}' +
     '.kz-chip{flex:0 0 auto;border-radius:16px;background:var(--bg-card);color:var(--text-primary);padding:7px 12px;font-size:13px;white-space:nowrap}' +
     '.kz-chip.add{background:#2AABEE;color:#fff;font-weight:700}' +
     '.kz-cnt{flex:0 0 auto;font-size:12px;color:var(--text-secondary);padding-right:2px}' +
@@ -19747,6 +19762,8 @@ var PLDNBattModel = (function () {
   function menuSheet() {
     var r = curRoom(); if (!r) return;
     sheet(function (sh) {
+      var pk = h('div', 'kz-mi', '🎞 ' + T('Kino yuklash', 'Загрузить кино'));
+      pk.addEventListener('click', function () { closeSheet(); pickMovie(); }); sh.appendChild(pk);
       if (isOwner(r)) {
         var a = h('div', 'kz-mi', '➕ ' + T('A\'zo qo\'shish', 'Добавить участника'));
         a.addEventListener('click', function () { addSheet(); }); sh.appendChild(a);
@@ -19768,7 +19785,8 @@ var PLDNBattModel = (function () {
     $('kzTitle').textContent = r ? ('🎬 ' + (r.title || 'Kinozona')) : ('🎬 ' + T('Kinozona', 'Кинозона'));
     more.style.display = r ? 'flex' : 'none';
     lobby.style.display = r ? 'none' : 'block'; room.style.display = r ? 'flex' : 'none';
-    if (r) { renderRoom(r); return; }
+    if (r) { enterPlayer(r); renderRoom(r); return; }
+    leavePlayer();
     lobby.textContent = '';
     if (S.err) lobby.appendChild(h('div', 'kz-warn', S.err));
     lobby.appendChild(h('div', 'kz-t', T('Do\'stlaringiz bilan bir xonada bitta kinoni birga ko\'ring (10 kishigacha).', 'Смотрите одно кино вместе с друзьями в одной комнате (до 10 человек).')));
@@ -19783,16 +19801,13 @@ var PLDNBattModel = (function () {
       lobby.appendChild(c);
     });
   }
-  function renderRoom(r) {
-    var pl = $('kzPlayer'), mem = $('kzMem'), chat = $('kzChat');
-    pl.textContent = T('Kino hali tanlanmagan.\nKino yuklash keyingi bosqichda ulanadi.', 'Кино ещё не выбрано.\nЗагрузка кино подключается на следующем этапе.');
-    pl.style.whiteSpace = 'pre-line';
-    chat.textContent = T('Xona chati keyingi bosqichda ulanadi.', 'Чат комнаты подключится на следующем этапе.');
-    $('kzInput').placeholder = T('Xabar yozish…', 'Написать сообщение…');
-    mem.textContent = '';
+  function renderMembers(r) {
+    var mem = $('kzMem'); if (!mem) return; mem.textContent = '';
     mem.appendChild(h('span', 'kz-cnt', (r.members || []).length + '/' + MAX));
     (r.members || []).forEach(function (id) {
-      var chip = h('div', 'kz-chip', (id === r.owner ? '👑 ' : '') + ((r.names && r.names[id]) || '?') + (id === myUid() ? ' (' + T('siz', 'вы') + ')' : ''));
+      var chip = h('div', 'kz-chip');
+      chip.appendChild(h('span', 'kz-dot' + ((S.online || []).indexOf(id) >= 0 ? ' on' : '')));
+      chip.appendChild(document.createTextNode((id === r.owner ? '👑 ' : '') + ((r.names && r.names[id]) || '?') + (id === myUid() ? ' (' + T('siz', 'вы') + ')' : '')));
       chip.addEventListener('click', function () { memberSheet(r, id); });
       mem.appendChild(chip);
     });
@@ -19800,6 +19815,343 @@ var PLDNBattModel = (function () {
       var ad = h('div', 'kz-chip add', '＋ ' + T('Qo\'shish', 'Добавить')); ad.addEventListener('click', addSheet); mem.appendChild(ad);
     }
   }
+  function renderRoom(r) {
+    $('kzChat').textContent = T('Xona chati keyingi bosqichda ulanadi.', 'Чат комнаты подключится на следующем этапе.');
+    $('kzInput').placeholder = T('Xabar yozish…', 'Написать сообщение…');
+    renderMembers(r);
+  }
+
+  // ===== PLEYER, YUKLASH, SINXRON IJRO (3-5-bosqich) =====
+  var BASE = 'https://134-255-228-146.sslip.io/kino';
+  var WS_BASE = 'wss://134-255-228-146.sslip.io/kino';
+  var MAX_BYTES = 12 * 1024 * 1024 * 1024;
+  var P = { room: '', dead: true, ws: null, wsOpen: false, ticket: '', st: null, off: 0, samples: [], video: null, vReady: false, ui: null,
+    movieId: '', retry: 0, rt: 0, pingT: 0, tick: 0, n: 0, up: null, upOther: null, fileIn: null, err: 0, errMsg: '', needTap: false,
+    dragging: false, ctlT: 0, endDismiss: -1, endSent: -1 };
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function srvNow() { return Date.now() + P.off; }
+  function fmt(sec) {
+    sec = Math.max(0, Math.floor(sec || 0)); var hh = Math.floor(sec / 3600), mm = Math.floor(sec % 3600 / 60), ss = sec % 60;
+    return (hh ? hh + ':' + (mm < 10 ? '0' : '') : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+  }
+  function fmtSize(b) { return b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' GB' : Math.max(1, Math.round(b / 1048576)) + ' MB'; }
+  async function idTok() {
+    var u = (typeof fbAuth !== 'undefined' && fbAuth) ? fbAuth.currentUser : null;
+    if (!u) throw Object.assign(new Error('auth'), { code: 'auth', status: 401 });
+    return u.getIdToken();
+  }
+  async function api(path, o) {
+    o = o || {};
+    var headers = { 'Authorization': 'Bearer ' + (await idTok()) };
+    var body = o.body;
+    if (o.json) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(o.json); }
+    var res = await fetch(BASE + path, { method: o.method || 'GET', headers: headers, body: body });
+    var j = null; try { j = await res.json(); } catch (_) {}
+    if (!res.ok) { var e = new Error((j && j.error) || ('http' + res.status)); e.code = (j && j.error) || ('http' + res.status); e.status = res.status; e.info = j || {}; throw e; }
+    return j || {};
+  }
+  function errMsg(e) {
+    var c = e && e.code, i = (e && e.info) || {};
+    if (c === 'busy') return T((i.by || 'Boshqa qatnashchi') + ' hozir kino yuklayapti. Tugagach urinib ko\'ring.', (i.by || 'Другой участник') + ' сейчас загружает кино. Попробуйте позже.');
+    if (c === 'disk-full') return T('Serverda joy yetarli emas. Kichikroq fayl tanlang.', 'На сервере недостаточно места. Выберите файл поменьше.');
+    if (c === 'too-big') return T('Fayl juda katta (12 GB gacha).', 'Файл слишком большой (до 12 ГБ).');
+    if (c === 'bad-type') return T('Bu video emas yoki format qo\'llab-quvvatlanmaydi (MP4, MOV, WebM).', 'Это не видео или формат не поддерживается (MP4, MOV, WebM).');
+    if (c === 'bad-size') return T('Fayl hajmi noto\'g\'ri.', 'Неверный размер файла.');
+    if (c === 'auth') return T('Avval hisobga kiring.', 'Сначала войдите в аккаунт.');
+    if (c === 'no-member' || c === 'no-room') return T('Siz bu xonada emassiz.', 'Вы не в этой комнате.');
+    if (c === 'replaced' || c === 'no-upload') return T('Yuklash to\'xtatildi. Qaytadan urinib ko\'ring.', 'Загрузка прервана. Попробуйте снова.');
+    if (e && e.status >= 500) return T('Server vaqtincha javob bermayapti.', 'Сервер временно не отвечает.');
+    return T('Internet aloqasi yo\'q yoki server javob bermayapti.', 'Нет интернета или сервер не отвечает.');
+  }
+
+  // ---- ulanish ----
+  function enterPlayer(r) { if (P.room === r.id && !P.dead) return; leavePlayer(); P.room = r.id; P.dead = false; buildPlayerUI(); connect(); }
+  function leavePlayer() {
+    if (P.dead && !P.room) return;
+    P.dead = true; clearTimeout(P.rt); clearInterval(P.pingT); clearInterval(P.tick); clearTimeout(P.ctlT);
+    var ws = P.ws; P.ws = null; P.wsOpen = false; if (ws) { try { ws.close(); } catch (_) {} }
+    if (P.video) { try { P.video.pause(); P.video.removeAttribute('src'); P.video.load(); } catch (_) {} }
+    var pl = $('kzPlayer'); if (pl) pl.textContent = '';
+    P.video = null; P.ui = null; P.st = null; P.movieId = ''; P.room = ''; P.vReady = false; P.upOther = null; P.errMsg = ''; P.needTap = false; S.online = [];
+  }
+  async function connect() {
+    if (P.dead) return;
+    var room = P.room;
+    try {
+      var j = await api('/ticket', { method: 'POST', json: { room: room } });
+      if (P.dead || P.room !== room) return;
+      P.ticket = j.ticket; P.st = j.state || P.st;
+      if (j.now) P.off = j.now - Date.now();
+      applyMovie(); openWS(room);
+    } catch (e) {
+      if (P.dead || P.room !== room) return;
+      if (e.status === 403 || e.status === 404) { setErr(errMsg(e)); return; }
+      P.rt = setTimeout(connect, Math.min(8000, 1000 * (++P.retry)));
+      updateTop();
+    }
+  }
+  function openWS(room) {
+    var ws;
+    try { ws = new WebSocket(WS_BASE + '/ws?room=' + encodeURIComponent(room) + '&t=' + encodeURIComponent(P.ticket)); }
+    catch (_) { P.rt = setTimeout(connect, 3000); return; }
+    P.ws = ws;
+    ws.onopen = function () {
+      if (P.ws !== ws) return;
+      P.wsOpen = true; P.retry = 0; P.samples = []; ping(); clearInterval(P.pingT); P.pingT = setInterval(ping, 10000); updateTop();
+    };
+    ws.onmessage = function (ev) { if (P.ws === ws) onMsg(ev.data); };
+    ws.onclose = function () {
+      if (P.ws !== ws) return;
+      P.wsOpen = false; clearInterval(P.pingT); updateTop();
+      if (!P.dead && P.room === room) P.rt = setTimeout(connect, Math.min(8000, 1000 * (++P.retry)));
+    };
+    ws.onerror = function () {};
+  }
+  function ping() { if (P.ws && P.wsOpen) { try { P.ws.send(JSON.stringify({ type: 'ping', t: Date.now() })); } catch (_) {} } }
+  function onMsg(raw) {
+    var m; try { m = JSON.parse(raw); } catch (_) { return; }
+    if (m.type === 'pong') {
+      var rtt = Date.now() - m.t; if (rtt < 0 || rtt > 5000) return;
+      P.samples.push({ rtt: rtt, off: m.s + rtt / 2 - Date.now() }); if (P.samples.length > 6) P.samples.shift();
+      var best = P.samples[0]; P.samples.forEach(function (x) { if (x.rtt < best.rtt) best = x; });
+      P.off = best.off; return;
+    }
+    if (m.type === 'state') {
+      if (m.now && !P.samples.length) P.off = m.now - Date.now();
+      P.st = m.state; applyMovie(); sync(true); updateOverlay(); tickUI(); showCtl(); return;
+    }
+    if (m.type === 'presence') { S.online = m.online || []; var r = curRoom(); if (r) renderMembers(r); return; }
+    if (m.type === 'upload') {
+      var mine = m.by === myUid();
+      if (m.state === 'start' || m.state === 'progress') { if (!mine) P.upOther = { by: m.by, name: m.byName, pct: m.pct }; }
+      else {
+        if (!mine) {
+          P.upOther = null;
+          if (m.state === 'done') toast('🎬 ' + T((m.byName || '') + ' yangi kino yukladi', (m.byName || '') + ' загрузил(а) новое кино'));
+          else if (m.state === 'failed') toast(T('Kino yuklash muvaffaqiyatsiz tugadi', 'Загрузка кино не удалась'));
+        }
+      }
+      updateTop(); updateOverlay();
+    }
+  }
+  function ctl(op, pos) {
+    if (!P.ws || !P.wsOpen) { toast(T('Server bilan aloqa yo\'q', 'Нет связи с сервером')); return; }
+    var m = { type: 'ctl', op: op }; if (typeof pos === 'number') m.pos = pos;
+    try { P.ws.send(JSON.stringify(m)); } catch (_) {}
+  }
+
+  // ---- pleyer interfeysi ----
+  function buildPlayerUI() {
+    var pl = $('kzPlayer'); pl.textContent = '';
+    var v = document.createElement('video');
+    v.className = 'kz-video'; v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.preload = 'auto'; v.controls = false;
+    try { var sv = parseFloat(localStorage.getItem('kz_vol')); v.volume = (sv >= 0 && sv <= 1) ? sv : 1; } catch (_) {}
+    var ov = h('div', 'kz-ov-c'), top = h('div', 'kz-top'), tap = h('div', 'kz-tap');
+    var bar = h('div', 'kz-ctl hide');
+    var seek = h('input', 'kz-seek'); seek.type = 'range'; seek.min = 0; seek.max = 1000; seek.value = 0;
+    var play = h('button', 'kz-cb', '▶'), back = h('button', 'kz-cb', '⏪'), fwd = h('button', 'kz-cb', '⏩'), pick = h('button', 'kz-cb', '🎞');
+    var time = h('span', 'kz-time', '0:00 / 0:00');
+    var vol = h('input', 'kz-vol'); vol.type = 'range'; vol.min = 0; vol.max = 100; vol.value = Math.round(v.volume * 100);
+    var r1 = h('div', 'kz-row'), r2 = h('div', 'kz-row');
+    r1.append(seek); r2.append(back, play, fwd, time, h('span', 'kz-sp'), h('span', '', '🔊'), vol, pick);
+    bar.append(r1, r2);
+    pl.append(v, tap, top, ov, bar);
+    P.video = v; P.ui = { ov: ov, top: top, bar: bar, seek: seek, play: play, time: time };
+    tap.addEventListener('click', function () { if (P.ui.bar.classList.contains('hide')) showCtl(); else P.ui.bar.classList.add('hide'); });
+    bar.addEventListener('click', function () { showCtl(); });
+    play.addEventListener('click', function () { if (!P.st || !P.st.movieId) return; ctl(P.st.playing ? 'pause' : 'play'); });
+    back.addEventListener('click', function () { seekRel(-10); });
+    fwd.addEventListener('click', function () { seekRel(10); });
+    pick.addEventListener('click', pickMovie);
+    seek.addEventListener('input', function () { P.dragging = true; var d = v.duration || 0; time.textContent = fmt(seek.value / 1000 * d) + ' / ' + fmt(d); });
+    seek.addEventListener('change', function () { P.dragging = false; var d = v.duration || 0; if (d) ctl('seek', seek.value / 1000 * d); });
+    vol.addEventListener('input', function () { v.volume = vol.value / 100; try { localStorage.setItem('kz_vol', String(v.volume)); } catch (_) {} });
+    v.addEventListener('loadedmetadata', function () { P.vReady = true; P.err = 0; P.errMsg = ''; sync(true); updateOverlay(); tickUI(); });
+    v.addEventListener('ended', function () {
+      if (P.st && P.st.playing && P.endSent !== P.st.ver) { P.endSent = P.st.ver; ctl('pause', v.duration || 0); }
+    });
+    v.addEventListener('error', function () {
+      if (!P.movieId) return;
+      var code = v.error ? v.error.code : 0;
+      if (code === 4 && P.err >= 1) { P.errMsg = T('Telefoningiz bu video formatini ijro eta olmaydi (kodek). MP4 (H.264/AAC) formatidagi kino yuklang.', 'Телефон не воспроизводит этот формат (кодек). Загрузите MP4 (H.264/AAC).'); updateOverlay(); return; }
+      if (++P.err <= 3) setTimeout(function () { if (P.video === v && P.movieId) { reloadSrc(); } }, 1500 * P.err);
+      else { P.errMsg = T('Kinoni yuklab bo\'lmadi. Internetni tekshiring.', 'Не удалось загрузить кино. Проверьте интернет.'); updateOverlay(); }
+    });
+    clearInterval(P.tick); P.n = 0;
+    P.tick = setInterval(function () { tickUI(); if (++P.n % 2 === 0) sync(false); }, 500);
+    updateTop(); updateOverlay();
+  }
+  function showCtl() {
+    if (!P.ui) return; P.ui.bar.classList.remove('hide'); clearTimeout(P.ctlT);
+    P.ctlT = setTimeout(function () { if (P.ui && P.st && P.st.playing) P.ui.bar.classList.add('hide'); }, 3500);
+  }
+  function setErr(msg) { P.errMsg = msg; updateOverlay(); }
+  function movieUrl() { return BASE + '/stream/' + encodeURIComponent(P.room) + '?t=' + encodeURIComponent(P.ticket) + '&v=' + P.movieId; }
+  function reloadSrc() { var v = P.video; if (!v || !P.movieId) return; P.vReady = false; v.src = movieUrl(); v.load(); }
+  function applyMovie() {
+    var s = P.st, v = P.video; if (!v) return;
+    var mid = (s && s.movieId) || '';
+    if (mid !== P.movieId) {
+      P.movieId = mid; P.vReady = false; P.err = 0; P.errMsg = ''; P.needTap = false; P.endDismiss = -1; P.endSent = -1;
+      if (mid) { v.src = movieUrl(); v.load(); } else { v.removeAttribute('src'); v.load(); }
+    }
+    updateOverlay();
+  }
+  function target() {
+    var s = P.st; if (!s || !s.movieId) return 0;
+    return s.playing ? s.pos + (srvNow() - s.at) / 1000 : s.pos;
+  }
+  function seekRel(d) {
+    var v = P.video; if (!v || !P.st || !P.st.movieId) return;
+    var t = Math.max(0, target() + d); if (v.duration) t = Math.min(t, v.duration);
+    ctl('seek', t);
+  }
+  function sync(force) {
+    var v = P.video, s = P.st; if (!v || !s || !s.movieId || !P.vReady) return;
+    var t = target(); if (v.duration && t > v.duration) t = v.duration;
+    var d = v.currentTime - t;
+    if (s.playing) {
+      if (v.readyState < 3 && !force) return;                      // yuklanayotgan paytda ortiqcha surmaymiz
+      if (Math.abs(d) > 1.5 || (force && Math.abs(d) > 0.4)) { try { v.currentTime = t; } catch (_) {} v.playbackRate = 1; }
+      else if (Math.abs(d) > 0.25) v.playbackRate = d > 0 ? 0.95 : 1.05;
+      else if (v.playbackRate !== 1) v.playbackRate = 1;
+      if (v.paused && !P.needTap) {
+        var pr = v.play();
+        if (pr && pr.catch) pr.catch(function () { P.needTap = true; updateOverlay(); });
+      }
+    } else {
+      if (!v.paused) v.pause();
+      if (v.playbackRate !== 1) v.playbackRate = 1;
+      if (Math.abs(d) > 0.3) { try { v.currentTime = t; } catch (_) {} }
+    }
+  }
+  function tickUI() {
+    var v = P.video, s = P.st, u = P.ui; if (!v || !u) return;
+    var has = !!(s && s.movieId);
+    u.bar.style.display = has ? 'flex' : 'none';
+    if (!has) return;
+    var d = v.duration || 0;
+    if (!P.dragging) { u.seek.value = d ? Math.round(v.currentTime / d * 1000) : 0; u.time.textContent = fmt(v.currentTime) + ' / ' + fmt(d); }
+    u.play.textContent = s.playing ? '⏸' : '▶';
+  }
+  function badge(txt, fn) { var b = h('div', 'kz-badge', txt); if (fn) b.addEventListener('click', fn); return b; }
+  function updateTop() {
+    var u = P.ui; if (!u) return; var t = u.top; t.textContent = '';
+    if (!P.wsOpen) t.appendChild(badge('⏳ ' + T('Ulanmoqda…', 'Подключение…')));
+    var up = P.up;
+    if (up && up.room === P.room) {
+      var label = up.state === 'retry' ? '⚠ ' + T('Internet yo\'q, qayta uriniladi…', 'Нет интернета, повтор…')
+        : '⬆ ' + up.pct + '% · ' + fmtSize(up.off) + ' / ' + fmtSize(up.file.size);
+      t.appendChild(badge(label));
+      t.appendChild(badge('✕ ' + T('Bekor qilish', 'Отмена'), function () { up.cancel = true; }));
+    } else if (P.upOther) {
+      t.appendChild(badge('👤 ' + (P.upOther.name || '') + ': ⬆ ' + P.upOther.pct + '%'));
+    }
+  }
+  function updateOverlay() {
+    var u = P.ui; if (!u) return; var o = u.ov; o.textContent = ''; o.style.display = 'none'; o.style.background = '';
+    var s = P.st, has = !!(s && s.movieId), v = P.video;
+    function pickBtn() { var b = h('button', 'kz-pick', '🎞 ' + T('Kino tanlash', 'Выбрать кино')); b.addEventListener('click', pickMovie); return b; }
+    if (P.errMsg) { o.style.display = 'flex'; o.appendChild(h('div', '', P.errMsg)); if (P.room) o.appendChild(pickBtn()); return; }
+    if (!has) {
+      if (P.up || P.upOther) return;
+      o.style.display = 'flex'; o.appendChild(h('div', '', T('Kino hali yo\'q', 'Кино ещё нет'))); o.appendChild(pickBtn()); return;
+    }
+    if (P.needTap && s.playing) {
+      o.style.display = 'flex';
+      var b = h('button', 'kz-pick', '▶ ' + T('Bosing', 'Нажмите'));
+      b.addEventListener('click', function () { P.needTap = false; updateOverlay(); sync(true); });
+      o.appendChild(b); return;
+    }
+    var ended = v && v.duration && !s.playing && s.pos >= v.duration - 1.5 && P.endDismiss !== s.ver;
+    if (ended) {
+      o.style.display = 'flex'; o.style.background = 'rgba(0,0,0,.6)';
+      o.appendChild(h('div', 'kz-h', '🎬 ' + T('Kino tugadi', 'Кино закончилось')));
+      var a = h('button', 'kz-pick', '↺ ' + T('Qayta ko\'rish', 'Смотреть снова')); a.addEventListener('click', function () { ctl('restart'); });
+      var c = h('button', 'kz-pick', '🎞 ' + T('Yangi kino', 'Новое кино')); c.addEventListener('click', pickMovie);
+      var d = h('button', 'kz-pick sec', T('Xonada qolish', 'Остаться в комнате')); d.addEventListener('click', function () { P.endDismiss = s.ver; updateOverlay(); });
+      o.append(a, c, d); return;
+    }
+    o.style.background = '';
+  }
+
+  // ---- kino tanlash va yuklash ----
+  function pickMovie() {
+    if (!P.room) return;
+    if (P.up) { toast(T('Yuklash davom etmoqda', 'Загрузка уже идёт')); return; }
+    if (P.upOther) { toast(T((P.upOther.name || 'Boshqa qatnashchi') + ' hozir kino yuklayapti', (P.upOther.name || 'Другой участник') + ' сейчас загружает кино')); return; }
+    if (!P.fileIn) {
+      var fi = document.createElement('input'); fi.type = 'file'; fi.accept = 'video/*'; fi.style.display = 'none';
+      fi.addEventListener('change', function () { var f = fi.files && fi.files[0]; if (f) startUpload(f); });
+      document.body.appendChild(fi); P.fileIn = fi;
+    }
+    P.fileIn.value = ''; P.fileIn.click();
+  }
+  function probe(file) {
+    return new Promise(function (resolve) {
+      var v = document.createElement('video'), url = '', done = false;
+      function fin(r) { if (done) return; done = true; try { v.removeAttribute('src'); v.load(); URL.revokeObjectURL(url); } catch (_) {} resolve(r); }
+      try { url = URL.createObjectURL(file); } catch (_) { return resolve(null); }
+      v.preload = 'metadata'; v.muted = true;
+      v.onloadedmetadata = function () { fin(v.videoWidth > 0); };
+      v.onerror = function () { fin(false); };
+      setTimeout(function () { fin(null); }, 10000);
+      v.src = url;
+    });
+  }
+  function waitOnline(ms) {
+    if (navigator.onLine === false) {
+      return new Promise(function (res) { var f = function () { window.removeEventListener('online', f); res(); }; window.addEventListener('online', f); setTimeout(f, 15000); });
+    }
+    return sleep(ms);
+  }
+  var FATAL = ['disk-full', 'bad-type', 'replaced', 'not-yours', 'no-upload', 'too-big', 'bad-size', 'no-member', 'no-room', 'auth', 'bad-chunk'];
+  async function startUpload(file) {
+    if (P.up || !P.room) return;
+    var room = P.room, nm = file.name || 'kino', ext = (nm.split('.').pop() || '').toLowerCase();
+    if ((file.type || '').indexOf('video/') !== 0 && ['mp4', 'm4v', 'mov', 'webm', 'mkv', '3gp'].indexOf(ext) < 0) { toast(T('Bu video fayl emas', 'Это не видеофайл')); return; }
+    if (file.size < 1024) { toast(T('Fayl bo\'sh yoki juda kichik', 'Файл пустой или слишком маленький')); return; }
+    if (file.size > MAX_BYTES) { toast(T('Fayl juda katta (12 GB gacha)', 'Файл слишком большой (до 12 ГБ)')); return; }
+    P.up = { room: room, file: file, off: 0, pct: 0, id: '', cancel: false, state: 'init' }; updateTop(); updateOverlay();
+    var ok = await probe(file);
+    if (ok === false && !(await askYes(T('Telefoningiz bu faylni ijro eta olmasligi mumkin (format yoki kodek). Baribir yuklaysizmi? (' + fmtSize(file.size) + ')', 'Телефон может не воспроизвести этот файл (формат или кодек). Всё равно загрузить? (' + fmtSize(file.size) + ')')))) { P.up = null; updateTop(); updateOverlay(); return; }
+    var up = P.up;
+    try {
+      var init = await api('/upload/init', { method: 'POST', json: { room: room, name: nm, size: file.size, mime: file.type || '' } });
+      up.id = init.id; up.off = init.offset || 0; up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size);
+      var CH = init.chunk || 4194304, fails = 0; updateTop();
+      while (up.off < file.size) {
+        if (up.cancel) {
+          try { await api('/upload/' + up.id + '/cancel', { method: 'POST' }); } catch (_) {}
+          toast(T('Yuklash bekor qilindi. Avvalgi kino saqlanib qoldi.', 'Загрузка отменена. Предыдущее кино сохранено.')); P.up = null; updateTop(); updateOverlay(); return;
+        }
+        var blob = file.slice(up.off, Math.min(up.off + CH, file.size));
+        try {
+          var r = await fetch(BASE + '/upload/' + up.id + '?offset=' + up.off, { method: 'PUT', headers: { 'Authorization': 'Bearer ' + (await idTok()), 'Content-Type': 'application/octet-stream' }, body: blob });
+          var j = null; try { j = await r.json(); } catch (_) {}
+          if (r.status === 409 && j && j.error === 'offset') { up.off = j.offset; continue; }
+          if (!r.ok) { var e = new Error((j && j.error) || 'http'); e.code = (j && j.error) || ('http' + r.status); e.status = r.status; e.info = j || {}; throw e; }
+          up.off = j.offset; fails = 0; up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size); updateTop();
+        } catch (e2) {
+          if (FATAL.indexOf(e2.code) >= 0 || (e2.status && e2.status < 500 && e2.status !== 408 && e2.status !== 429)) throw e2;
+          if (++fails > 40) throw e2;
+          up.state = 'retry'; updateTop();
+          await waitOnline(Math.min(10000, 1000 * fails));
+          if (up.cancel) continue;
+          try { var g = await api('/upload/' + up.id); up.off = g.offset; } catch (e3) { if (e3.status && e3.status < 500) throw e3; }
+        }
+      }
+      await api('/upload/' + up.id + '/finish', { method: 'POST' });
+      toast('✅ ' + T('Kino yuklandi', 'Кино загружено'));
+    } catch (e) {
+      toast(errMsg(e));
+    }
+    P.up = null; updateTop(); updateOverlay();
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && !P.dead && P.room && !P.wsOpen) { clearTimeout(P.rt); connect(); }
+    else if (!document.hidden) sync(true);
+  });
 
   // ---------- ochish / orqaga ----------
   rowEl.addEventListener('click', function () { S.roomId = ''; goToScreen('kinoScreen'); startList(); render(); });
@@ -19820,7 +20172,7 @@ var PLDNBattModel = (function () {
     return prevBack ? prevBack.apply(this, arguments) : false;
   };
   render();
-  window.PLDNKino = { version: 'kino-1.0', maxMembers: MAX, currentRoom: curRoom };
+  window.PLDNKino = { version: 'kino-2.0', maxMembers: MAX, currentRoom: curRoom };
 })();
 </script>
 </body>
