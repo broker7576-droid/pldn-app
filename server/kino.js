@@ -1,4 +1,4 @@
-// PLDN-FAYL: kino.js | versiya: kino-srv-1.1 | satr: 412 | 25-okt-2026
+// PLDN-FAYL: kino.js | versiya: kino-srv-1.2 | satr: 489 | 25-okt-2026
 // Kinozona serveri (pm2: kino, 3002-port, Caddy: /kino*). Faqat saqlaydi va uzatadi — videoni qayta kodlamaydi.
 'use strict';
 const http = require('http');
@@ -23,6 +23,8 @@ const MAX_BODY = 8 * 1024 * 1024;
 const LOCK_STALE_MS = 90 * 1000;             // yuklovchi shuncha vaqt jim bo'lsa, boshqasi yuklay oladi
 const PART_TTL_MS = 10 * 60 * 1000;          // tugallanmagan fayl shuncha turadi
 const TICKET_MS = 12 * 3600 * 1000;
+const MEDIA_MAX = 25 * 1024 * 1024;          // ovozli/video xabar uchun bitta fayl
+const MEDIA_ROOM_MAX = 300 * 1024 * 1024;    // bitta xonadagi xabar fayllari jami
 const ROOM_RE = /^[A-Za-z0-9]{10,40}$/;
 
 fs.mkdirSync(DIR, { recursive: true });
@@ -153,6 +155,25 @@ function sniff(buf) {
   }
   return null;
 }
+const EXT = { 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'video/x-matroska': 'mkv', 'audio/mp4': 'm4a', 'audio/aac': 'aac', 'audio/ogg': 'ogg', 'audio/wav': 'wav', 'audio/mpeg': 'mp3', 'audio/webm': 'weba', 'audio/amr': 'amr' };
+const MIME_BY_EXT = {}; Object.keys(EXT).forEach((m) => { MIME_BY_EXT[EXT[m]] = m; });
+function sniffMedia(buf, kind) {
+  if (kind === 'video') return sniff(buf);
+  const s4 = buf.toString('latin1', 0, 4);
+  if (buf.length >= 12 && buf.toString('latin1', 4, 8) === 'ftyp') return 'audio/mp4';
+  if (buf.length >= 2 && buf[0] === 0xff && (buf[1] & 0xf6) === 0xf0) return 'audio/aac';
+  if (s4 === 'OggS') return 'audio/ogg';
+  if (s4 === 'RIFF' && buf.toString('latin1', 8, 12) === 'WAVE') return 'audio/wav';
+  if (s4.slice(0, 3) === 'ID3' || (buf.length >= 2 && buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0)) return 'audio/mpeg';
+  if (buf.length >= 4 && buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return 'audio/webm';
+  if (buf.toString('latin1', 0, 5) === '#!AMR') return 'audio/amr';
+  return null;
+}
+async function dirSize(dir) {
+  let t = 0, names = []; try { names = await fsp.readdir(dir); } catch (_) { return 0; }
+  for (const n of names) { try { t += (await fsp.stat(path.join(dir, n))).size; } catch (_) {} }
+  return t;
+}
 async function freeBytes() { const s = await fsp.statfs(DIR); return Number(s.bavail) * Number(s.bsize); }
 
 // ---------- yuklash ----------
@@ -267,8 +288,10 @@ async function stream(req, res, room, q) {
   const R = getRoom(room);
   if (!R.st || !R.st.movieId) throw httpErr(404, 'no-movie');
   const v = q.get('v'); if (v && v !== R.st.movieId) throw httpErr(410, 'moved');
-  const file = moviePath(room, R.st.movieId);
-  let stt; try { stt = await fsp.stat(file); } catch (_) { throw httpErr(404, 'no-movie'); }
+  return serveRanged(req, res, moviePath(room, R.st.movieId), R.st.mime || 'video/mp4');
+}
+async function serveRanged(req, res, file, mime) {
+  let stt; try { stt = await fsp.stat(file); } catch (_) { throw httpErr(404, 'no-file'); }
   const size = stt.size; let start = 0, end = size - 1, code = 200;
   const rg = req.headers.range;
   if (rg) {
@@ -280,7 +303,7 @@ async function stream(req, res, room, q) {
     code = 206;
   }
   cors(res);
-  const h = { 'Content-Type': R.st.mime || 'video/mp4', 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1, 'Cache-Control': 'private, no-transform' };
+  const h = { 'Content-Type': mime, 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1, 'Cache-Control': 'private, no-transform' };
   if (code === 206) h['Content-Range'] = 'bytes ' + start + '-' + end + '/' + size;
   res.writeHead(code, h);
   if (req.method === 'HEAD') return res.end();
@@ -288,6 +311,52 @@ async function stream(req, res, room, q) {
   rs.on('error', () => { try { res.destroy(); } catch (_) {} });
   res.on('close', () => rs.destroy());
   rs.pipe(res);
+}
+
+// ---------- ovozli / video xabar fayllari ----------
+async function mediaUpload(req, res, q) {
+  const uid = await authBearer(req);
+  const room = q.get('room') || '', kind = q.get('kind');
+  if (kind !== 'voice' && kind !== 'video') throw httpErr(400, 'bad-kind');
+  await requireMember(room, uid);
+  const len = parseInt(req.headers['content-length'], 10);
+  if (!(len > 0)) throw httpErr(411, 'no-length');
+  if (len > MEDIA_MAX) throw httpErr(413, 'too-big', { max: MEDIA_MAX });
+  const dir = path.join(roomDir(room), 'media');
+  await fsp.mkdir(dir, { recursive: true });
+  if ((await dirSize(dir)) + len > MEDIA_ROOM_MAX) throw httpErr(507, 'room-full');
+  if (len + MIN_FREE > (await freeBytes())) throw httpErr(507, 'disk-full');
+  const id = hexId(8), tmp = path.join(dir, id + '.tmp');
+  try {
+    const n = await new Promise((resolve, reject) => {
+      const ws = fs.createWriteStream(tmp); let got = 0, bad = false;
+      req.on('data', (c) => { got += c.length; if (got > len && !bad) { bad = true; ws.destroy(); req.destroy(); reject(httpErr(400, 'bad-length')); } });
+      req.on('aborted', () => { if (!bad) { bad = true; ws.destroy(); reject(httpErr(400, 'aborted')); } });
+      ws.on('error', (e) => { if (!bad) { bad = true; reject(e); } });
+      ws.on('finish', () => { if (!bad) resolve(got); });
+      req.pipe(ws);
+    });
+    if (n !== len) throw httpErr(400, 'bad-length');
+    const fh = await fsp.open(tmp, 'r'); const head = Buffer.alloc(64);
+    try { await fh.read(head, 0, 64, 0); } finally { await fh.close(); }
+    const mime = sniffMedia(head, kind);
+    if (!mime) throw httpErr(415, 'bad-type');
+    await fsp.rename(tmp, path.join(dir, id + '.' + EXT[mime]));
+    sendJson(res, 200, { mid: id, mime, size: len });
+  } catch (e) {
+    try { await fsp.unlink(tmp); } catch (_) {}
+    if (e && e.code === 'ENOSPC') e = httpErr(507, 'disk-full');
+    throw e;
+  }
+}
+async function mediaGet(req, res, room, mid, q) {
+  const uid = checkTicket(q.get('t'), room);
+  await requireMember(room, uid);
+  const dir = path.join(roomDir(room), 'media');
+  let names = []; try { names = await fsp.readdir(dir); } catch (_) {}
+  const f = names.find((n) => n.indexOf(mid + '.') === 0 && n.slice(-4) !== '.tmp');
+  if (!f) throw httpErr(404, 'no-file');
+  return serveRanged(req, res, path.join(dir, f), MIME_BY_EXT[f.split('.').pop()] || 'application/octet-stream');
 }
 
 // ---------- HTTP ----------
@@ -318,6 +387,8 @@ const server = http.createServer(async (req, res) => {
       const { R } = await getUp(req, m[1]); await abortUpload(R, 'cancelled'); return sendJson(res, 200, { ok: true });
     }
     if ((m = /^\/kino\/stream\/([A-Za-z0-9]+)$/.exec(p)) && (req.method === 'GET' || req.method === 'HEAD')) return await stream(req, res, m[1], u.searchParams);
+    if (p === '/kino/media' && req.method === 'POST') return await mediaUpload(req, res, u.searchParams);
+    if ((m = /^\/kino\/media\/([A-Za-z0-9]+)\/([0-9a-f]{16})$/.exec(p)) && (req.method === 'GET' || req.method === 'HEAD')) return await mediaGet(req, res, m[1], m[2], u.searchParams);
     sendJson(res, 404, { error: 'not-found' });
   } catch (e) { replyErr(res, e); }
 });
@@ -401,6 +472,12 @@ async function sweep() {
         if (!keep) { try { await fsp.unlink(full); } catch (_) {} }
       }
     }
+    try {                                                // xabar fayllaridan qolgan vaqtinchalik nusxalar
+      const md = path.join(dir, 'media');
+      for (const f of await fsp.readdir(md)) {
+        if (f.slice(-4) === '.tmp') { try { const s = await fsp.stat(path.join(md, f)); if (now - s.mtimeMs > PART_TTL_MS) await fsp.unlink(path.join(md, f)); } catch (_) {} }
+      }
+    } catch (_) {}
     try { await roomInfo(id); } catch (_) {}              // xona Firestore'da yo'q bo'lsa, o'zi tozalanadi
   }
 }
