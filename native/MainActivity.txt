@@ -1,4 +1,4 @@
-// PLDN-FAYL: MainActivity.txt | versiya: pocket-5.1 | satr: 1121 | 23-okt-2026
+// PLDN-FAYL: MainActivity.txt | versiya: fullscreen-6.0 | satr: 1203 | 25-okt-2026
 package __PKG__;
 
 import android.Manifest;
@@ -1038,6 +1038,86 @@ public class MainActivity extends BridgeActivity {
             });
         } catch (Throwable e) { }
     }
+    /** To'liq ekran (Kinozona): tizim panellarini yashiradi, burilishni qulflaydi, ekranni yoniq tutadi. Faqat shu qurilmaga ta'sir qiladi. */
+    public class PldnFullBridge {
+        boolean fsOn = false;
+        boolean playKeep = false;
+        void applyKeep() {
+            try {
+                if (fsOn || playKeep) {
+                    getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                } else {
+                    getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                }
+            } catch (Throwable e) { }
+        }
+        @android.webkit.JavascriptInterface
+        public void enter(final boolean landscape) {
+            fsOn = true;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        androidx.core.view.WindowInsetsControllerCompat c = androidx.core.view.WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+                        c.setSystemBarsBehavior(androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                        c.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars());
+                        if (android.os.Build.VERSION.SDK_INT >= 28) {
+                            android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+                            lp.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                            getWindow().setAttributes(lp);
+                        }
+                        applyKeep();
+                        setRequestedOrientation(landscape
+                            ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
+                    } catch (Throwable e) { }
+                }
+            });
+        }
+        @android.webkit.JavascriptInterface
+        public void setLandscape(final boolean landscape) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        setRequestedOrientation(landscape
+                            ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
+                    } catch (Throwable e) { }
+                }
+            });
+        }
+        @android.webkit.JavascriptInterface
+        public void exit() {
+            fsOn = false;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        androidx.core.view.WindowInsetsControllerCompat c = androidx.core.view.WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+                        c.show(androidx.core.view.WindowInsetsCompat.Type.systemBars());
+                        if (android.os.Build.VERSION.SDK_INT >= 28) {
+                            android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+                            lp.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
+                            getWindow().setAttributes(lp);
+                        }
+                        applyKeep();
+                        setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+                    } catch (Throwable e) { }
+                }
+            });
+        }
+        /** Kino ijro etilayotganda ekran o'chib qolmasin. */
+        @android.webkit.JavascriptInterface
+        public void keepOn(final boolean on) {
+            playKeep = on;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() { applyKeep(); }
+            });
+        }
+    }
+    PldnFullBridge pldnFull;
     PldnVoice pldnVoice;
     PldnPhone pldnPhone;
     @Override
@@ -1108,6 +1188,8 @@ public class MainActivity extends BridgeActivity {
         getBridge().getWebView().addJavascriptInterface(pldnAudio, "PldnAudio");
         if (pldnPocket == null) { pldnPocket = new PldnPocketBridge(); }
         getBridge().getWebView().addJavascriptInterface(pldnPocket, "PldnPocket");
+        if (pldnFull == null) { pldnFull = new PldnFullBridge(); }
+        getBridge().getWebView().addJavascriptInterface(pldnFull, "PldnFull");
         PldnPocket.listener = pocketListener;
         PldnWakeService.sink = wakeSink;
         checkWakeIntent(getIntent());
