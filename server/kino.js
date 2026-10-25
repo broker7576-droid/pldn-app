@@ -1,4 +1,4 @@
-// PLDN-FAYL: kino.js | versiya: kino-srv-1.0 | satr: 410 | 25-okt-2026
+// PLDN-FAYL: kino.js | versiya: kino-srv-1.1 | satr: 412 | 25-okt-2026
 // Kinozona serveri (pm2: kino, 3002-port, Caddy: /kino*). Faqat saqlaydi va uzatadi — videoni qayta kodlamaydi.
 'use strict';
 const http = require('http');
@@ -7,10 +7,12 @@ const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
-const admin = require('firebase-admin');
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getAuth } = require('firebase-admin/auth');
+const { getFirestore } = require('firebase-admin/firestore');
 
-admin.initializeApp({ credential: admin.credential.cert(require('./serviceAccount.json')) });
-const adb = admin.firestore();
+initializeApp({ credential: cert(require('./serviceAccount.json')) });
+const adb = getFirestore();
 
 const PORT = 3002;
 const DIR = path.join(__dirname, 'data', 'kino');
@@ -61,7 +63,7 @@ function readJson(req, limit) {
 async function authBearer(req) {
   const h = req.headers.authorization || '';
   if (h.indexOf('Bearer ') !== 0) throw httpErr(401, 'auth');
-  try { return (await admin.auth().verifyIdToken(h.slice(7))).uid; } catch (_) { throw httpErr(401, 'auth'); }
+  try { return (await getAuth().verifyIdToken(h.slice(7))).uid; } catch (_) { throw httpErr(401, 'auth'); }
 }
 function signTicket(uid, room) {
   const body = Buffer.from(JSON.stringify({ u: uid, r: room, e: Date.now() + TICKET_MS })).toString('base64url');
