@@ -1,5 +1,5 @@
 <!-- VERSION: 225 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-2.0 | satr: 20179 | 25-okt-2026 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-3.0 | satr: 20408 | 25-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -19518,9 +19518,9 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-5-bosqich: xona, kino yuklash, uzatish, sinxron ijro ===== VERSION: kino-2.0
+// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-7-bosqich: xona, kino yuklash, uzatish, sinxron ijro, chat ===== VERSION: kino-3.0
 // Firestore: kinoRooms/{id} { owner, members:[uid], names:{uid:ism}, title, createdAt, updatedAt }
-// Kino fayli VPS'da (kino.js, /kino): yuklash, HTTP Range bilan uzatish, WebSocket orqali sinxron ijro. Chat va jonli ovoz keyingi bosqichlarda.
+// Kino fayli VPS'da (kino.js, /kino): yuklash, HTTP Range bilan uzatish, WebSocket orqali sinxron ijro. Chat: Firestore (kinoRooms/{id}/messages), ovozli/video xabar fayllari VPS'da. Jonli ovoz keyingi bosqichda.
 (function () {
   'use strict';
   if (typeof fbT !== 'function' || typeof goToScreen !== 'function') return;
@@ -19571,6 +19571,23 @@ var PLDNBattModel = (function () {
     '.kz-vol{width:64px;accent-color:#2AABEE;height:22px;margin:0}' +
     '.kz-sp{flex:1}.kz-time{white-space:nowrap;margin-left:4px}' +
     '.kz-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:#8e8e93}.kz-dot.on{background:#34c759}' +
+    '.kz-msgs{flex:1 1 0;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:8px 10px;display:flex;flex-direction:column;gap:6px}' +
+    '.kz-m{max-width:82%;align-self:flex-start;background:var(--bg-card);color:var(--text-primary);border-radius:14px;padding:6px 10px;font-size:15px;line-height:1.35;word-break:break-word}' +
+    '.kz-m.me{align-self:flex-end;background:#2AABEE;color:#fff}' +
+    '.kz-mb{white-space:pre-wrap}.kz-mn{font-size:12px;font-weight:700;color:#2AABEE;margin-bottom:2px}' +
+    '.kz-mt{font-size:11px;opacity:.65;text-align:right;margin-top:2px}' +
+    '.kz-vo{display:flex;align-items:center;gap:8px;min-width:150px}' +
+    '.kz-vb{border:0;border-radius:50%;width:36px;height:36px;flex:0 0 auto;background:rgba(255,255,255,.25);color:inherit;font-size:15px;padding:0}' +
+    '.kz-m:not(.me) .kz-vb{background:rgba(42,171,238,.18);color:#2AABEE}' +
+    '.kz-vid{position:relative;width:210px;max-width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#fff}' +
+    '.kz-vid .kz-vp{font-size:30px}.kz-vid .kz-vc{position:absolute;left:8px;bottom:6px;font-size:12px}' +
+    '.kz-vid video{width:100%;height:100%;object-fit:contain}' +
+    '.kz-st{flex:0 0 auto;text-align:center;font-size:13px;color:var(--text-secondary);padding:4px}' +
+    '.kz-bar{align-items:flex-end}' +
+    '.kz-bar textarea{flex:1;min-width:0;border:0;border-radius:18px;padding:9px 14px;font-size:16px;line-height:1.3;font-family:inherit;resize:none;max-height:96px;background:var(--bg-card);color:var(--text-primary);outline:none}' +
+    '.kz-ib{border:0;background:transparent;font-size:22px;width:40px;height:40px;flex:0 0 auto;color:#2AABEE;display:flex;align-items:center;justify-content:center;padding:0}' +
+    '.kz-rec{flex:1;display:flex;align-items:center;gap:10px;color:var(--text-primary);font-size:16px;height:40px}.kz-rd{color:#ff3b30}' +
+    '.kz-typing .kz-player{aspect-ratio:auto;height:96px}.kz-typing .kz-mem{display:none}' +
     '.kz-chip{flex:0 0 auto;border-radius:16px;background:var(--bg-card);color:var(--text-primary);padding:7px 12px;font-size:13px;white-space:nowrap}' +
     '.kz-chip.add{background:#2AABEE;color:#fff;font-weight:700}' +
     '.kz-cnt{flex:0 0 auto;font-size:12px;color:var(--text-secondary);padding-right:2px}' +
@@ -19595,8 +19612,8 @@ var PLDNBattModel = (function () {
     '<div class="kz-body"><div class="kz-lobby" id="kzLobby"></div>' +
     '<div class="kz-room" id="kzRoom" style="display:none">' +
     '<div class="kz-player" id="kzPlayer"></div><div class="kz-mem" id="kzMem"></div>' +
-    '<div class="kz-chat" id="kzChat"></div>' +
-    '<div class="kz-bar"><input id="kzInput" disabled></div></div></div>';
+    '<div class="kz-msgs" id="kzMsgs"></div><div class="kz-st" id="kzSt" style="display:none"></div>' +
+    '<div class="kz-bar" id="kzBar"></div></div></div>';
   var anchor = $('pldnSettingsScreen');
   if (!anchor || !anchor.parentNode) return;
   anchor.parentNode.appendChild(scr);
@@ -19691,7 +19708,14 @@ var PLDNBattModel = (function () {
     try { await fbDb.collection('kinoRooms').doc(r.id).update(up); } catch (e) { toast(errText(e)); }
   }
   async function deleteRoom(r) {
-    try { await fbDb.collection('kinoRooms').doc(r.id).delete(); S.roomId = ''; render(); } catch (e) { toast(errText(e)); }
+    try {
+      for (;;) {
+        var ms = await fbDb.collection('kinoRooms').doc(r.id).collection('messages').limit(400).get();
+        if (ms.empty) break;
+        var bt = fbDb.batch(); ms.docs.forEach(function (d) { bt.delete(d.ref); }); await bt.commit();
+      }
+      await fbDb.collection('kinoRooms').doc(r.id).delete(); S.roomId = ''; render();
+    } catch (e) { toast(errText(e)); }
   }
 
   // ---------- oynalar ----------
@@ -19785,8 +19809,8 @@ var PLDNBattModel = (function () {
     $('kzTitle').textContent = r ? ('🎬 ' + (r.title || 'Kinozona')) : ('🎬 ' + T('Kinozona', 'Кинозона'));
     more.style.display = r ? 'flex' : 'none';
     lobby.style.display = r ? 'none' : 'block'; room.style.display = r ? 'flex' : 'none';
-    if (r) { enterPlayer(r); renderRoom(r); return; }
-    leavePlayer();
+    if (r) { enterPlayer(r); enterChat(r); renderRoom(r); return; }
+    leavePlayer(); leaveChat();
     lobby.textContent = '';
     if (S.err) lobby.appendChild(h('div', 'kz-warn', S.err));
     lobby.appendChild(h('div', 'kz-t', T('Do\'stlaringiz bilan bir xonada bitta kinoni birga ko\'ring (10 kishigacha).', 'Смотрите одно кино вместе с друзьями в одной комнате (до 10 человек).')));
@@ -19816,8 +19840,6 @@ var PLDNBattModel = (function () {
     }
   }
   function renderRoom(r) {
-    $('kzChat').textContent = T('Xona chati keyingi bosqichda ulanadi.', 'Чат комнаты подключится на следующем этапе.');
-    $('kzInput').placeholder = T('Xabar yozish…', 'Написать сообщение…');
     renderMembers(r);
   }
 
@@ -20153,6 +20175,210 @@ var PLDNBattModel = (function () {
     else if (!document.hidden) sync(true);
   });
 
+  // ===== XONA CHATI (7-bosqich): matn, ovozli va video xabar =====
+  var C = { room: '', unsub: null, list: null, map: {}, stick: true, ta: null, bar: null, snd: null, mic: null, att: null, rec: null, recT: 0, recTime: null,
+    audio: null, audioBtn: null, fileIn: null, busy: false };
+  var VIDEO_MAX = 25 * 1024 * 1024;
+  function msgCol(id) { return fbDb.collection('kinoRooms').doc(id).collection('messages'); }
+  function hm(ts) { var d = (ts && ts.toDate) ? ts.toDate() : new Date(); return (d.getHours() < 10 ? '0' : '') + d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes(); }
+  function mediaUrl(d) { return BASE + '/media/' + encodeURIComponent(C.room) + '/' + d.mid + '?t=' + encodeURIComponent(P.ticket || ''); }
+  function scrollBottom(force) { var l = C.list; if (l && (force || C.stick)) l.scrollTop = l.scrollHeight; }
+  function setStatus(txt) { var s = $('kzSt'); if (!s) return; s.style.display = txt ? 'block' : 'none'; s.textContent = txt || ''; }
+
+  function stopVoice() {
+    if (C.audio) { try { C.audio.pause(); } catch (_) {} }
+    if (C.audioBtn) C.audioBtn.textContent = '▶';
+    C.audio = null; C.audioBtn = null;
+  }
+  function playVoice(d, b) {
+    if (C.audio && C.audioBtn === b) {
+      if (!C.audio.paused) { C.audio.pause(); b.textContent = '▶'; } else { C.audio.play(); b.textContent = '⏸'; }
+      return;
+    }
+    if (!P.ticket) { toast(T('Server bilan ulanmoqda…', 'Подключение к серверу…')); return; }
+    stopVoice();
+    var a = new Audio(mediaUrl(d)); C.audio = a; C.audioBtn = b; b.textContent = '⏸';
+    function done() { b.textContent = '▶'; if (C.audio === a) { C.audio = null; C.audioBtn = null; } }
+    a.onended = done;
+    a.onerror = function () { done(); toast(T('Ovozli xabarni ochib bo\'lmadi', 'Не удалось открыть голосовое')); };
+    var pr = a.play(); if (pr && pr.catch) pr.catch(done);
+  }
+  function voiceEl(d) {
+    var w = h('div', 'kz-vo'), b = h('button', 'kz-vb', '▶');
+    b.addEventListener('click', function () { playVoice(d, b); });
+    w.append(b, h('span', '', '🎤 ' + fmt(d.dur || 0)));
+    return w;
+  }
+  function videoEl(d) {
+    var w = h('div', 'kz-vid'), pl = h('span', 'kz-vp', '▶');
+    w.append(pl, h('span', 'kz-vc', '🎞 ' + fmtSize(d.size || 0)));
+    w.addEventListener('click', function open() {
+      if (!P.ticket) { toast(T('Server bilan ulanmoqda…', 'Подключение к серверу…')); return; }
+      w.removeEventListener('click', open); w.textContent = ''; w.classList.add('open');
+      var v = document.createElement('video'); v.controls = true; v.setAttribute('playsinline', ''); v.preload = 'metadata'; v.src = mediaUrl(d);
+      v.addEventListener('error', function () { toast(T('Videoni ochib bo\'lmadi', 'Не удалось открыть видео')); });
+      w.appendChild(v); var pr = v.play(); if (pr && pr.catch) pr.catch(function () {});
+    });
+    return w;
+  }
+  function msgEl(id, d) {
+    var r = curRoom(), mine = d.from === myUid(), el = h('div', 'kz-m' + (mine ? ' me' : ''));
+    if (!mine) el.appendChild(h('div', 'kz-mn', (r && r.names && r.names[d.from]) || '?'));
+    var body = h('div', 'kz-mb');
+    if (d.type === 'voice') body.appendChild(voiceEl(d)); else if (d.type === 'video') body.appendChild(videoEl(d)); else body.textContent = d.text || '';
+    el.appendChild(body); el.appendChild(h('div', 'kz-mt', hm(d.createdAt)));
+    var tm = 0;
+    function cancel() { clearTimeout(tm); }
+    el.addEventListener('touchstart', function () { tm = setTimeout(function () { msgMenu(id, d); }, 550); }, { passive: true });
+    ['touchend', 'touchmove', 'touchcancel'].forEach(function (ev) { el.addEventListener(ev, cancel, { passive: true }); });
+    el.addEventListener('contextmenu', function (e) { e.preventDefault(); msgMenu(id, d); });
+    return el;
+  }
+  function msgMenu(id, d) {
+    var r = curRoom(); if (!r || (d.from !== myUid() && !isOwner(r))) return;
+    sheet(function (sh) {
+      var it = h('div', 'kz-mi red', '🗑 ' + T('Xabarni o\'chirish', 'Удалить сообщение'));
+      it.addEventListener('click', async function () { closeSheet(); try { await msgCol(r.id).doc(id).delete(); } catch (e) { toast(errText(e)); } });
+      sh.appendChild(it);
+    });
+  }
+  function enterChat(r) {
+    if (C.room === r.id) return;
+    leaveChat(); C.room = r.id; C.map = {}; C.list.textContent = ''; C.stick = true;
+    var first = true;
+    C.unsub = msgCol(r.id).orderBy('createdAt', 'asc').limitToLast(100).onSnapshot(function (snap) {
+      var mineAdded = false;
+      snap.docChanges().forEach(function (ch) {
+        var id = ch.doc.id, d = ch.doc.data();
+        if (ch.type === 'added') {
+          var el = msgEl(id, d); C.map[id] = el;
+          C.list.insertBefore(el, C.list.children[ch.newIndex] || null);
+          if (d.from === myUid()) mineAdded = true;
+        } else if (ch.type === 'modified') {
+          var e2 = C.map[id], t = e2 && e2.querySelector('.kz-mt'); if (t) t.textContent = hm(d.createdAt);
+        } else if (ch.type === 'removed') {
+          var e3 = C.map[id]; if (e3) { e3.remove(); delete C.map[id]; }
+        }
+      });
+      scrollBottom(first || mineAdded); first = false;
+    }, function (e) {
+      console.error('Kinozona chat', e); C.list.textContent = '';
+      var w = h('div', 'kz-t', (e && e.code === 'permission-denied')
+        ? T('Chat qoidalari hali qo\'shilmagan (kinoRooms/messages).', 'Правила чата ещё не добавлены (kinoRooms/messages).')
+        : T('Chatni yuklab bo\'lmadi.', 'Не удалось загрузить чат.'));
+      w.style.textAlign = 'center'; C.list.appendChild(w);
+    });
+  }
+  function leaveChat() {
+    if (C.unsub) { try { C.unsub(); } catch (_) {} C.unsub = null; }
+    stopVoice(); if (C.rec) recStop(false);
+    C.room = ''; C.map = {}; setStatus('');
+  }
+
+  // ---- yuborish ----
+  async function addMsg(data) {
+    var r = curRoom(); if (!r) return;
+    await msgCol(r.id).add(Object.assign({ from: myUid(), createdAt: fv().serverTimestamp() }, data));
+    C.stick = true;
+  }
+  async function sendText() {
+    var t = C.ta.value.trim(); if (!t) return;
+    C.ta.value = ''; autoGrow();
+    try { await addMsg({ type: 'text', text: t.slice(0, 2000) }); } catch (e) { toast(errText(e)); C.ta.value = t; autoGrow(); }
+  }
+  async function sendMedia(blob, kind, dur) {
+    var r = curRoom(); if (!r || C.busy) return;
+    C.busy = true; setStatus('⬆ ' + (kind === 'voice' ? T('Ovozli xabar yuborilmoqda…', 'Отправка голосового…') : T('Video yuborilmoqda…', 'Отправка видео…')));
+    try {
+      var res = await fetch(BASE + '/media?room=' + encodeURIComponent(r.id) + '&kind=' + kind, { method: 'POST', headers: { 'Authorization': 'Bearer ' + (await idTok()), 'Content-Type': 'application/octet-stream' }, body: blob });
+      var j = null; try { j = await res.json(); } catch (_) {}
+      if (!res.ok) { var e = new Error((j && j.error) || 'http'); e.code = (j && j.error) || ('http' + res.status); e.status = res.status; e.info = j || {}; throw e; }
+      await addMsg({ type: kind, mid: j.mid, mime: j.mime, size: j.size, dur: Math.round(dur) || 0 });
+    } catch (e) {
+      toast(e.code === 'room-full' ? T('Xonada ovozli/video xabarlar uchun joy tugadi', 'В комнате закончилось место для медиа')
+        : e.code === 'too-big' ? T('Fayl juda katta (25 MB gacha)', 'Файл слишком большой (до 25 МБ)') : errMsg(e));
+    }
+    C.busy = false; setStatus('');
+  }
+  function pickVideoMsg() {
+    if (C.busy) { toast(T('Avvalgi xabar yuborilmoqda', 'Предыдущее сообщение отправляется')); return; }
+    if (!C.fileIn) {
+      var fi = document.createElement('input'); fi.type = 'file'; fi.accept = 'video/*'; fi.style.display = 'none';
+      fi.addEventListener('change', function () {
+        var f = fi.files && fi.files[0]; if (!f) return;
+        if ((f.type || '').indexOf('video/') !== 0) { toast(T('Bu video fayl emas', 'Это не видеофайл')); return; }
+        if (f.size > VIDEO_MAX) { toast(T('Video 25 MB dan oshmasin', 'Видео не должно превышать 25 МБ')); return; }
+        sendMedia(f, 'video', 0);
+      });
+      document.body.appendChild(fi); C.fileIn = fi;
+    }
+    C.fileIn.value = ''; C.fileIn.click();
+  }
+
+  // ---- ovozli xabar yozish ----
+  async function recStart() {
+    if (C.rec || C.busy) return;
+    var VR = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.VoiceRecorder;
+    if (!VR) { toast(T('Mikrofon bu qurilmada mavjud emas', 'Микрофон недоступен на этом устройстве')); return; }
+    try {
+      var hp = await VR.hasAudioRecordingPermission();
+      if (!hp || hp.value === false) {
+        var rp = await VR.requestAudioRecordingPermission();
+        if (!rp || rp.value === false) { toast(T('Mikrofon uchun ruxsat berilmadi. Sozlamalardan ruxsat bering.', 'Нет разрешения на микрофон. Разрешите в настройках.')); return; }
+      }
+      try { var st = await VR.getCurrentStatus(); if (st && st.status && st.status !== 'NONE') await VR.stopRecording(); } catch (_) {}
+      await VR.startRecording();
+    } catch (e) { toast(T('Mikrofonni ochib bo\'lmadi', 'Не удалось открыть микрофон')); return; }
+    C.rec = { t0: Date.now(), VR: VR }; showRecUI();
+    C.recT = setInterval(function () {
+      var s = Math.floor((Date.now() - C.rec.t0) / 1000); if (C.recTime) C.recTime.textContent = fmt(s);
+      if (s >= 120) recStop(true);
+    }, 500);
+  }
+  async function recStop(send) {
+    if (!C.rec) return;
+    var rec = C.rec; C.rec = null; clearInterval(C.recT); buildBar();
+    var out = null; try { out = await rec.VR.stopRecording(); } catch (_) {}
+    if (!send) return;
+    var v = out && out.value;
+    if (!v || !v.recordDataBase64) { toast(T('Ovoz yozilmadi', 'Голос не записан')); return; }
+    var dur = Math.round((v.msDuration || (Date.now() - rec.t0)) / 1000);
+    if (dur < 1) { toast(T('Juda qisqa', 'Слишком коротко')); return; }
+    var bin = atob(v.recordDataBase64), arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    sendMedia(new Blob([arr], { type: v.mimeType || 'audio/aac' }), 'voice', dur);
+  }
+  function showRecUI() {
+    var bar = $('kzBar'); bar.textContent = '';
+    var del = h('button', 'kz-ib', '🗑'), rc = h('div', 'kz-rec'), snd = h('button', 'kz-ib', '➤');
+    C.recTime = h('span', '', '0:00'); rc.append(h('span', 'kz-rd', '●'), C.recTime, h('span', 'kz-t', T('Yozilmoqda…', 'Запись…')));
+    del.addEventListener('click', function () { recStop(false); });
+    snd.addEventListener('click', function () { recStop(true); });
+    bar.append(del, rc, snd);
+  }
+
+  // ---- yozish paneli ----
+  function autoGrow() {
+    var ta = C.ta; if (!ta) return; ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 96) + 'px';
+    var has = ta.value.trim().length > 0; C.snd.style.display = has ? 'flex' : 'none'; C.mic.style.display = has ? 'none' : 'flex';
+  }
+  function noBlur(b) { b.addEventListener('mousedown', function (e) { e.preventDefault(); }); }
+  function buildBar() {
+    var bar = $('kzBar'); if (!bar) return; bar.textContent = '';
+    var att = h('button', 'kz-ib', '📎'), ta = h('textarea'), mic = h('button', 'kz-ib', '🎤'), snd = h('button', 'kz-ib', '➤');
+    ta.rows = 1; ta.maxLength = 2000; ta.placeholder = T('Xabar yozish…', 'Написать сообщение…');
+    C.ta = ta; C.snd = snd; C.mic = mic; C.att = att; snd.style.display = 'none';
+    [snd, mic, att].forEach(noBlur);
+    ta.addEventListener('input', autoGrow);
+    ta.addEventListener('focus', function () { $('kzRoom').classList.add('kz-typing'); setTimeout(function () { scrollBottom(true); }, 300); });
+    ta.addEventListener('blur', function () { $('kzRoom').classList.remove('kz-typing'); });
+    snd.addEventListener('click', sendText);
+    mic.addEventListener('click', recStart);
+    att.addEventListener('click', pickVideoMsg);
+    bar.append(att, ta, mic, snd);
+  }
+  window.addEventListener('resize', function () { scrollBottom(false); });
+
   // ---------- ochish / orqaga ----------
   rowEl.addEventListener('click', function () { S.roomId = ''; goToScreen('kinoScreen'); startList(); render(); });
   $('kzMore').addEventListener('click', menuSheet);
@@ -20171,8 +20397,11 @@ var PLDNBattModel = (function () {
     }
     return prevBack ? prevBack.apply(this, arguments) : false;
   };
+  C.list = $('kzMsgs');
+  C.list.addEventListener('scroll', function () { C.stick = C.list.scrollHeight - C.list.scrollTop - C.list.clientHeight < 60; });
+  buildBar();
   render();
-  window.PLDNKino = { version: 'kino-2.0', maxMembers: MAX, currentRoom: curRoom };
+  window.PLDNKino = { version: 'kino-3.0', maxMembers: MAX, currentRoom: curRoom };
 })();
 </script>
 </body>
