@@ -1,5 +1,5 @@
-<!-- VERSION: 233 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-5.0 | satr: 20497 | 26-okt-2026 -->
+<!-- VERSION: 228 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-6.0 | satr: 20672 | 26-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -19518,7 +19518,7 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-7-bosqich + to'liq ekran + fonda yuklash: xona, kino yuklash, uzatish, sinxron ijro, chat ===== VERSION: kino-5.0
+// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-7-bosqich + to'liq ekran + fonda yuklash + ovozli suhbat: xona, kino yuklash, uzatish, sinxron ijro, chat ===== VERSION: kino-6.0
 // Firestore: kinoRooms/{id} { owner, members:[uid], names:{uid:ism}, title, createdAt, updatedAt }
 // Kino fayli VPS'da (kino.js, /kino): yuklash, HTTP Range bilan uzatish, WebSocket orqali sinxron ijro. Chat: Firestore (kinoRooms/{id}/messages), ovozli/video xabar fayllari VPS'da. Jonli ovoz keyingi bosqichda.
 (function () {
@@ -19588,6 +19588,21 @@ var PLDNBattModel = (function () {
     '.kz-ib{border:0;background:transparent;font-size:22px;width:40px;height:40px;flex:0 0 auto;color:#2AABEE;display:flex;align-items:center;justify-content:center;padding:0}' +
     '.kz-rec{flex:1;display:flex;align-items:center;gap:10px;color:var(--text-primary);font-size:16px;height:40px}.kz-rd{color:#ff3b30}' +
     '.kz-typing .kz-player{aspect-ratio:auto;height:96px}.kz-typing .kz-mem{display:none}' +
+    '.kz-vc{flex:0 0 auto;border-bottom:1px solid var(--divider-color);padding:6px 12px}' +
+    '.kz-vj{border:0;border-radius:12px;background:var(--bg-card);color:#2AABEE;font-size:14px;font-weight:600;padding:9px 12px;width:100%;margin-top:4px}' +
+    '.kz-vh{display:flex;align-items:center;gap:6px;color:var(--text-primary);font-size:14px;font-weight:600}.kz-vh .kz-sp{flex:1}' +
+    '.kz-vb2{border:0;border-radius:50%;width:36px;height:36px;flex:0 0 auto;font-size:17px;padding:0;background:var(--bg-elevated);color:var(--text-primary)}' +
+    '.kz-vb2.off{background:#ff3b30;color:#fff}.kz-vb2.lv{color:#ff3b30}' +
+    '.kz-vsl{width:64px;flex:0 0 auto}' +
+    '.kz-vt{display:flex;gap:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:8px 2px 2px}' +
+    '.kz-tl{flex:0 0 auto;width:56px;text-align:center;position:relative}' +
+    '.kz-av{width:48px;height:48px;border-radius:50%;margin:0 auto;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:700;border:3px solid transparent;box-sizing:border-box}' +
+    '.kz-tl.sp .kz-av{border-color:#34c759}' +
+    '.kz-tn{font-size:11px;color:var(--text-secondary);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.kz-mo{position:absolute;right:2px;top:30px;font-size:10px;background:#ff3b30;border-radius:50%;width:18px;height:18px;line-height:18px;color:#fff}' +
+    '.kz-vs{position:absolute;right:8px;top:8px;z-index:3;display:flex;flex-direction:column;align-items:flex-end;gap:4px;pointer-events:none}' +
+    '.kz-vs span{background:rgba(0,0,0,.55);color:#fff;border-radius:10px;padding:2px 8px;font-size:12px}' +
+    '.kz-typing .kz-vc{display:none}#kinoScreen.kz-fs .kz-vc{display:none}' +
     '.kz-cb{width:34px}' +
     '.kz-fo{display:none}' +
     '#kinoScreen.kz-fs .kz-fo{display:flex}' +
@@ -19625,7 +19640,7 @@ var PLDNBattModel = (function () {
     '<button class="kz-more" id="kzMore" aria-label="Menu">&#8942;</button></div>' +
     '<div class="kz-body"><div class="kz-lobby" id="kzLobby"></div>' +
     '<div class="kz-room" id="kzRoom" style="display:none">' +
-    '<div class="kz-player" id="kzPlayer"></div><div class="kz-mem" id="kzMem"></div>' +
+    '<div class="kz-player" id="kzPlayer"></div><div class="kz-mem" id="kzMem"></div><div class="kz-vc" id="kzVc"></div>' +
     '<div class="kz-msgs" id="kzMsgs"></div><div class="kz-st" id="kzSt" style="display:none"></div>' +
     '<div class="kz-bar" id="kzBar"></div></div></div>';
   var anchor = $('pldnSettingsScreen');
@@ -19901,10 +19916,10 @@ var PLDNBattModel = (function () {
   }
 
   // ---- ulanish ----
-  function enterPlayer(r) { if (P.room === r.id && !P.dead) return; leavePlayer(); P.room = r.id; P.dead = false; buildPlayerUI(); connect(); }
+  function enterPlayer(r) { if (P.room === r.id && !P.dead) return; leavePlayer(); P.room = r.id; P.dead = false; buildPlayerUI(); renderVoice(); connect(); }
   function leavePlayer() {
     if (P.dead && !P.room) return;
-    exitFS(); natKeep(false);
+    exitFS(); natKeep(false); vLeave();
     P.dead = true; clearTimeout(P.rt); clearInterval(P.pingT); clearInterval(P.tick); clearTimeout(P.ctlT);
     var ws = P.ws; P.ws = null; P.wsOpen = false; if (ws) { try { ws.close(); } catch (_) {} }
     if (P.video) { try { P.video.pause(); P.video.removeAttribute('src'); P.video.load(); } catch (_) {} }
@@ -19987,14 +20002,15 @@ var PLDNBattModel = (function () {
     var bar = h('div', 'kz-ctl hide');
     var seek = h('input', 'kz-seek'); seek.type = 'range'; seek.min = 0; seek.max = 1000; seek.value = 0;
     var play = h('button', 'kz-cb', '▶'), back = h('button', 'kz-cb', '⏪'), fwd = h('button', 'kz-cb', '⏩'), pick = h('button', 'kz-cb', '🎞');
-    var fsb = h('button', 'kz-cb', '⛶'), chb = h('button', 'kz-cb kz-fo', '💬'), rot = h('button', 'kz-cb kz-fo', '↻');
+    var fsb = h('button', 'kz-cb', '⛶'), chb = h('button', 'kz-cb kz-fo', '💬'), rot = h('button', 'kz-cb kz-fo', '↻'), micb = h('button', 'kz-cb kz-fo', '🎧'), vs = h('div', 'kz-vs');
     var time = h('span', 'kz-time', '0:00 / 0:00');
     var vol = h('input', 'kz-vol'); vol.type = 'range'; vol.min = 0; vol.max = 100; vol.value = Math.round(v.volume * 100);
     var r1 = h('div', 'kz-row'), r2 = h('div', 'kz-row');
-    vol.style.width = '56px'; r1.append(seek, h('span', '', '🔊'), vol); r2.append(back, play, fwd, time, h('span', 'kz-sp'), chb, rot, pick, fsb);
+    vol.style.width = '56px'; r1.append(seek, h('span', '', '🔊'), vol); r2.append(back, play, fwd, time, h('span', 'kz-sp'), micb, chb, rot, pick, fsb);
     bar.append(r1, r2);
-    pl.append(v, tap, top, ov, bar);
-    P.video = v; P.ui = { ov: ov, top: top, bar: bar, seek: seek, play: play, time: time, fs: fsb, chat: chb };
+    pl.append(v, tap, top, ov, vs, bar);
+    P.video = v; P.ui = { ov: ov, top: top, bar: bar, seek: seek, play: play, time: time, fs: fsb, chat: chb, mic: micb, vs: vs };
+    micb.addEventListener('click', vMic);
     fsb.addEventListener('click', function () { if (F.on) exitFS(); else enterFS(); });
     chb.addEventListener('click', toggleFsChat);
     rot.addEventListener('click', rotateFS);
@@ -20418,6 +20434,165 @@ var PLDNBattModel = (function () {
   }
   window.addEventListener('resize', function () { scrollBottom(false); });
 
+  // ===== OVOZLI SUHBAT (LiveKit): kino ijrosidan butunlay mustaqil =====
+  var V = { room: null, joined: false, busy: false, want: false, micWanted: true, hide: false, vol: 1, state: 'idle', retry: 0, rj: 0, dirty: 0, needAudio: false, spk: false, hinted: false };
+  try { var cv0 = parseFloat(localStorage.getItem('kz_cvol')); V.vol = (cv0 >= 0 && cv0 <= 1) ? cv0 : 1; V.hide = localStorage.getItem('kz_vhide') === '1'; } catch (_) {}
+  function LKc() { return window.LivekitClient || null; }
+  function aud() { return window.PldnAudio || null; }
+  var lkLoading = null;
+  function loadLK() {
+    if (LKc()) return Promise.resolve(true);
+    if (lkLoading) return lkLoading;
+    lkLoading = new Promise(function (res) {
+      var s = document.createElement('script'); s.src = 'livekit-client.umd.min.js';
+      s.onload = function () { res(!!LKc()); };
+      s.onerror = function () { lkLoading = null; res(false); };
+      document.head.appendChild(s);
+    });
+    return lkLoading;
+  }
+  function vBox() {
+    var b = document.getElementById('kzVA');
+    if (!b) { b = document.createElement('div'); b.id = 'kzVA'; b.style.display = 'none'; document.body.appendChild(b); }
+    return b;
+  }
+  function shortName(n) { return String(n || '?').replace(/^PLDN\/-?/, '') || '?'; }
+  function colorOf(id) { var x = 0, s = String(id); for (var i = 0; i < s.length; i++) { x = (x * 31 + s.charCodeAt(i)) % 360; } return 'hsl(' + x + ',55%,42%)'; }
+  function vParts() {
+    var a = []; if (!V.room) return a;
+    try { a.push(V.room.localParticipant); V.room.remoteParticipants.forEach(function (p) { a.push(p); }); } catch (_) {}
+    return a;
+  }
+  function vMicOn() { try { return !!(V.room && V.room.localParticipant.isMicrophoneEnabled); } catch (_) { return false; } }
+  function vDirty() { if (V.dirty) return; V.dirty = setTimeout(function () { V.dirty = 0; renderVoice(); }, 60); }
+  function markSpeakers() {
+    var sp = []; vParts().forEach(function (p) { try { if (p.isSpeaking) sp.push(p); } catch (_) {} });
+    var tl = document.querySelectorAll('#kzVc .kz-tl');
+    for (var i = 0; i < tl.length; i++) {
+      var on = false; for (var k = 0; k < sp.length; k++) { if (sp[k].identity === tl[i].getAttribute('data-id')) { on = true; break; } }
+      tl[i].classList.toggle('sp', on);
+    }
+    if (P.ui && P.ui.vs) { P.ui.vs.textContent = ''; sp.slice(0, 3).forEach(function (p) { P.ui.vs.appendChild(h('span', '', '🎙 ' + shortName(p.name))); }); }
+  }
+  function vTile(p, me) {
+    var nm = shortName(p.name), t = h('div', 'kz-tl' + (p.isSpeaking ? ' sp' : ''));
+    t.setAttribute('data-id', p.identity);
+    var av = h('div', 'kz-av', nm.charAt(0).toUpperCase()); av.style.background = colorOf(p.identity); t.appendChild(av);
+    if (!p.isMicrophoneEnabled) t.appendChild(h('div', 'kz-mo', '🔇'));
+    t.appendChild(h('div', 'kz-tn', me ? T('Siz', 'Вы') : nm));
+    return t;
+  }
+  function renderVoice() {
+    var box = $('kzVc');
+    if (P.ui && P.ui.mic) { P.ui.mic.textContent = V.joined ? (vMicOn() ? '🎙' : '🔇') : '🎧'; }
+    if (!box) return;
+    box.textContent = '';
+    if (!V.want && !V.joined) {
+      var jb = h('button', 'kz-vj', '🎧 ' + T('Ovozli suhbatga qo\'shilish', 'Присоединиться к голосовому чату'));
+      jb.addEventListener('click', vJoin); box.appendChild(jb); return;
+    }
+    var hd = h('div', 'kz-vh');
+    if (!V.joined) {
+      hd.appendChild(h('span', '', '⏳ ' + (V.retry ? T('Qayta ulanmoqda…', 'Переподключение…') : T('Ulanmoqda…', 'Подключение…'))));
+      hd.appendChild(h('span', 'kz-sp'));
+      var cb = h('button', 'kz-vb2 lv', '✕'); cb.addEventListener('click', function () { vLeave(true); }); hd.appendChild(cb);
+      box.appendChild(hd); return;
+    }
+    var ps = vParts(), on = vMicOn();
+    hd.appendChild(h('span', '', '🎙 ' + T('Suhbat', 'Голос') + ' · ' + ps.length + (V.state === 'retry' ? ' ⏳' : '')));
+    hd.appendChild(h('span', 'kz-sp'));
+    var mb = h('button', 'kz-vb2' + (on ? '' : ' off'), on ? '🎙' : '🔇'); mb.addEventListener('click', vMic); hd.appendChild(mb);
+    var vl = h('input', 'kz-vsl'); vl.type = 'range'; vl.min = 0; vl.max = 100; vl.value = Math.round(V.vol * 100);
+    vl.addEventListener('input', function () {
+      V.vol = vl.value / 100; try { localStorage.setItem('kz_cvol', String(V.vol)); } catch (_) {}
+      var as = document.querySelectorAll('#kzVA audio'); for (var i = 0; i < as.length; i++) { as[i].volume = V.vol; }
+    });
+    hd.appendChild(h('span', '', '🔊')); hd.appendChild(vl);
+    var hb = h('button', 'kz-vb2', V.hide ? '▾' : '▴'); hb.addEventListener('click', function () { V.hide = !V.hide; try { localStorage.setItem('kz_vhide', V.hide ? '1' : '0'); } catch (_) {} renderVoice(); }); hd.appendChild(hb);
+    var lb = h('button', 'kz-vb2 lv', '✕'); lb.addEventListener('click', function () { vLeave(true); }); hd.appendChild(lb);
+    box.appendChild(hd);
+    if (V.needAudio) {
+      var ab = h('button', 'kz-vj', '🔈 ' + T('Ovozni yoqish uchun bosing', 'Нажмите, чтобы включить звук'));
+      ab.addEventListener('click', function () { try { V.room.startAudio(); } catch (_) {} V.needAudio = false; renderVoice(); }); box.appendChild(ab);
+    }
+    if (!V.hide) {
+      var tr = h('div', 'kz-vt');
+      ps.forEach(function (p, i) { tr.appendChild(vTile(p, i === 0)); });
+      box.appendChild(tr);
+    }
+  }
+  function vWire(rm, L) {
+    var E = L.RoomEvent;
+    rm.on(E.TrackSubscribed, function (track) {
+      if (track.kind === 'audio') { var el = track.attach(); el.volume = V.vol; el.style.display = 'none'; vBox().appendChild(el); }
+      vDirty();
+    });
+    rm.on(E.TrackUnsubscribed, function (track) { try { track.detach().forEach(function (e) { e.remove(); }); } catch (_) {} vDirty(); });
+    rm.on(E.ActiveSpeakersChanged, markSpeakers);
+    [E.ParticipantConnected, E.ParticipantDisconnected, E.TrackMuted, E.TrackUnmuted, E.LocalTrackPublished, E.LocalTrackUnpublished].forEach(function (ev) { rm.on(ev, vDirty); });
+    rm.on(E.Reconnecting, function () { V.state = 'retry'; vDirty(); });
+    rm.on(E.Reconnected, function () { V.state = 'on'; vDirty(); });
+    rm.on(E.AudioPlaybackStatusChanged, function () { try { V.needAudio = !rm.canPlaybackAudio; } catch (_) {} vDirty(); });
+    rm.on(E.MediaDevicesError, function () { toast(T('Mikrofon ishlamadi. Ruxsatni tekshiring.', 'Микрофон не работает. Проверьте разрешение.')); });
+    rm.on(E.Disconnected, function () {
+      if (V.room !== rm) return;
+      vCleanup();
+      if (V.want && !P.dead) { clearTimeout(V.rj); V.rj = setTimeout(vJoin, Math.min(10000, 1500 * (++V.retry))); }
+      renderVoice();
+    });
+  }
+  function vCleanup() {
+    V.room = null; V.joined = false; V.busy = false; V.state = 'idle'; V.needAudio = false;
+    var b = document.getElementById('kzVA'); if (b) b.textContent = '';
+    if (P.ui && P.ui.vs) P.ui.vs.textContent = '';
+  }
+  async function vJoin() {
+    if (V.busy || V.joined || P.dead || !P.room) return;
+    V.want = true; V.busy = true; renderVoice();
+    var room0 = P.room, rm = null;
+    try {
+      if (!(await loadLK())) { V.want = false; V.busy = false; renderVoice(); toast(T('Suhbat kutubxonasi (livekit-client.umd.min.js) topilmadi', 'Библиотека голоса (livekit-client.umd.min.js) не найдена')); return; }
+      var L = LKc();
+      var j = await api('/lk-token', { method: 'POST', json: { room: room0 } });
+      if (P.dead || P.room !== room0 || !V.want) { V.busy = false; renderVoice(); return; }
+      rm = new L.Room({ adaptiveStream: true, dynacast: true, audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      V.room = rm; vWire(rm, L);
+      await rm.connect(j.url, j.token);
+      if (V.room !== rm) { try { rm.disconnect(); } catch (_) {} return; }
+      V.joined = true; V.busy = false; V.state = 'on'; V.retry = 0;
+      try { V.needAudio = !rm.canPlaybackAudio; rm.startAudio(); } catch (_) {}
+      var A = aud();
+      try { if (A && !V.spk && !(A.hasHeadset && A.hasHeadset())) { V.spk = !!A.setSpeaker(true); } } catch (_) {}
+      if (V.micWanted) {
+        try { await rm.localParticipant.setMicrophoneEnabled(true); }
+        catch (e) { V.micWanted = false; toast(T('Mikrofon ruxsati yo\'q: faqat tinglaysiz. Sozlamalarda ruxsat bering.', 'Нет доступа к микрофону: вы только слушаете. Разрешите в настройках.')); }
+      }
+      if (!V.hinted) { V.hinted = true; toast(T('Kino ovozi mikrofonga tushmasligi uchun quloqchin taqing.', 'Чтобы звук фильма не попадал в микрофон, наденьте наушники.')); }
+      renderVoice(); markSpeakers();
+    } catch (e) {
+      try { if (rm) rm.disconnect(); } catch (_) {}
+      vCleanup();
+      if (e && (e.status === 403 || e.status === 404)) { V.want = false; toast(errMsg(e)); }
+      else if (V.want && !P.dead) { clearTimeout(V.rj); V.rj = setTimeout(vJoin, Math.min(10000, 1500 * (++V.retry))); }
+      renderVoice();
+    }
+  }
+  async function vMic() {
+    if (!V.joined) { V.micWanted = true; return vJoin(); }
+    var lp = V.room.localParticipant, want = !lp.isMicrophoneEnabled;
+    try { await lp.setMicrophoneEnabled(want); V.micWanted = want; }
+    catch (e) { toast(T('Mikrofon yoqilmadi. Sozlamalarda ruxsat bering.', 'Микрофон не включился. Разрешите в настройках.')); }
+    renderVoice(); markSpeakers();
+  }
+  function vLeave() {
+    V.want = false; clearTimeout(V.rj); V.retry = 0;
+    var rm = V.room; V.room = null;
+    if (rm) { try { rm.disconnect(); } catch (_) {} }
+    vCleanup();
+    var A = aud(); if (V.spk) { try { if (A) A.reset(); } catch (_) {} V.spk = false; }
+    renderVoice();
+  }
+
   // ===== TO'LIQ EKRAN (6-bosqich): faqat shu qurilmaga ta'sir qiladi =====
   var F = { on: false, chat: false, land: true, unread: 0 };
   function nat() { return window.PldnFull || null; }
@@ -20490,7 +20665,7 @@ var PLDNBattModel = (function () {
   C.list.addEventListener('scroll', function () { C.stick = C.list.scrollHeight - C.list.scrollTop - C.list.clientHeight < 60; });
   buildBar();
   render();
-  window.PLDNKino = { version: 'kino-5.0', maxMembers: MAX, currentRoom: curRoom };
+  window.PLDNKino = { version: 'kino-6.0', maxMembers: MAX, currentRoom: curRoom };
 })();
 </script>
 </body>
