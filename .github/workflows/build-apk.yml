@@ -1,4 +1,4 @@
-# PLDN-FAYL: build-apk.yml | versiya: love3d-8.0 | satr: 162 | 23-okt-2026
+# PLDN-FAYL: build-apk.yml | versiya: kino-bg-1.0 | satr: 171 | 26-okt-2026
 name: Build APK
 
 on:
@@ -101,6 +101,15 @@ jobs:
           echo "dependencies { implementation 'com.alphacephei:vosk-android:0.3.47' }" >> android/app/build.gradle
           echo "android { defaultConfig { ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' } } }" >> android/app/build.gradle
           grep -n "PldnWakeService" android/app/src/main/AndroidManifest.xml
+
+      - name: Add Kinozona background upload service
+        run: |
+          PKG=$(grep applicationId android/app/build.gradle | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          JAVADIR=$(dirname "$(find android/app/src/main/java -name MainActivity.java)")
+          sed "s/__PKG__/$PKG/" native/PldnUploadService.java > "$JAVADIR/PldnUploadService.java"
+          sed -i 's#</manifest>#<uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+          sed -i "s#</application>#<service android:name=\"$PKG.PldnUploadService\" android:exported=\"false\" android:foregroundServiceType=\"dataSync\" />\n</application>#" android/app/src/main/AndroidManifest.xml
+          grep -n "PldnUploadService\|DATA_SYNC" android/app/src/main/AndroidManifest.xml
 
       - name: Sync Capacitor
         run: npx cap sync android
