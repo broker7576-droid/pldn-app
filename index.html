@@ -1,5 +1,5 @@
-<!-- VERSION: 231 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-4.0 | satr: 20478 | 25-okt-2026 -->
+<!-- VERSION: 228 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-5.0 | satr: 20497 | 26-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -19518,7 +19518,7 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-7-bosqich + to'liq ekran: xona, kino yuklash, uzatish, sinxron ijro, chat ===== VERSION: kino-4.0
+// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-7-bosqich + to'liq ekran + fonda yuklash: xona, kino yuklash, uzatish, sinxron ijro, chat ===== VERSION: kino-5.0
 // Firestore: kinoRooms/{id} { owner, members:[uid], names:{uid:ism}, title, createdAt, updatedAt }
 // Kino fayli VPS'da (kino.js, /kino): yuklash, HTTP Range bilan uzatish, WebSocket orqali sinxron ijro. Chat: Firestore (kinoRooms/{id}/messages), ovozli/video xabar fayllari VPS'da. Jonli ovoz keyingi bosqichda.
 (function () {
@@ -20146,6 +20146,19 @@ var PLDNBattModel = (function () {
     }
     return sleep(ms);
   }
+  // ---- fonda yuklash (native Foreground Service: PldnKinoBg) ----
+  function bgB() { return window.PldnKinoBg || null; }
+  function bgStart(label) { var b = bgB(); try { return !!(b && b.start(label || '')); } catch (_) { return false; } }
+  function bgUpd(pct, st) { var b = bgB(); try { if (b) b.update(pct | 0, st || 'up'); } catch (_) {} }
+  function bgStop(res) { var b = bgB(); try { if (b) b.stop(res || ''); } catch (_) {} }
+  async function bgBatteryHint() {
+    var b = bgB(); if (!b) return;
+    try {
+      if (b.batteryOk() || localStorage.getItem('kzBatAsk')) return;
+      localStorage.setItem('kzBatAsk', '1');
+      if (await askYes(T('Ekran o\'chganda yuklash uzilmasligi uchun PLDN uchun batareya tejashni o\'chirish tavsiya etiladi. Sozlamalarni ochamizmi?', 'Чтобы загрузка не прерывалась при выключенном экране, лучше отключить экономию батареи для PLDN. Открыть настройки?'))) b.openBattery();
+    } catch (_) {}
+  }
   var FATAL = ['disk-full', 'bad-type', 'replaced', 'not-yours', 'no-upload', 'too-big', 'bad-size', 'no-member', 'no-room', 'auth', 'bad-chunk'];
   async function startUpload(file) {
     if (P.up || !P.room) return;
@@ -20156,15 +20169,18 @@ var PLDNBattModel = (function () {
     P.up = { room: room, file: file, off: 0, pct: 0, id: '', cancel: false, state: 'init' }; updateTop(); updateOverlay();
     var ok = await probe(file);
     if (ok === false && !(await askYes(T('Telefoningiz bu faylni ijro eta olmasligi mumkin (format yoki kodek). Baribir yuklaysizmi? (' + fmtSize(file.size) + ')', 'Телефон может не воспроизвести этот файл (формат или кодек). Всё равно загрузить? (' + fmtSize(file.size) + ')')))) { P.up = null; updateTop(); updateOverlay(); return; }
-    var up = P.up;
+    var up = P.up, bgOn = false, bgRes = 'cancelled';
+    await bgBatteryHint();
     try {
+      bgOn = bgStart(nm);
+      if (bgOn) { up.poll = setInterval(function () { try { if (bgB().cancelled()) up.cancel = true; } catch (_) {} }, 1000); }
       var init = await api('/upload/init', { method: 'POST', json: { room: room, name: nm, size: file.size, mime: file.type || '' } });
-      up.id = init.id; up.off = init.offset || 0; up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size);
+      up.id = init.id; up.off = init.offset || 0; up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size); bgUpd(up.pct, 'up');
       var CH = init.chunk || 4194304, fails = 0; updateTop();
       while (up.off < file.size) {
         if (up.cancel) {
           try { await api('/upload/' + up.id + '/cancel', { method: 'POST' }); } catch (_) {}
-          toast(T('Yuklash bekor qilindi. Avvalgi kino saqlanib qoldi.', 'Загрузка отменена. Предыдущее кино сохранено.')); P.up = null; updateTop(); updateOverlay(); return;
+          toast(T('Yuklash bekor qilindi. Avvalgi kino saqlanib qoldi.', 'Загрузка отменена. Предыдущее кино сохранено.')); clearInterval(up.poll); bgStop('cancelled'); P.up = null; updateTop(); updateOverlay(); return;
         }
         var blob = file.slice(up.off, Math.min(up.off + CH, file.size));
         try {
@@ -20172,21 +20188,24 @@ var PLDNBattModel = (function () {
           var j = null; try { j = await r.json(); } catch (_) {}
           if (r.status === 409 && j && j.error === 'offset') { up.off = j.offset; continue; }
           if (!r.ok) { var e = new Error((j && j.error) || 'http'); e.code = (j && j.error) || ('http' + r.status); e.status = r.status; e.info = j || {}; throw e; }
-          up.off = j.offset; fails = 0; up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size); updateTop();
+          up.off = j.offset; fails = 0; up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size); bgUpd(up.pct, 'up'); updateTop();
         } catch (e2) {
           if (FATAL.indexOf(e2.code) >= 0 || (e2.status && e2.status < 500 && e2.status !== 408 && e2.status !== 429)) throw e2;
           if (++fails > 40) throw e2;
-          up.state = 'retry'; updateTop();
+          up.state = 'retry'; bgUpd(up.pct, 'retry'); updateTop();
           await waitOnline(Math.min(10000, 1000 * fails));
           if (up.cancel) continue;
           try { var g = await api('/upload/' + up.id); up.off = g.offset; } catch (e3) { if (e3.status && e3.status < 500) throw e3; }
         }
       }
       await api('/upload/' + up.id + '/finish', { method: 'POST' });
+      bgRes = 'done';
       toast('✅ ' + T('Kino yuklandi', 'Кино загружено'));
     } catch (e) {
+      bgRes = 'failed';
       toast(errMsg(e));
     }
+    clearInterval(up.poll); if (bgOn) bgStop(bgRes);
     P.up = null; updateTop(); updateOverlay();
   }
   document.addEventListener('visibilitychange', function () {
@@ -20471,7 +20490,7 @@ var PLDNBattModel = (function () {
   C.list.addEventListener('scroll', function () { C.stick = C.list.scrollHeight - C.list.scrollTop - C.list.clientHeight < 60; });
   buildBar();
   render();
-  window.PLDNKino = { version: 'kino-4.0', maxMembers: MAX, currentRoom: curRoom };
+  window.PLDNKino = { version: 'kino-5.0', maxMembers: MAX, currentRoom: curRoom };
 })();
 </script>
 </body>
