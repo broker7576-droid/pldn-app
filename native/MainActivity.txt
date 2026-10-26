@@ -1,4 +1,4 @@
-// PLDN-FAYL: MainActivity.txt | versiya: fullscreen-6.0 | satr: 1203 | 25-okt-2026
+// PLDN-FAYL: MainActivity.txt | versiya: kino-bg-1.0 | satr: 1291 | 26-okt-2026
 package __PKG__;
 
 import android.Manifest;
@@ -1117,6 +1117,85 @@ public class MainActivity extends BridgeActivity {
             });
         }
     }
+    /** Kinozona: kino yuklash fonda ham to'xtamasin (Foreground Service + WebView tirik). */
+    public class PldnKinoBgBridge {
+        @android.webkit.JavascriptInterface
+        public boolean start(String label) {
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, 2);
+                }
+                PldnUploadService.cancelReq = false;
+                PldnUploadService.pct = 0;
+                android.content.Intent i = new android.content.Intent(MainActivity.this, PldnUploadService.class);
+                i.setAction(PldnUploadService.ACT_START);
+                i.putExtra("pct", 0);
+                i.putExtra("state", "init");
+                i.putExtra("label", label == null ? "" : label);
+                if (android.os.Build.VERSION.SDK_INT >= 26) { startForegroundService(i); } else { startService(i); }
+                return true;
+            } catch (Throwable e) { return false; }
+        }
+        @android.webkit.JavascriptInterface
+        public void update(int pct, String state) {
+            try {
+                if (!PldnUploadService.running) { return; }
+                android.content.Intent i = new android.content.Intent(MainActivity.this, PldnUploadService.class);
+                i.setAction(PldnUploadService.ACT_UPDATE);
+                i.putExtra("pct", pct);
+                i.putExtra("state", state == null ? "up" : state);
+                startService(i);
+            } catch (Throwable e) { }
+        }
+        @android.webkit.JavascriptInterface
+        public void stop(String res) {
+            try {
+                android.content.Intent i = new android.content.Intent(MainActivity.this, PldnUploadService.class);
+                i.setAction(PldnUploadService.ACT_STOP);
+                i.putExtra("res", res == null ? "" : res);
+                startService(i);
+            } catch (Throwable e) { }
+        }
+        /** Bildirishnomadagi "Bekor qilish" bosilganmi (bir marta true qaytaradi). */
+        @android.webkit.JavascriptInterface
+        public boolean cancelled() {
+            if (PldnUploadService.cancelReq) { PldnUploadService.cancelReq = false; return true; }
+            return false;
+        }
+        @android.webkit.JavascriptInterface
+        public boolean running() { return PldnUploadService.running; }
+        @android.webkit.JavascriptInterface
+        public boolean batteryOk() {
+            try {
+                if (android.os.Build.VERSION.SDK_INT < 23) { return true; }
+                android.os.PowerManager pm = (android.os.PowerManager) getSystemService(android.content.Context.POWER_SERVICE);
+                return pm.isIgnoringBatteryOptimizations(getPackageName());
+            } catch (Throwable e) { return true; }
+        }
+        @android.webkit.JavascriptInterface
+        public void openBattery() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        android.content.Intent i = new android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                        startActivity(i);
+                    } catch (Throwable e) { }
+                }
+            });
+        }
+    }
+    PldnKinoBgBridge pldnKinoBg;
+    /** Yuklash ketayotganda WebView'ni to'xtatmaymiz (Capacitor onPause/onStop'da uni pauza qiladi). */
+    void keepWebAlive() {
+        try {
+            if (PldnUploadService.running) {
+                android.webkit.WebView wv = getBridge().getWebView();
+                wv.onResume();
+                wv.resumeTimers();
+            }
+        } catch (Throwable e) { }
+    }
     PldnFullBridge pldnFull;
     PldnVoice pldnVoice;
     PldnPhone pldnPhone;
@@ -1161,6 +1240,12 @@ public class MainActivity extends BridgeActivity {
     public void onPause() {
         uiResumed = false;
         super.onPause();
+        keepWebAlive();
+    }
+    @Override
+    public void onStop() {
+        super.onStop();
+        keepWebAlive();
     }
     @Override
     public void onNewIntent(android.content.Intent intent) {
@@ -1190,6 +1275,9 @@ public class MainActivity extends BridgeActivity {
         getBridge().getWebView().addJavascriptInterface(pldnPocket, "PldnPocket");
         if (pldnFull == null) { pldnFull = new PldnFullBridge(); }
         getBridge().getWebView().addJavascriptInterface(pldnFull, "PldnFull");
+        if (pldnKinoBg == null) { pldnKinoBg = new PldnKinoBgBridge(); }
+        getBridge().getWebView().addJavascriptInterface(pldnKinoBg, "PldnKinoBg");
+        try { if (android.os.Build.VERSION.SDK_INT >= 26) { getBridge().getWebView().setRendererPriorityPolicy(android.webkit.WebView.RENDERER_PRIORITY_IMPORTANT, false); } } catch (Throwable e) { }
         PldnPocket.listener = pocketListener;
         PldnWakeService.sink = wakeSink;
         checkWakeIntent(getIntent());
