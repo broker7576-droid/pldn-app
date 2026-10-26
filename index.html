@@ -1,5 +1,5 @@
-<!-- VERSION: 234 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-6.0 | satr: 20672 | 26-okt-2026 -->
+<!-- VERSION: 228 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-7.0 | satr: 20770 | 26-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -19518,7 +19518,7 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-7-bosqich + to'liq ekran + fonda yuklash + ovozli suhbat: xona, kino yuklash, uzatish, sinxron ijro, chat ===== VERSION: kino-6.0
+// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-7-bosqich + to'liq ekran + fonda yuklash + ovozli suhbat + kamera: xona, kino yuklash, uzatish, sinxron ijro, chat ===== VERSION: kino-7.0
 // Firestore: kinoRooms/{id} { owner, members:[uid], names:{uid:ism}, title, createdAt, updatedAt }
 // Kino fayli VPS'da (kino.js, /kino): yuklash, HTTP Range bilan uzatish, WebSocket orqali sinxron ijro. Chat: Firestore (kinoRooms/{id}/messages), ovozli/video xabar fayllari VPS'da. Jonli ovoz keyingi bosqichda.
 (function () {
@@ -19593,7 +19593,17 @@ var PLDNBattModel = (function () {
     '.kz-vh{display:flex;align-items:center;gap:6px;color:var(--text-primary);font-size:14px;font-weight:600}.kz-vh .kz-sp{flex:1}' +
     '.kz-vb2{border:0;border-radius:50%;width:36px;height:36px;flex:0 0 auto;font-size:17px;padding:0;background:var(--bg-elevated);color:var(--text-primary)}' +
     '.kz-vb2.off{background:#ff3b30;color:#fff}.kz-vb2.lv{color:#ff3b30}' +
-    '.kz-vsl{width:64px;flex:0 0 auto}' +
+    '.kz-vsl{width:52px;flex:0 0 auto}' +
+    '.kz-vb2.on{background:#34c759;color:#fff}' +
+    '.kz-vv{width:100%;height:100%;object-fit:cover;display:block;background:#000}' +
+    '.kz-tl.cam{width:64px}.kz-tl.cam .kz-av{width:64px;height:84px;border-radius:10px;overflow:hidden;background:#000}' +
+    '.kz-tl.cam .kz-mo{top:62px;right:4px}.kz-tl.me .kz-vv{transform:scaleX(-1)}' +
+    '.kz-tl.big{width:150px}.kz-tl.big .kz-av{width:150px;height:196px}.kz-tl.big .kz-mo{top:174px}' +
+    '.kz-fv{position:absolute;left:8px;top:56px;bottom:76px;z-index:3;display:none;flex-direction:column;align-items:flex-start;gap:8px;overflow-y:auto;pointer-events:none}' +
+    '#kinoScreen.kz-fs .kz-fv{display:flex}' +
+    '.kz-fv .kz-tl{pointer-events:auto;opacity:.92}.kz-fv .kz-tn{color:#fff;text-shadow:0 1px 2px #000}' +
+    '.kz-fvx{width:30px;height:30px;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:14px;padding:0;pointer-events:auto;flex:0 0 auto}' +
+    '#kinoScreen.kz-fs .kz-cb{width:30px}' +
     '.kz-vt{display:flex;gap:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:8px 2px 2px}' +
     '.kz-tl{flex:0 0 auto;width:56px;text-align:center;position:relative}' +
     '.kz-av{width:48px;height:48px;border-radius:50%;margin:0 auto;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:700;border:3px solid transparent;box-sizing:border-box}' +
@@ -20002,15 +20012,15 @@ var PLDNBattModel = (function () {
     var bar = h('div', 'kz-ctl hide');
     var seek = h('input', 'kz-seek'); seek.type = 'range'; seek.min = 0; seek.max = 1000; seek.value = 0;
     var play = h('button', 'kz-cb', '▶'), back = h('button', 'kz-cb', '⏪'), fwd = h('button', 'kz-cb', '⏩'), pick = h('button', 'kz-cb', '🎞');
-    var fsb = h('button', 'kz-cb', '⛶'), chb = h('button', 'kz-cb kz-fo', '💬'), rot = h('button', 'kz-cb kz-fo', '↻'), micb = h('button', 'kz-cb kz-fo', '🎧'), vs = h('div', 'kz-vs');
+    var fsb = h('button', 'kz-cb', '⛶'), chb = h('button', 'kz-cb kz-fo', '💬'), rot = h('button', 'kz-cb kz-fo', '↻'), micb = h('button', 'kz-cb kz-fo', '🎧'), camb = h('button', 'kz-cb kz-fo', '📷'), vs = h('div', 'kz-vs'), fv = h('div', 'kz-fv');
     var time = h('span', 'kz-time', '0:00 / 0:00');
     var vol = h('input', 'kz-vol'); vol.type = 'range'; vol.min = 0; vol.max = 100; vol.value = Math.round(v.volume * 100);
     var r1 = h('div', 'kz-row'), r2 = h('div', 'kz-row');
-    vol.style.width = '56px'; r1.append(seek, h('span', '', '🔊'), vol); r2.append(back, play, fwd, time, h('span', 'kz-sp'), micb, chb, rot, pick, fsb);
+    vol.style.width = '56px'; r1.append(seek, h('span', '', '🔊'), vol); r2.append(back, play, fwd, time, h('span', 'kz-sp'), micb, camb, chb, rot, pick, fsb);
     bar.append(r1, r2);
-    pl.append(v, tap, top, ov, vs, bar);
-    P.video = v; P.ui = { ov: ov, top: top, bar: bar, seek: seek, play: play, time: time, fs: fsb, chat: chb, mic: micb, vs: vs };
-    micb.addEventListener('click', vMic);
+    pl.append(v, tap, top, ov, vs, fv, bar);
+    P.video = v; P.ui = { ov: ov, top: top, bar: bar, seek: seek, play: play, time: time, fs: fsb, chat: chb, mic: micb, cam: camb, vs: vs, fv: fv };
+    micb.addEventListener('click', vMic); camb.addEventListener('click', vCam);
     fsb.addEventListener('click', function () { if (F.on) exitFS(); else enterFS(); });
     chb.addEventListener('click', toggleFsChat);
     rot.addEventListener('click', rotateFS);
@@ -20192,7 +20202,8 @@ var PLDNBattModel = (function () {
       if (bgOn) { up.poll = setInterval(function () { try { if (bgB().cancelled()) up.cancel = true; } catch (_) {} }, 1000); }
       var init = await api('/upload/init', { method: 'POST', json: { room: room, name: nm, size: file.size, mime: file.type || '' } });
       up.id = init.id; up.off = init.offset || 0; up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size); bgUpd(up.pct, 'up');
-      var CH = init.chunk || 4194304, fails = 0; updateTop();
+      var CH = init.chunk || 4194304, fails = 0, failSince = 0, reinits = 0; updateTop();
+      if (init.resumed && init.offset) toast(T('Yuklash ' + up.pct + '% dan davom etdi', 'Загрузка продолжена с ' + up.pct + '%'));
       while (up.off < file.size) {
         if (up.cancel) {
           try { await api('/upload/' + up.id + '/cancel', { method: 'POST' }); } catch (_) {}
@@ -20204,14 +20215,20 @@ var PLDNBattModel = (function () {
           var j = null; try { j = await r.json(); } catch (_) {}
           if (r.status === 409 && j && j.error === 'offset') { up.off = j.offset; continue; }
           if (!r.ok) { var e = new Error((j && j.error) || 'http'); e.code = (j && j.error) || ('http' + r.status); e.status = r.status; e.info = j || {}; throw e; }
-          up.off = j.offset; fails = 0; up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size); bgUpd(up.pct, 'up'); updateTop();
+          up.off = j.offset; fails = 0; failSince = 0; up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size); bgUpd(up.pct, 'up'); updateTop();
         } catch (e2) {
-          if (FATAL.indexOf(e2.code) >= 0 || (e2.status && e2.status < 500 && e2.status !== 408 && e2.status !== 429)) throw e2;
-          if (++fails > 40) throw e2;
+          if (e2.code === 'no-upload' && reinits < 20) {     // server sessiyani yo'qotgan: o'sha fayl bilan qayta ulanib, qolgan joyidan davom etamiz
+            reinits++;
+            try { var ri = await api('/upload/init', { method: 'POST', json: { room: room, name: nm, size: file.size, mime: file.type || '' } }); up.id = ri.id; up.off = ri.offset || 0; up.pct = Math.floor(up.off * 100 / file.size); continue; }
+            catch (e4) { if (e4.status && e4.status < 500 && e4.status !== 408 && e4.status !== 429) throw e4; }
+          } else if (FATAL.indexOf(e2.code) >= 0 || (e2.status && e2.status < 500 && e2.status !== 408 && e2.status !== 429)) throw e2;
+          if (!failSince) failSince = Date.now();
+          if (Date.now() - failSince > 6 * 3600 * 1000) throw e2;   // 6 soat internet bo'lmasa to'xtaymiz (server 24 soat saqlaydi)
+          fails++;
           up.state = 'retry'; bgUpd(up.pct, 'retry'); updateTop();
           await waitOnline(Math.min(10000, 1000 * fails));
           if (up.cancel) continue;
-          try { var g = await api('/upload/' + up.id); up.off = g.offset; } catch (e3) { if (e3.status && e3.status < 500) throw e3; }
+          try { var g = await api('/upload/' + up.id); up.off = g.offset; } catch (e3) { if (e3.status && e3.status < 500 && e3.code !== 'no-upload') throw e3; }
         }
       }
       await api('/upload/' + up.id + '/finish', { method: 'POST' });
@@ -20435,8 +20452,8 @@ var PLDNBattModel = (function () {
   window.addEventListener('resize', function () { scrollBottom(false); });
 
   // ===== OVOZLI SUHBAT (LiveKit): kino ijrosidan butunlay mustaqil =====
-  var V = { room: null, joined: false, busy: false, want: false, micWanted: true, hide: false, vol: 1, state: 'idle', retry: 0, rj: 0, dirty: 0, needAudio: false, spk: false, hinted: false };
-  try { var cv0 = parseFloat(localStorage.getItem('kz_cvol')); V.vol = (cv0 >= 0 && cv0 <= 1) ? cv0 : 1; V.hide = localStorage.getItem('kz_vhide') === '1'; } catch (_) {}
+  var V = { room: null, joined: false, busy: false, want: false, micWanted: true, camWanted: false, camBusy: false, hide: false, vhide: false, big: '', vel: {}, used: {}, vol: 1, state: 'idle', retry: 0, rj: 0, dirty: 0, needAudio: false, spk: false, hinted: false };
+  try { var cv0 = parseFloat(localStorage.getItem('kz_cvol')); V.vol = (cv0 >= 0 && cv0 <= 1) ? cv0 : 1; V.hide = localStorage.getItem('kz_vhide') === '1'; V.vhide = localStorage.getItem('kz_vvh') === '1'; } catch (_) {}
   function LKc() { return window.LivekitClient || null; }
   function aud() { return window.PldnAudio || null; }
   var lkLoading = null;
@@ -20474,17 +20491,61 @@ var PLDNBattModel = (function () {
     }
     if (P.ui && P.ui.vs) { P.ui.vs.textContent = ''; sp.slice(0, 3).forEach(function (p) { P.ui.vs.appendChild(h('span', '', '🎙 ' + shortName(p.name))); }); }
   }
+  // kamera tasviri: har qatnashchiga bitta video element; yashirilsa uzib qo'yiladi (trafik tejaladi)
+  function vVideo(p) {
+    try {
+      var L = LKc(), pub = p.getTrackPublication(L.Track.Source.Camera), tr = pub && pub.track;
+      if (!tr || pub.isMuted) return null;
+      var el = V.vel[p.identity];
+      if (!el || el._tr !== tr) {
+        if (el) { try { el._tr.detach(el); } catch (_) {} try { el.remove(); } catch (_) {} }
+        el = tr.attach(); el._tr = tr; el.muted = true; el.setAttribute('playsinline', ''); el.className = 'kz-vv';
+        V.vel[p.identity] = el;
+      }
+      V.used[p.identity] = 1;
+      return el;
+    } catch (_) { return null; }
+  }
+  function vVidSweep() {
+    Object.keys(V.vel).forEach(function (id) {
+      if (V.used[id]) return;
+      var el = V.vel[id]; try { el._tr.detach(el); } catch (_) {} try { el.remove(); } catch (_) {}
+      delete V.vel[id];
+    });
+  }
+  function vCamOn(p) { try { return !!p.isCameraEnabled; } catch (_) { return false; } }
   function vTile(p, me) {
-    var nm = shortName(p.name), t = h('div', 'kz-tl' + (p.isSpeaking ? ' sp' : ''));
+    var nm = shortName(p.name), vid = vVideo(p);
+    var t = h('div', 'kz-tl' + (p.isSpeaking ? ' sp' : '') + (vid ? ' cam' : '') + (vid && V.big === p.identity ? ' big' : '') + (me ? ' me' : ''));
     t.setAttribute('data-id', p.identity);
-    var av = h('div', 'kz-av', nm.charAt(0).toUpperCase()); av.style.background = colorOf(p.identity); t.appendChild(av);
+    var av = h('div', 'kz-av', vid ? '' : nm.charAt(0).toUpperCase());
+    if (vid) { av.appendChild(vid); t.addEventListener('click', function () { V.big = (V.big === p.identity) ? '' : p.identity; renderVoice(); }); }
+    else av.style.background = colorOf(p.identity);
+    t.appendChild(av);
     if (!p.isMicrophoneEnabled) t.appendChild(h('div', 'kz-mo', '🔇'));
     t.appendChild(h('div', 'kz-tn', me ? T('Siz', 'Вы') : nm));
     return t;
   }
+  // to'liq ekranda: kamerasi yoqiq qatnashchilar kino ustida kichik oynalarda
+  function vOverlay() {
+    var fv = P.ui && P.ui.fv; if (!fv) return;
+    fv.textContent = '';
+    if (!(F.on && V.joined)) return;
+    var tg = h('button', 'kz-fvx', V.vhide ? '👁' : '🙈');
+    tg.addEventListener('click', function () { V.vhide = !V.vhide; try { localStorage.setItem('kz_vvh', V.vhide ? '1' : '0'); } catch (_) {} renderVoice(); });
+    fv.appendChild(tg);
+    if (V.vhide) return;
+    vParts().forEach(function (p, i) { if (vCamOn(p)) fv.appendChild(vTile(p, i === 0)); });
+  }
   function renderVoice() {
+    V.used = {};
+    try { renderVoice0(); vOverlay(); } catch (e) { try { console.error('voice ui', e); } catch (_) {} }
+    vVidSweep();
+  }
+  function renderVoice0() {
     var box = $('kzVc');
     if (P.ui && P.ui.mic) { P.ui.mic.textContent = V.joined ? (vMicOn() ? '🎙' : '🔇') : '🎧'; }
+    if (P.ui && P.ui.cam) { var cOn = V.joined && vCamOn(V.room.localParticipant); P.ui.cam.textContent = (V.joined && !cOn) ? '🚫' : '📷'; }
     if (!box) return;
     box.textContent = '';
     if (!V.want && !V.joined) {
@@ -20499,9 +20560,11 @@ var PLDNBattModel = (function () {
       box.appendChild(hd); return;
     }
     var ps = vParts(), on = vMicOn();
-    hd.appendChild(h('span', '', '🎙 ' + T('Suhbat', 'Голос') + ' · ' + ps.length + (V.state === 'retry' ? ' ⏳' : '')));
+    hd.appendChild(h('span', '', '👥 ' + ps.length + (V.state === 'retry' ? ' ⏳' : '')));
     hd.appendChild(h('span', 'kz-sp'));
     var mb = h('button', 'kz-vb2' + (on ? '' : ' off'), on ? '🎙' : '🔇'); mb.addEventListener('click', vMic); hd.appendChild(mb);
+    var camOn = vCamOn(V.room.localParticipant);
+    var kb = h('button', 'kz-vb2' + (camOn ? ' on' : ''), camOn ? '📷' : '🚫'); kb.addEventListener('click', vCam); hd.appendChild(kb);
     var vl = h('input', 'kz-vsl'); vl.type = 'range'; vl.min = 0; vl.max = 100; vl.value = Math.round(V.vol * 100);
     vl.addEventListener('input', function () {
       V.vol = vl.value / 100; try { localStorage.setItem('kz_cvol', String(V.vol)); } catch (_) {}
@@ -20515,7 +20578,7 @@ var PLDNBattModel = (function () {
       var ab = h('button', 'kz-vj', '🔈 ' + T('Ovozni yoqish uchun bosing', 'Нажмите, чтобы включить звук'));
       ab.addEventListener('click', function () { try { V.room.startAudio(); } catch (_) {} V.needAudio = false; renderVoice(); }); box.appendChild(ab);
     }
-    if (!V.hide) {
+    if (!V.hide && !F.on) {
       var tr = h('div', 'kz-vt');
       ps.forEach(function (p, i) { tr.appendChild(vTile(p, i === 0)); });
       box.appendChild(tr);
@@ -20530,6 +20593,13 @@ var PLDNBattModel = (function () {
     rm.on(E.TrackUnsubscribed, function (track) { try { track.detach().forEach(function (e) { e.remove(); }); } catch (_) {} vDirty(); });
     rm.on(E.ActiveSpeakersChanged, markSpeakers);
     [E.ParticipantConnected, E.ParticipantDisconnected, E.TrackMuted, E.TrackUnmuted, E.LocalTrackPublished, E.LocalTrackUnpublished].forEach(function (ev) { rm.on(ev, vDirty); });
+    rm.on(E.LocalTrackPublished, function (pub) {            // telefon qizib ketsa, kamerani o'zi o'chiradi (suhbat va kino davom etadi)
+      try {
+        if (pub && pub.kind === 'video' && pub.track && L.TrackEvent && L.TrackEvent.CpuConstrained) {
+          pub.track.on(L.TrackEvent.CpuConstrained, function () { toast(T('Telefon qizib ketdi: kamera o\'chirildi.', 'Телефон перегрелся: камера отключена.')); V.camWanted = false; try { rm.localParticipant.setCameraEnabled(false); } catch (_) {} });
+        }
+      } catch (_) {}
+    });
     rm.on(E.Reconnecting, function () { V.state = 'retry'; vDirty(); });
     rm.on(E.Reconnected, function () { V.state = 'on'; vDirty(); });
     rm.on(E.AudioPlaybackStatusChanged, function () { try { V.needAudio = !rm.canPlaybackAudio; } catch (_) {} vDirty(); });
@@ -20555,7 +20625,7 @@ var PLDNBattModel = (function () {
       var L = LKc();
       var j = await api('/lk-token', { method: 'POST', json: { room: room0 } });
       if (P.dead || P.room !== room0 || !V.want) { V.busy = false; renderVoice(); return; }
-      rm = new L.Room({ adaptiveStream: true, dynacast: true, audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      rm = new L.Room({ adaptiveStream: true, dynacast: true, audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, videoCaptureDefaults: { resolution: { width: 640, height: 360, frameRate: 15 }, facingMode: 'user' }, publishDefaults: { simulcast: true, videoEncoding: { maxBitrate: 300000, maxFramerate: 15 } } });
       V.room = rm; vWire(rm, L);
       await rm.connect(j.url, j.token);
       if (V.room !== rm) { try { rm.disconnect(); } catch (_) {} return; }
@@ -20566,6 +20636,10 @@ var PLDNBattModel = (function () {
       if (V.micWanted) {
         try { await rm.localParticipant.setMicrophoneEnabled(true); }
         catch (e) { V.micWanted = false; toast(T('Mikrofon ruxsati yo\'q: faqat tinglaysiz. Sozlamalarda ruxsat bering.', 'Нет доступа к микрофону: вы только слушаете. Разрешите в настройках.')); }
+      }
+      if (V.camWanted) {
+        try { if (await vEnsureCam()) await rm.localParticipant.setCameraEnabled(true); else V.camWanted = false; }
+        catch (e) { V.camWanted = false; toast(T('Kamera yoqilmadi. Sozlamalarda ruxsat bering.', 'Камера не включилась. Разрешите в настройках.')); }
       }
       if (!V.hinted) { V.hinted = true; toast(T('Kino ovozi mikrofonga tushmasligi uchun quloqchin taqing.', 'Чтобы звук фильма не попадал в микрофон, наденьте наушники.')); }
       renderVoice(); markSpeakers();
@@ -20584,8 +20658,32 @@ var PLDNBattModel = (function () {
     catch (e) { toast(T('Mikrofon yoqilmadi. Sozlamalarda ruxsat bering.', 'Микрофон не включился. Разрешите в настройках.')); }
     renderVoice(); markSpeakers();
   }
+  async function vEnsureCam() {                            // Android CAMERA ruxsati (WebView o'zi so'ramaydi)
+    var b = bgB(); if (!b || !b.hasCam || b.hasCam()) return true;
+    try { b.askCam(); } catch (_) { return true; }
+    for (var i = 0; i < 40; i++) { await sleep(500); try { if (b.hasCam()) return true; } catch (_) { return true; } }
+    return false;
+  }
+  async function vCam() {
+    if (V.camBusy) return;
+    if (!V.joined) { V.camWanted = true; return vJoin(); }
+    V.camBusy = true;
+    var lp = V.room.localParticipant, want = !lp.isCameraEnabled;
+    try {
+      if (want && !(await vEnsureCam())) { toast(T('Kamera ruxsati berilmadi. Sozlamalarda ruxsat bering.', 'Нет доступа к камере. Разрешите в настройках.')); }
+      else {
+        await lp.setCameraEnabled(want); V.camWanted = want;
+        if (!want) { try { var pb = lp.getTrackPublication(LKc().Track.Source.Camera); if (pb && pb.track) await lp.unpublishTrack(pb.track, true); } catch (_) {} }   // kamera chirog'i ham o'chadi
+      }
+    } catch (e) { V.camWanted = false; toast(T('Kamera yoqilmadi. Sozlamalarda ruxsat bering.', 'Камера не включилась. Разрешите в настройках.')); }
+    V.camBusy = false; renderVoice(); markSpeakers();
+  }
+  document.addEventListener('visibilitychange', function () {   // ilova fonga o'tsa kamera o'chadi (maxfiylik va resurs)
+    if (!document.hidden || !V.joined || !V.room) return;
+    try { if (V.room.localParticipant.isCameraEnabled) { V.camWanted = false; V.room.localParticipant.setCameraEnabled(false).then(vDirty, vDirty); } } catch (_) {}
+  });
   function vLeave() {
-    V.want = false; clearTimeout(V.rj); V.retry = 0;
+    V.want = false; V.camWanted = false; clearTimeout(V.rj); V.retry = 0;
     var rm = V.room; V.room = null;
     if (rm) { try { rm.disconnect(); } catch (_) {} }
     vCleanup();
@@ -20616,12 +20714,12 @@ var PLDNBattModel = (function () {
     var v = P.video;
     F.land = !(v && v.videoWidth && v.videoHeight && v.videoHeight > v.videoWidth);
     F.on = true; F.chat = false; F.unread = 0;
-    fsClasses(); natEnter(F.land); updateFsUI(); showCtl();
+    fsClasses(); natEnter(F.land); updateFsUI(); showCtl(); renderVoice();
   }
   function exitFS() {
     if (!F.on) return;
     F.on = false; F.chat = false; F.unread = 0;
-    fsClasses(); natExit(); updateFsUI();
+    fsClasses(); natExit(); updateFsUI(); renderVoice();
     if (C.ta) C.ta.blur();
     setTimeout(function () { scrollBottom(true); }, 150);
   }
@@ -20665,7 +20763,7 @@ var PLDNBattModel = (function () {
   C.list.addEventListener('scroll', function () { C.stick = C.list.scrollHeight - C.list.scrollTop - C.list.clientHeight < 60; });
   buildBar();
   render();
-  window.PLDNKino = { version: 'kino-6.0', maxMembers: MAX, currentRoom: curRoom };
+  window.PLDNKino = { version: 'kino-7.0', maxMembers: MAX, currentRoom: curRoom };
 })();
 </script>
 </body>
