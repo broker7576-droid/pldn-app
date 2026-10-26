@@ -1,4 +1,4 @@
-// PLDN-FAYL: MainActivity.txt | versiya: kino-bg-1.1 | satr: 1305 | 26-okt-2026
+// PLDN-FAYL: MainActivity.txt | versiya: kino-bg-1.2 | satr: 1314 | 26-okt-2026
 package __PKG__;
 
 import android.Manifest;
@@ -1175,6 +1175,15 @@ public class MainActivity extends BridgeActivity {
         public boolean cancelled() {
             if (PldnUploadService.cancelReq) { PldnUploadService.cancelReq = false; return true; }
             return false;
+        }
+        @android.webkit.JavascriptInterface
+        public boolean hasCam() { return ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED; }
+        @android.webkit.JavascriptInterface
+        public void askCam() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() { ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.CAMERA}, 3); }
+            });
         }
         @android.webkit.JavascriptInterface
         public boolean running() { return PldnUploadService.running; }
