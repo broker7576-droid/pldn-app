@@ -1,5 +1,5 @@
 <!-- VERSION: 239 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-7.1 | satr: 20790 | 26-okt-2026 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-7.2 | satr: 20830 | 27-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -19518,7 +19518,7 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-7-bosqich + to'liq ekran + fonda yuklash + ovozli suhbat + kamera + tez yuklash: xona, kino yuklash, uzatish, sinxron ijro, chat ===== VERSION: kino-7.1
+// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-7-bosqich + to'liq ekran + fonda yuklash + ovozli suhbat + kamera + tez yuklash + davom ettirish belgisi: xona, kino yuklash, uzatish, sinxron ijro, chat ===== VERSION: kino-7.2
 // Firestore: kinoRooms/{id} { owner, members:[uid], names:{uid:ism}, title, createdAt, updatedAt }
 // Kino fayli VPS'da (kino.js, /kino): yuklash, HTTP Range bilan uzatish, WebSocket orqali sinxron ijro. Chat: Firestore (kinoRooms/{id}/messages), ovozli/video xabar fayllari VPS'da. Jonli ovoz keyingi bosqichda.
 (function () {
@@ -19610,6 +19610,10 @@ var PLDNBattModel = (function () {
     '.kz-tl.sp .kz-av{border-color:#34c759}' +
     '.kz-tn{font-size:11px;color:var(--text-secondary);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.kz-mo{position:absolute;right:2px;top:30px;font-size:10px;background:#ff3b30;border-radius:50%;width:18px;height:18px;line-height:18px;color:#fff}' +
+    '#kzRes{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:100000;display:none;flex-direction:column;align-items:center;gap:10px;pointer-events:none}' +
+    '.kz-resb{pointer-events:auto;width:56px;height:56px;border-radius:50%;border:0;padding:0;background:#fff;color:#5f6368;box-shadow:0 2px 10px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center}' +
+    '.kz-resb:active{background:#f1f3f4}.kz-resb.spin svg{animation:kzspin .8s linear infinite}@keyframes kzspin{to{transform:rotate(360deg)}}' +
+    '.kz-resc{background:rgba(0,0,0,.65);color:#fff;font-size:12px;padding:3px 10px;border-radius:12px;pointer-events:none}' +
     '.kz-vs{position:absolute;right:8px;top:8px;z-index:3;display:flex;flex-direction:column;align-items:flex-end;gap:4px;pointer-events:none}' +
     '.kz-vs span{background:rgba(0,0,0,.55);color:#fff;border-radius:10px;padding:2px 8px;font-size:12px}' +
     '.kz-typing .kz-vc{display:none}#kinoScreen.kz-fs .kz-vc{display:none}' +
@@ -19934,7 +19938,7 @@ var PLDNBattModel = (function () {
     var ws = P.ws; P.ws = null; P.wsOpen = false; if (ws) { try { ws.close(); } catch (_) {} }
     if (P.video) { try { P.video.pause(); P.video.removeAttribute('src'); P.video.load(); } catch (_) {} }
     var pl = $('kzPlayer'); if (pl) pl.textContent = '';
-    P.video = null; P.ui = null; P.st = null; P.movieId = ''; P.room = ''; P.vReady = false; P.upOther = null; P.errMsg = ''; P.needTap = false; S.online = [];
+    P.video = null; P.ui = null; P.st = null; P.movieId = ''; P.room = ''; renderResume(); P.vReady = false; P.upOther = null; P.errMsg = ''; P.needTap = false; S.online = [];
   }
   async function connect() {
     if (P.dead) return;
@@ -20103,15 +20107,31 @@ var PLDNBattModel = (function () {
   }
   function badge(txt, fn) { var b = h('div', 'kz-badge', txt); if (fn) b.addEventListener('click', fn); return b; }
   function fmtEta(sec) { sec = Math.max(0, Math.round(sec)); if (sec >= 3600) return Math.floor(sec / 3600) + T(' soat ', ' ч ') + Math.round((sec % 3600) / 60) + T(' daq', ' мин'); if (sec >= 60) return Math.round(sec / 60) + T(' daq', ' мин'); return sec + T(' s', ' с'); }
+  // Chrome'dagi kabi markazdagi "yangilash" belgisi: yuklash to'xtaganda chiqadi, bosilganda internet bor bo'lsa davom etadi
+  function renderResume() {
+    var up = P.up, show = !!(up && up.state === 'paused' && up.room === P.room && P.ui);
+    var el = document.getElementById('kzRes');
+    if (!show) { if (el) el.style.display = 'none'; return; }
+    if (!el) {
+      el = document.createElement('div'); el.id = 'kzRes';
+      el.innerHTML = '<button class="kz-resb" id="kzResB" type="button"><svg viewBox="0 0 24 24" width="30" height="30"><path fill="currentColor" d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg></button><div class="kz-resc" id="kzResC"></div>';
+      document.body.appendChild(el);
+      document.getElementById('kzResB').addEventListener('click', function () { var u = P.up; if (u && u.state === 'paused' && !u.checking && u.wake) u.wake(); });
+    }
+    el.style.display = 'flex';
+    document.getElementById('kzResB').className = 'kz-resb' + (up.checking ? ' spin' : '');
+    document.getElementById('kzResC').textContent = up.checking ? T('Tekshirilmoqda…', 'Проверка…') : T('Yuklash to\'xtadi · ', 'Загрузка остановлена · ') + up.pct + '%';
+  }
   function updateTop() {
+    renderResume();
     var u = P.ui; if (!u) return; var t = u.top; t.textContent = '';
     if (!P.wsOpen) t.appendChild(badge('⏳ ' + T('Ulanmoqda…', 'Подключение…')));
     var up = P.up;
     if (up && up.room === P.room) {
-      var label = up.state === 'retry' ? '⚠ ' + T('Internet yo\'q, qayta uriniladi…', 'Нет интернета, повтор…')
+      var label = up.state === 'paused' ? '⏸ ' + T('Yuklash to\'xtadi', 'Загрузка остановлена') + ' · ' + up.pct + '%'
         : '⬆ ' + up.pct + '% · ' + fmtSize(up.off) + ' / ' + fmtSize(up.file.size) + (up.speed ? ' · ' + (up.speed / 1048576).toFixed(1) + ' MB/s · ' + fmtEta((up.file.size - up.off) / up.speed) : '');
       t.appendChild(badge(label));
-      t.appendChild(badge('✕ ' + T('Bekor qilish', 'Отмена'), function () { up.cancel = true; }));
+      t.appendChild(badge('✕ ' + T('Bekor qilish', 'Отмена'), function () { up.cancel = true; if (up.wake) up.wake(); }));
     } else if (P.upOther) {
       t.appendChild(badge('👤 ' + (P.upOther.name || '') + ': ⬆ ' + P.upOther.pct + '%'));
     }
@@ -20200,10 +20220,10 @@ var PLDNBattModel = (function () {
     await bgBatteryHint();
     try {
       bgOn = bgStart(nm);
-      if (bgOn) { up.poll = setInterval(function () { try { if (bgB().cancelled()) up.cancel = true; } catch (_) {} }, 1000); }
+      if (bgOn) { up.poll = setInterval(function () { try { if (bgB().cancelled()) { up.cancel = true; if (up.wake) up.wake(); } } catch (_) {} }, 1000); }
       var init = await api('/upload/init', { method: 'POST', json: { room: room, name: nm, size: file.size, mime: file.type || '' } });
       up.id = init.id; up.off = init.offset || 0; up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size); bgUpd(up.pct, 'up');
-      var CH = init.chunk || 4194304, PAR = 4, fails = 0, failSince = 0, reinits = 0; updateTop();
+      var CH = init.chunk || 4194304, PAR = 4, reinits = 0; updateTop();
       async function sendPart(so) {
         var eo = Math.min(so + CH, file.size), blob = file.slice(so, eo);
         var r = await fetch(BASE + '/upload/' + up.id + '?offset=' + so, { method: 'PUT', headers: { 'Authorization': 'Bearer ' + (await idTok()), 'Content-Type': 'application/octet-stream' }, body: blob });
@@ -20213,11 +20233,33 @@ var PLDNBattModel = (function () {
         return { off: j.offset, bytes: eo - so };
       }
       if (init.resumed && init.offset) toast(T('Yuklash ' + up.pct + '% dan davom etdi', 'Загрузка продолжена с ' + up.pct + '%'));
-      while (up.off < file.size) {
-        if (up.cancel) {
-          try { await api('/upload/' + up.id + '/cancel', { method: 'POST' }); } catch (_) {}
-          toast(T('Yuklash bekor qilindi. Avvalgi kino saqlanib qoldi.', 'Загрузка отменена. Предыдущее кино сохранено.')); clearInterval(up.poll); bgStop('cancelled'); P.up = null; updateTop(); updateOverlay(); return;
+      function isHard(e) { return FATAL.indexOf(e.code) >= 0 || (e.status && e.status < 500 && e.status !== 408 && e.status !== 429); }
+      async function doCancel() {
+        try { await api('/upload/' + up.id + '/cancel', { method: 'POST' }); } catch (_) {}
+        toast(T('Yuklash bekor qilindi. Avvalgi kino saqlanib qoldi.', 'Загрузка отменена. Предыдущее кино сохранено.')); clearInterval(up.poll); bgStop('cancelled'); P.up = null; updateTop(); updateOverlay();
+      }
+      // Internet uzilsa avtomatik urinmaymiz: yuklash to'xtaydi, markazda belgi chiqadi. Bosilganda internet bor bo'lsa, to'xtagan joyidan davom etadi.
+      async function pauseUntilBack() {
+        up.state = 'paused'; bgUpd(up.pct, 'retry'); updateTop();
+        for (;;) {
+          await new Promise(function (res) { up.wake = function () { up.wake = null; res(); }; if (up.cancel) up.wake(); });
+          if (up.cancel) return;
+          up.checking = true; updateTop();
+          try { var g = await api('/upload/' + up.id); up.off = g.offset; up.checking = false; break; }
+          catch (e3) {
+            up.checking = false;
+            if (e3.code === 'no-upload' && reinits < 20) {
+              reinits++;
+              try { var ri = await api('/upload/init', { method: 'POST', json: { room: room, name: nm, size: file.size, mime: file.type || '' } }); up.id = ri.id; up.off = ri.offset || 0; break; }
+              catch (e5) { if (isHard(e5)) throw e5; }
+            } else if (isHard(e3)) throw e3;
+            toast(T('Internet yo\'q. Ulanib, qayta bosing.', 'Нет интернета. Подключитесь и нажмите снова.')); updateTop();
+          }
         }
+        up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size); bgUpd(up.pct, 'up'); updateTop();
+      }
+      while (up.off < file.size) {
+        if (up.cancel) { await doCancel(); return; }
         var t0 = Date.now(), base = up.off, tasks = [];
         try {
           // bir nechta bo'lak parallel ketadi: bitta ulanish sust bo'lsa ham umumiy tezlik oshadi
@@ -20235,23 +20277,21 @@ var PLDNBattModel = (function () {
             up.speed = up.speed ? up.speed * 0.7 + sp * 0.3 : sp;
           }
           if (firstErr) { updateTop(); throw firstErr; }
-          fails = 0; failSince = 0; up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size); bgUpd(up.pct, 'up'); updateTop();
+          up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size); bgUpd(up.pct, 'up'); updateTop();
         } catch (e2) {
           if (e2.code === 'no-upload' && reinits < 20) {     // server sessiyani yo'qotgan: o'sha fayl bilan qayta ulanib, qolgan joyidan davom etamiz
             reinits++;
             try { var ri = await api('/upload/init', { method: 'POST', json: { room: room, name: nm, size: file.size, mime: file.type || '' } }); up.id = ri.id; up.off = ri.offset || 0; up.pct = Math.floor(up.off * 100 / file.size); continue; }
             catch (e4) { if (e4.status && e4.status < 500 && e4.status !== 408 && e4.status !== 429) throw e4; }
-          } else if (FATAL.indexOf(e2.code) >= 0 || (e2.status && e2.status < 500 && e2.status !== 408 && e2.status !== 429)) throw e2;
-          if (!failSince) failSince = Date.now();
-          if (Date.now() - failSince > 6 * 3600 * 1000) throw e2;   // 6 soat internet bo'lmasa to'xtaymiz (server 24 soat saqlaydi)
-          fails++;
-          up.state = 'retry'; bgUpd(up.pct, 'retry'); updateTop();
-          await waitOnline(Math.min(10000, 1000 * fails));
-          if (up.cancel) continue;
-          try { var g = await api('/upload/' + up.id); up.off = g.offset; } catch (e3) { if (e3.status && e3.status < 500 && e3.code !== 'no-upload') throw e3; }
+          } else if (isHard(e2)) throw e2;
+          await pauseUntilBack();
         }
       }
-      await api('/upload/' + up.id + '/finish', { method: 'POST' });
+      for (;;) {                                           // tugatish so'rovi ham internet uzilsa to'xtab, belgi bosilishini kutadi
+        if (up.cancel) { await doCancel(); return; }
+        try { await api('/upload/' + up.id + '/finish', { method: 'POST' }); break; }
+        catch (ef) { if (isHard(ef) && ef.code !== 'no-upload') throw ef; await pauseUntilBack(); if (up.off < file.size) { throw new Error('incomplete'); } }
+      }
       bgRes = 'done';
       toast('✅ ' + T('Kino yuklandi', 'Кино загружено'));
     } catch (e) {
@@ -20783,7 +20823,7 @@ var PLDNBattModel = (function () {
   C.list.addEventListener('scroll', function () { C.stick = C.list.scrollHeight - C.list.scrollTop - C.list.clientHeight < 60; });
   buildBar();
   render();
-  window.PLDNKino = { version: 'kino-7.1', maxMembers: MAX, currentRoom: curRoom };
+  window.PLDNKino = { version: 'kino-7.2', maxMembers: MAX, currentRoom: curRoom };
 })();
 </script>
 </body>
