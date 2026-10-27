@@ -1,5 +1,5 @@
-<!-- VERSION: 238 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-7.0 | satr: 20770 | 26-okt-2026 -->
+<!-- VERSION: 228 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-7.1 | satr: 20790 | 26-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -19518,7 +19518,7 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-7-bosqich + to'liq ekran + fonda yuklash + ovozli suhbat + kamera: xona, kino yuklash, uzatish, sinxron ijro, chat ===== VERSION: kino-7.0
+// ===== KINOZONA 🎬 (PLDN×RSLT) — 1-7-bosqich + to'liq ekran + fonda yuklash + ovozli suhbat + kamera + tez yuklash: xona, kino yuklash, uzatish, sinxron ijro, chat ===== VERSION: kino-7.1
 // Firestore: kinoRooms/{id} { owner, members:[uid], names:{uid:ism}, title, createdAt, updatedAt }
 // Kino fayli VPS'da (kino.js, /kino): yuklash, HTTP Range bilan uzatish, WebSocket orqali sinxron ijro. Chat: Firestore (kinoRooms/{id}/messages), ovozli/video xabar fayllari VPS'da. Jonli ovoz keyingi bosqichda.
 (function () {
@@ -20102,13 +20102,14 @@ var PLDNBattModel = (function () {
     u.play.textContent = s.playing ? '⏸' : '▶';
   }
   function badge(txt, fn) { var b = h('div', 'kz-badge', txt); if (fn) b.addEventListener('click', fn); return b; }
+  function fmtEta(sec) { sec = Math.max(0, Math.round(sec)); if (sec >= 3600) return Math.floor(sec / 3600) + T(' soat ', ' ч ') + Math.round((sec % 3600) / 60) + T(' daq', ' мин'); if (sec >= 60) return Math.round(sec / 60) + T(' daq', ' мин'); return sec + T(' s', ' с'); }
   function updateTop() {
     var u = P.ui; if (!u) return; var t = u.top; t.textContent = '';
     if (!P.wsOpen) t.appendChild(badge('⏳ ' + T('Ulanmoqda…', 'Подключение…')));
     var up = P.up;
     if (up && up.room === P.room) {
       var label = up.state === 'retry' ? '⚠ ' + T('Internet yo\'q, qayta uriniladi…', 'Нет интернета, повтор…')
-        : '⬆ ' + up.pct + '% · ' + fmtSize(up.off) + ' / ' + fmtSize(up.file.size);
+        : '⬆ ' + up.pct + '% · ' + fmtSize(up.off) + ' / ' + fmtSize(up.file.size) + (up.speed ? ' · ' + (up.speed / 1048576).toFixed(1) + ' MB/s · ' + fmtEta((up.file.size - up.off) / up.speed) : '');
       t.appendChild(badge(label));
       t.appendChild(badge('✕ ' + T('Bekor qilish', 'Отмена'), function () { up.cancel = true; }));
     } else if (P.upOther) {
@@ -20202,20 +20203,39 @@ var PLDNBattModel = (function () {
       if (bgOn) { up.poll = setInterval(function () { try { if (bgB().cancelled()) up.cancel = true; } catch (_) {} }, 1000); }
       var init = await api('/upload/init', { method: 'POST', json: { room: room, name: nm, size: file.size, mime: file.type || '' } });
       up.id = init.id; up.off = init.offset || 0; up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size); bgUpd(up.pct, 'up');
-      var CH = init.chunk || 4194304, fails = 0, failSince = 0, reinits = 0; updateTop();
+      var CH = init.chunk || 4194304, PAR = 4, fails = 0, failSince = 0, reinits = 0; updateTop();
+      async function sendPart(so) {
+        var eo = Math.min(so + CH, file.size), blob = file.slice(so, eo);
+        var r = await fetch(BASE + '/upload/' + up.id + '?offset=' + so, { method: 'PUT', headers: { 'Authorization': 'Bearer ' + (await idTok()), 'Content-Type': 'application/octet-stream' }, body: blob });
+        var j = null; try { j = await r.json(); } catch (_) {}
+        if (r.status === 409 && j && j.error === 'offset') return { sync: j.offset };
+        if (!r.ok) { var e = new Error((j && j.error) || 'http'); e.code = (j && j.error) || ('http' + r.status); e.status = r.status; e.info = j || {}; throw e; }
+        return { off: j.offset, bytes: eo - so };
+      }
       if (init.resumed && init.offset) toast(T('Yuklash ' + up.pct + '% dan davom etdi', 'Загрузка продолжена с ' + up.pct + '%'));
       while (up.off < file.size) {
         if (up.cancel) {
           try { await api('/upload/' + up.id + '/cancel', { method: 'POST' }); } catch (_) {}
           toast(T('Yuklash bekor qilindi. Avvalgi kino saqlanib qoldi.', 'Загрузка отменена. Предыдущее кино сохранено.')); clearInterval(up.poll); bgStop('cancelled'); P.up = null; updateTop(); updateOverlay(); return;
         }
-        var blob = file.slice(up.off, Math.min(up.off + CH, file.size));
+        var t0 = Date.now(), base = up.off, tasks = [];
         try {
-          var r = await fetch(BASE + '/upload/' + up.id + '?offset=' + up.off, { method: 'PUT', headers: { 'Authorization': 'Bearer ' + (await idTok()), 'Content-Type': 'application/octet-stream' }, body: blob });
-          var j = null; try { j = await r.json(); } catch (_) {}
-          if (r.status === 409 && j && j.error === 'offset') { up.off = j.offset; continue; }
-          if (!r.ok) { var e = new Error((j && j.error) || 'http'); e.code = (j && j.error) || ('http' + r.status); e.status = r.status; e.info = j || {}; throw e; }
-          up.off = j.offset; fails = 0; failSince = 0; up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size); bgUpd(up.pct, 'up'); updateTop();
+          // bir nechta bo'lak parallel ketadi: bitta ulanish sust bo'lsa ham umumiy tezlik oshadi
+          for (var k = 0; k < PAR && base + k * CH < file.size; k++) { tasks.push(sendPart(base + k * CH)); }
+          var rs = await Promise.allSettled(tasks), firstErr = null, sync = null, bytes = 0;
+          for (var q = 0; q < rs.length; q++) {
+            if (rs[q].status === 'rejected') { if (!firstErr) firstErr = rs[q].reason; continue; }
+            var v = rs[q].value;
+            if (v.sync != null) { sync = v.sync; continue; }
+            bytes += v.bytes; if (v.off > up.off) up.off = v.off;
+          }
+          if (sync != null && !firstErr) { up.off = sync; continue; }
+          if (bytes > 0) {
+            var dt = Math.max(0.2, (Date.now() - t0) / 1000), sp = bytes / dt;
+            up.speed = up.speed ? up.speed * 0.7 + sp * 0.3 : sp;
+          }
+          if (firstErr) { updateTop(); throw firstErr; }
+          fails = 0; failSince = 0; up.state = 'up'; up.pct = Math.floor(up.off * 100 / file.size); bgUpd(up.pct, 'up'); updateTop();
         } catch (e2) {
           if (e2.code === 'no-upload' && reinits < 20) {     // server sessiyani yo'qotgan: o'sha fayl bilan qayta ulanib, qolgan joyidan davom etamiz
             reinits++;
@@ -20763,7 +20783,7 @@ var PLDNBattModel = (function () {
   C.list.addEventListener('scroll', function () { C.stick = C.list.scrollHeight - C.list.scrollTop - C.list.clientHeight < 60; });
   buildBar();
   render();
-  window.PLDNKino = { version: 'kino-7.0', maxMembers: MAX, currentRoom: curRoom };
+  window.PLDNKino = { version: 'kino-7.1', maxMembers: MAX, currentRoom: curRoom };
 })();
 </script>
 </body>
