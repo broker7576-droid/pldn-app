@@ -1,5 +1,5 @@
-<!-- VERSION: 240 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: kino-7.2 | satr: 20830 | 27-okt-2026 -->
+<!-- VERSION: 241 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: emo-menu-8.0 | satr: 20914 | 27-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -2697,6 +2697,14 @@
   .prm-center { position: absolute; left: 50%; top: 50%; width: 46%; height: 46%; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(circle at 50% 40%, #16305f 0%, #0a1630 72%); border: 2px solid #2d8bff; box-shadow: 0 0 18px rgba(45,139,255,0.7), inset 0 0 22px rgba(45,139,255,0.35); pointer-events: none; }
   .prm-center .pldn-robot-body { position: absolute; left: 50%; top: 50%; margin: 0; width: 34px; height: 40px; transform: translate(-50%, -50%) scale(var(--rs, 2.4)); transition: none; }
   .prm-center .pldn-robot-eye { animation: pldnRobotBlink 9s linear infinite; }
+  /* 12 talik aylana menyu (emotsiyalar) */
+  .prm-lab.sm { width: 24%; }
+  .prm-lab.sm .prm-ico { width: calc(var(--s) * 0.085); height: calc(var(--s) * 0.085); border-width: 1.5px; }
+  .prm-lab.sm .prm-t { font-size: calc(var(--s) * 0.027); }
+  .prm-emo { font-size: calc(var(--s) * 0.05); line-height: 1; }
+  .prm-lab.sm .prm-emo { font-size: calc(var(--s) * 0.043); }
+  .prm-seg.soon { fill: rgba(var(--c), 0.07); stroke-opacity: 0.45; filter: none; }
+  .prm-lab.soon { opacity: 0.5; }
   .prm-toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 99995; background: rgba(20,24,40,0.94); color: #fff; padding: 10px 16px; border-radius: 14px; font-size: 14px; max-width: 86vw; text-align: center; opacity: 0; transition: opacity 0.2s ease; pointer-events: none; }
   .prm-toast.show { opacity: 1; }
   /* ===== PLDN ROBOT SEVGI EMOTSIYASI (3D) ===== VERSION: love3d-2.0 */
@@ -18430,7 +18438,7 @@ async function fbOpenChat(info, ensure) {
 </script>
 
 <script>
-// ===== PLDN ROBOT AYLANA MENYUSI ===== VERSION: robot-menu-6.0
+// ===== PLDN ROBOT AYLANA MENYUSI ===== VERSION: robot-menu-8.0 (6 talik asosiy + 12 talik emotsiya menyulari)
 (function () {
   if (typeof PLDNRobot === 'undefined' || !PLDNRobot.onTap) return;
   function T(uz, ru) { try { return typeof fbT === 'function' ? fbT(uz, ru) : uz; } catch (e) { return uz; } }
@@ -18441,7 +18449,8 @@ async function fbOpenChat(info, ensure) {
     gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
     battery: '<rect x="2.5" y="7" width="16" height="10" rx="2.5"/><path d="M21 10.5v3M7 10.5v3M11 10.5v3"/>',
     heart: '<path d="M12 20.5C6 16 3 12.8 3 9a4.5 4.5 0 0 1 9-1.5A4.5 4.5 0 0 1 21 9c0 3.8-3 7-9 11.5z"/>',
-    x: '<path d="M6 6l12 12M18 6L6 18"/>'
+    x: '<path d="M6 6l12 12M18 6L6 18"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>'
   };
 
   // Menyu bandlari. Yangi funksiya ulash: PLDNRobotMenu.setAction('charge', function () { ... });
@@ -18451,8 +18460,46 @@ async function fbOpenChat(info, ensure) {
     { id: 'charge', ang: 30, c: '255,176,32', ico: 'battery', t: ['Quvvatlash rejimi', 'Режим зарядки'], s: ['Batareya va quvvat', 'Батарея и заряд'], run: function () { toast(T('🔋 Quvvatlash rejimi tez orada qo‘shiladi', '🔋 Режим зарядки скоро появится')); } },
     { id: 'close', ang: 90, c: '120,160,255', ico: 'x', t: ['Yopish', 'Закрыть'], s: null, run: function () {} },
     { id: 'voice', ang: 150, c: '160,110,255', ico: 'mic', t: ['Ovoz bilan boshqarish', 'Голосовое управление'], s: ['Buyruqlar orqali', 'Командами'], run: openVoice },
-    { id: 'love', ang: 210, c: '255,50,109', ico: 'heart', t: ['Sevgi emotsiyasi', 'Эмоция любви'], s: ['Robot yurakni quchadi', 'Робот обнимает сердце'], run: openLove }
+    { id: 'love', ang: 210, c: '255,50,109', ico: 'heart', t: ['Sevgi emotsiyasi', 'Эмоция любви'], s: ['Robot yurakni quchadi', 'Робот обнимает сердце'], sub: 'love', run: function () {} }
   ];
+
+  // Sevgi emotsiyasi bosilganda: ikki band (2-tomonli va 1-tomonlama) + yopish
+  var LOVE_ITEMS = [
+    { id: 'two', ang: -90, c: '255,50,109', ico: 'heart', t: ['2-tomonli emotsiya', 'Эмоция для двоих'], s: ['Ikkala robot portalda', 'Оба робота в портале'], sub: 'two' },
+    { id: 'close', ang: 90, c: '120,160,255', ico: 'x', t: ['Yopish', 'Закрыть'], s: null, run: function () {} },
+    { id: 'one', ang: 150, c: '160,110,255', ico: 'heart', t: ['1-tomonlama emotsiya', 'Односторонняя эмоция'], s: ['Robot o‘z joyida', 'Робот на месте'], sub: 'one' }
+  ];
+  var COLORS = ['255,50,109', '255,150,40', '255,205,50', '140,220,60', '52,199,89', '30,200,190', '42,171,238', '90,110,255', '160,110,255', '220,90,230', '255,90,160'];
+  // 12 ta band: 11 ta emotsiya o'rni + 1 ta ✕ (pastda). Emotsiyalar sekin-sekin qo'shib boriladi.
+  function twelve(list) {
+    var out = [], j = 0, i, ang, e, col;
+    for (i = 0; i < 12; i++) {
+      ang = -90 + 30 * i;
+      if (i === 6) { out.push({ id: 'close', ang: ang, c: '120,160,255', ico: 'x', t: ['Yopish', 'Закрыть'], s: null, run: function () {} }); continue; }
+      col = COLORS[j % COLORS.length];
+      e = list[j++];
+      if (e) out.push({ id: e.id, ang: ang, c: col, emo: e.emo, t: e.t, s: null, run: e.run });
+      else out.push({ id: 'soon' + i, ang: ang, c: col, ico: 'plus', t: ['Tez orada', 'Скоро'], s: null, soon: true });
+    }
+    return out;
+  }
+  function twoList() {
+    var out = [], P = window.PLDNEmotions;
+    if (P && P.list) P.list().forEach(function (e) { out.push({ id: e.id, emo: e.ic, t: [e.nm, e.nm], run: function () { P.send(e.id); } }); });
+    return out;
+  }
+  function oneList() {
+    var P = window.PLDNEmotions;
+    return [{ id: 'love1', emo: '❤️', t: ['Sevgi', 'Любовь'], run: function () {
+      if (P && P.sendOne) P.sendOne('love1'); else if (window.PLDNLove3D) window.PLDNLove3D.play();
+    } }];
+  }
+  function setFor(v) {
+    if (v === 'love') return { items: LOVE_ITEMS, half: 28, small: false };
+    if (v === 'two') return { items: twelve(twoList()), half: 13, small: true };
+    if (v === 'one') return { items: twelve(oneList()), half: 13, small: true };
+    return { items: ITEMS, half: 28, small: false };
+  }
 
   function openKB() {
     if (typeof window.PLDNBotOpen === 'function') {
@@ -18461,9 +18508,6 @@ async function fbOpenChat(info, ensure) {
   }
   function openSettings() {
     if (typeof goToScreen === 'function') goToScreen('pldnSettingsScreen');
-  }
-  function openLove() {
-    if (window.PLDNLove3D) setTimeout(function () { window.PLDNLove3D.play(); }, 260); else toast(T('Sevgi emotsiyasi topilmadi', 'Эмоция не найдена'));
   }
   function openVoice() {
     var f = document.getElementById('pldnVoiceFab');
@@ -18496,46 +18540,52 @@ async function fbOpenChat(info, ensure) {
     function f(p) { return p[0].toFixed(1) + ' ' + p[1].toFixed(1); }
     return 'M' + f(p1) + ' A' + r1 + ' ' + r1 + ' 0 0 1 ' + f(p2) + ' L' + f(p3) + ' A' + r0 + ' ' + r0 + ' 0 0 0 ' + f(p4) + ' Z';
   }
-  var segs = {};
-  ITEMS.forEach(function (it) {
-    var p = document.createElementNS(NS, 'path');
-    p.setAttribute('d', arc(104, 196, it.ang - 28, it.ang + 28));
-    p.setAttribute('class', 'prm-seg');
-    p.setAttribute('style', '--c:' + it.c);
-    p.addEventListener('pointerdown', function () { p.classList.add('hot'); });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (n) { p.addEventListener(n, function () { p.classList.remove('hot'); }); });
-    p.addEventListener('click', function () { choose(it); });
-    svg.appendChild(p);
-    segs[it.id] = p;
-  });
-
-  function buildLabels() {
+  var segs = {}, view = 'main', root = 'main';
+  var PARENT = { two: 'love', one: 'love', love: 'main' };
+  function render(set) {
+    svg.textContent = '';
+    segs = {};
+    set.items.forEach(function (it) {
+      var p = document.createElementNS(NS, 'path');
+      p.setAttribute('d', arc(104, 196, it.ang - set.half, it.ang + set.half));
+      p.setAttribute('class', 'prm-seg' + (it.soon ? ' soon' : ''));
+      p.setAttribute('style', '--c:' + it.c);
+      p.addEventListener('pointerdown', function () { p.classList.add('hot'); });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (n) { p.addEventListener(n, function () { p.classList.remove('hot'); }); });
+      p.addEventListener('click', function () { choose(it); });
+      svg.appendChild(p);
+      segs[it.id] = p;
+    });
     labs.textContent = '';
-    ITEMS.forEach(function (it) {
+    set.items.forEach(function (it) {
       var q = pt(150, it.ang);
       var d = document.createElement('div');
-      d.className = 'prm-lab';
+      d.className = 'prm-lab' + (set.small ? ' sm' : '') + (it.soon ? ' soon' : '');
       d.style.cssText = '--c:' + it.c + ';left:' + (q[0] / 4) + '%;top:' + (q[1] / 4) + '%';
       var ic = document.createElement('div'); ic.className = 'prm-ico';
-      ic.innerHTML = '<svg viewBox="0 0 24 24">' + ICO[it.ico] + '</svg>';
+      if (it.emo) { var em = document.createElement('span'); em.className = 'prm-emo'; em.textContent = it.emo; ic.appendChild(em); }
+      else ic.innerHTML = '<svg viewBox="0 0 24 24">' + ICO[it.ico] + '</svg>';
       var t = document.createElement('div'); t.className = 'prm-t'; t.textContent = T(it.t[0], it.t[1]);
       d.appendChild(ic); d.appendChild(t);
-      if (it.s) { var s2 = document.createElement('div'); s2.className = 'prm-s'; s2.textContent = T(it.s[0], it.s[1]); d.appendChild(s2); }
+      if (it.s && !set.small) { var s2 = document.createElement('div'); s2.className = 'prm-s'; s2.textContent = T(it.s[0], it.s[1]); d.appendChild(s2); }
       labs.appendChild(d);
     });
   }
+  function setView(v) { view = v; render(setFor(v)); }
 
   var openedAt = 0, closeT = 0;
   function isOpen() { return ov.classList.contains('open') && !ov.classList.contains('closing'); }
-  function open() {
-    if (isOpen()) return;
+  function open(v) {
+    if (typeof v !== 'string') v = 'main';
+    if (isOpen()) { if (v !== view) { root = v; setView(v); } return; }
+    root = v;
     clearTimeout(closeT);
     ov.classList.remove('closing');
     var s = Math.max(240, Math.min(window.innerWidth * 0.94, 440, window.innerHeight * 0.78));
     wheel.style.width = wheel.style.height = s + 'px';
     wheel.style.setProperty('--s', s + 'px');
     wheel.style.setProperty('--rs', (s / 150).toFixed(2));
-    buildLabels();
+    setView(v);
     ov.classList.add('open');
     void ov.offsetWidth;
     ov.classList.add('show');
@@ -18549,6 +18599,8 @@ async function fbOpenChat(info, ensure) {
     closeT = setTimeout(function () { ov.classList.remove('open'); ov.classList.remove('closing'); }, 200);
   }
   function choose(it) {
+    if (it.sub) { setView(it.sub); return; }
+    if (it.soon) { toast(T('Bu emotsiya tez orada qo‘shiladi', 'Эта эмоция скоро появится')); return; }
     close();
     try { it.run(); } catch (e) { console.error(e); }
   }
@@ -18564,13 +18616,14 @@ async function fbOpenChat(info, ensure) {
 
   window.PLDNRobotMenu = {
     open: open, close: close, isOpen: isOpen,
+    openView: function (v) { open(v); },
     setAction: function (id, fn) { ITEMS.forEach(function (it) { if (it.id === id && typeof fn === 'function') it.run = fn; }); }
   };
 
   // Android "orqaga" tugmasi avval menyuni yopadi
   var prevBack = window.pldnBack;
   window.pldnBack = function () {
-    if (isOpen()) { close(); return true; }
+    if (isOpen()) { if (view !== root && PARENT[view]) setView(PARENT[view]); else close(); return true; }
     return prevBack ? prevBack.apply(this, arguments) : false;
   };
 
@@ -19097,7 +19150,7 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== PLDN EMOTSIYA: IKKI ROBOT PORTALI (3D) ===== VERSION: emo-portal-1.3 (love + gift)
+// ===== PLDN EMOTSIYA: IKKI ROBOT PORTALI (3D) ===== VERSION: emo-portal-2.0 (2-tomonli + 1-tomonlama)
 // Chat sarlavhasidagi ❤️ tugmasi → Firestore 'emotions' hujjati → ikkala telefonda bir xil vaqt jadvali (video oqimi yo'q).
 // Yangi emotsiya qo'shish: PLDNEmotions.register('id', { dur, openDur, closeAt, closeDur, tc1, tc2, pose: function (t) { return { o, h, hv }; } })
 (function () {
@@ -19138,6 +19191,11 @@ var PLDNBattModel = (function () {
       return { o: ss((t - 5.2) / .8) - ss((t - 9.0) / .8), h: ss((t - 6.0) / 1.0) - ss((t - 8.9) / .8), hv: ss((t - 6.6) / .8) - ss((t - 9.0) / .8) };
     }
   };
+
+  // ---- 1-tomonlama emotsiyalar: yuboruvchi o'z robotida o'ynaydi, narigi foydalanuvchining robotida ham ko'rinadi (portal yo'q)
+  // Yangisini qo'shish: EMO1.id = { play: function () { ... } }  (id: faqat a-z, 0-9, _; 2-24 belgi)
+  var EMO1 = {};
+  EMO1.love1 = { play: function () { if (window.PLDNLove3D) window.PLDNLove3D.play(); } };
 
   // ---- Sovg'a emotsiyasi: yuboruvchi roboti atirgul va atir beradi, qabul qiluvchi roboti xursand bo'lib oladi (portal ichida)
   function amx(p, q, e) { return { a: lerp(p.a, q.a, e), b: lerp(p.b, q.b, e), px: lerp(p.px, q.px, e), pz: lerp(p.pz, q.pz, e) }; }
@@ -19452,7 +19510,24 @@ var PLDNBattModel = (function () {
       }).catch(function (e) { fail(T('Emotsiya yuborilmadi: ', 'Эмоция не отправлена: ') + errText(e)); endSession(null); });
     }, function () { endSession(null); });
   }
+  function sendOne(type) {
+    var E1 = EMO1[type]; if (!E1) return;
+    if (window.PLDNLove3D && window.PLDNLove3D.isPlaying && window.PLDNLove3D.isPlaying()) return;
+    var chat = (typeof fbCurrentChat !== 'undefined') ? fbCurrentChat : null, me = fbAuth.currentUser;
+    try { E1.play(); } catch (e) { console.error(e); }
+    if (!me) return;
+    if (!chat || !chat.otherUid) { toast(T('Narigi tomonga yuborilmadi: avval shaxsiy chatni oching', 'Собеседнику не отправлено: сначала откройте личный чат')); return; }
+    fbDb.collection('emotions').doc().set({ from: me.uid, to: chat.otherUid, type: type, status: 'start', createdAt: fbSrvTs() })
+      .catch(function (e) { fail(T('Emotsiya narigi tomonga yuborilmadi: ', 'Эмоция не отправлена собеседнику: ') + errText(e)); });
+  }
   function onIncoming(ref, d) {
+    var E1 = EMO1[d.type];
+    if (E1) {
+      if (busy || document.hidden || (window.PLDNLove3D && window.PLDNLove3D.isPlaying && window.PLDNLove3D.isPlaying())) { ref.update({ status: 'cancelled', endedBy: uid() }).catch(noop); return; }
+      ref.update({ status: 'done', endedBy: uid() }).catch(noop);
+      try { E1.play(); } catch (e) { console.error(e); }
+      return;
+    }
     var E = EMO[d.type], co = document.getElementById('pldnCallOv');
     if (!E || busy || document.hidden || (co && co.classList.contains('open'))) { ref.update({ status: 'cancelled', endedBy: uid() }).catch(noop); return; }
     busy = true;
@@ -19507,14 +19582,23 @@ var PLDNBattModel = (function () {
     document.body.appendChild(d); pick = d;
     document.addEventListener('pointerdown', outPick, true);
   }
-  if (btn) btn.addEventListener('click', openPick);
+  // Chat sarlavhasidagi ❤️ endi 2-tomonli emotsiyaning 12 talik aylana menyusini ochadi
+  if (btn) btn.addEventListener('click', function () {
+    if (busy) return;
+    if (window.PLDNRobotMenu && window.PLDNRobotMenu.openView) window.PLDNRobotMenu.openView('two'); else openPick();
+  });
   // Android "orqaga": emotsiya davomida bosilsa, xavfsiz yakunlanadi
   var prevBack = window.pldnBack;
   window.pldnBack = function () {
     if (S && S.ctl) { S.ctl.abort(); return true; }
     return prevBack ? prevBack.apply(this, arguments) : false;
   };
-  window.PLDNEmotions = { send: send, register: function (id, def) { EMO[id] = def; }, isBusy: function () { return busy; } };
+  function listTwo() {
+    var out = [];
+    Object.keys(EMO).forEach(function (id) { var E = EMO[id]; if (E.nm) out.push({ id: id, ic: E.ic || '✨', nm: E.nm() }); });
+    return out;
+  }
+  window.PLDNEmotions = { send: send, sendOne: sendOne, list: listTwo, register1: function (id, def) { EMO1[id] = def; }, register: function (id, def) { EMO[id] = def; }, isBusy: function () { return busy; } };
 })();
 </script>
 <script>
