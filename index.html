@@ -1,5 +1,5 @@
-<!-- VERSION: 242 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: emo-menu-8.2 | satr: 20921 | 27-okt-2026 -->
+<!-- VERSION: 243 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: term-1.0 | satr: 21361 | 30-okt-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -3607,6 +3607,7 @@
         <div class="pldn-shape-count" id="pldnShapeCount">0/30</div>
         <div class="pldn-shape-input-row" id="pldnShapeRow"></div>
         <button class="edit-profile-btn" id="pldnCodeSubmitBtn" data-i18n="k75" style="margin-top: 12px;">Kiritish</button>
+        <button class="edit-profile-btn" id="pldnCodePasteBtn" style="margin-top: 8px; background: transparent; color: inherit; border: 1px solid rgba(128,128,128,.4);">📋 Joylash</button>
         <p class="pldn-code-feedback" id="pldnCodeFeedback"></p>
       </div>
 
@@ -3614,6 +3615,14 @@
         <div class="settings-item" id="pldnCodeFunctionsRow">
           <span class="settings-icon">🧩</span>
           <span class="settings-label" data-i18n="k76">Kod funksiyalari</span>
+          <span class="settings-arrow">›</span>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-item" id="pldnTermRow">
+          <span class="settings-icon">⌨️</span>
+          <span class="settings-label">Buyruqlar terminali</span>
           <span class="settings-arrow">›</span>
         </div>
       </div>
@@ -7314,6 +7323,7 @@
     ];
   })();
   const PLDN_CODE_LEN = 30;
+  window.pldnShapesX = PLDN_SHAPES; // buyruqlar terminali shu shakllarni chizadi
 
   // Eski kodlar 'square'/'circle' satrlari bilan, yangilari raqam (0..11) bilan ishlaydi
   function pldnShapeIdx(type) {
@@ -7394,6 +7404,9 @@
   });
   renderShapeDisplay();
 
+  // Buyruqlar terminali: joylangan kodni kod maydoniga qo'yish
+  window.pldnTermFill = function (seq) { pldnShapeSequence = seq.slice(0, PLDN_CODE_LEN); renderShapeDisplay(); };
+
   function pldnHistAdd(entry) {
     entry.id = ++pldnCodeHistoryIdCounter;
     entry.time = new Date();
@@ -7428,7 +7441,9 @@
           return;
         }
       } else {
-        // 2) Serverdagi funksiya kodi (30 ta shakl)
+        // 2) Buyruqlar terminali kodi (cheksiz matn, fayl uzatish)
+        if (window.pldnTerm && window.pldnTerm.handle(seq, { btn: pldnCodeSubmitBtn, feedback: pldnCodeFeedback, hist: pldnHistAdd, reset: function () { pldnShapeSequence = []; renderShapeDisplay(); } })) return;
+        // 3) Serverdagi funksiya kodi (30 ta shakl)
         pldnCfSubmitRemote(seq);
         return;
       }
@@ -9486,6 +9501,7 @@ async function fbOpenChat(info, ensure) {
             }
             if (m.sticker) b.classList.add('sticker-bubble');
             b.dataset.msgId = doc.id;
+            if ((m.big || m.file) && window.pldnTerm) window.pldnTerm.decorate(b, m);
             if (myChat.type === 'group' && dir === 'incoming' && typeof pldnAddSender === 'function') pldnAddSender(b, m.from);
             if (m.reply && typeof m.reply === 'object') fbAddQuote(b, m.reply);
             fbApplyReactions(b, m.reactions, me.uid);
@@ -9548,10 +9564,28 @@ async function fbOpenChat(info, ensure) {
     return { members: [me, chat.otherUid].sort(), lastText: lastText, lastFrom: me, updatedAt: ts, unread: { [chat.otherUid]: inc } };
   }
 
+  // Buyruqlar terminali uchun: joriy chat va xabar yuborish
+  window.pldnCurChat = function () { return fbCurrentChat; };
+  window.pldnTermPost = async function (fields, lastText) {
+    const me = fbAuth && fbAuth.currentUser;
+    const chat = fbCurrentChat;
+    if (!me || !chat) throw new Error('chat');
+    const chatRef = fbDb.collection('chats').doc(chat.id);
+    const ts = firebase.firestore.FieldValue.serverTimestamp();
+    const batch = fbDb.batch();
+    batch.set(chatRef.collection('messages').doc(), Object.assign({ from: me.uid, type: 'text', createdAt: ts }, fields, fbTakeReply()));
+    batch.set(chatRef, fbChatUpdate(chat, me.uid, String(lastText || '').slice(0, 100), ts), { merge: true });
+    await batch.commit();
+  };
+
   async function fbSendText(text) {
     const me = fbAuth && fbAuth.currentUser;
     const chat = fbCurrentChat;
     if (!me || !chat) return;
+    if (window.pldnTerm && window.pldnTerm.wantsBig(text)) {
+      const done = await window.pldnTerm.sendBig(text, chat, function () { try { messageInput.value = text; } catch (_) {} });
+      if (done) return;
+    }
     const chatRef = fbDb.collection('chats').doc(chat.id);
     const ts = firebase.firestore.FieldValue.serverTimestamp();
     const batch = fbDb.batch();
@@ -20917,5 +20951,411 @@ var PLDNBattModel = (function () {
   window.PLDNKino = { version: 'kino-7.2', maxMembers: MAX, currentRoom: curRoom };
 })();
 </script>
+<script>
+// ===== BUYRUQLAR TERMINALI ===== VERSION: term-1.0
+// Server: https://134-255-228-146.sslip.io/term/* (termsrv.js, port 3002). Hozircha faqat o'zbekcha.
+(function () {
+  'use strict';
+  var API = 'https://134-255-228-146.sslip.io/term';
+  var CMDS = [
+    { id: 'cheksiz', text: 'cheksiz matnli xabar', icon: '♾️', info: 'Xabar uzunligi cheklovi bekor bo\u2019ladi', code: 'idifgalijekebfegckcbaeckflhigf' },
+    { id: 'fayl', text: 'fayl uzatish', icon: '📎', info: 'Chatga istalgan fayl yuborish ochiladi', code: 'bahfghcjdekgijkckcahbclehjdlcj' }
+  ];
+  var ABC = 'abcdefghijkl';
+  var TIME_QUICK = ['10 daqiqa', '1 soat', '1 kun', 'cheksiz'];
+
+  function el(tag, css, txt) { var e = document.createElement(tag); if (css) e.style.cssText = css; if (txt != null) e.textContent = txt; return e; }
+  function norm(s) { return String(s || '').toLowerCase().replace(/[\u02bb\u02bc\u2019\u2018`\u00b4']/g, '').replace(/\s+/g, ' ').trim(); }
+  function me() { try { return firebase.auth().currentUser; } catch (_) { return null; } }
+  function cmdByText(t) { var n = norm(t); for (var i = 0; i < CMDS.length; i++) if (norm(CMDS[i].text) === n) return CMDS[i]; return null; }
+  function cmdById(id) { for (var i = 0; i < CMDS.length; i++) if (CMDS[i].id === id) return CMDS[i]; return null; }
+  function codeSeq(code) { var a = []; for (var i = 0; i < code.length; i++) a.push(ABC.indexOf(code[i])); return a; }
+  function toast(m, ms) { var t = el('div', 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(0,0,0,.85);color:#fff;padding:10px 18px;border-radius:18px;z-index:100010;font-size:15px;max-width:84%;text-align:center', m); document.body.appendChild(t); setTimeout(function () { t.remove(); }, ms || 2600); }
+  function fmtSize(n) { n = Number(n) || 0; if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'; if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB'; return (n / 1073741824).toFixed(2) + ' GB'; }
+  function fmtLeft(ms) {
+    if (ms == null) return 'cheksiz';
+    var s = Math.max(0, Math.floor(ms / 1000));
+    if (s >= 86400) return Math.floor(s / 86400) + ' kun ' + Math.floor((s % 86400) / 3600) + ' soat';
+    if (s >= 3600) return Math.floor(s / 3600) + ' soat ' + Math.floor((s % 3600) / 60) + ' daq';
+    if (s >= 60) return Math.floor(s / 60) + ' daq ' + (s % 60) + ' son';
+    return s + ' son';
+  }
+
+  // ---------- server bilan aloqa ----------
+  async function token() { var u = me(); if (!u) throw new Error('auth'); return u.getIdToken(); }
+  async function api(path, opt) {
+    opt = opt || {};
+    var tk = await token();
+    var ctl = new AbortController(), tm = setTimeout(function () { ctl.abort(); }, opt.timeout || 20000);
+    try {
+      var h = { Authorization: 'Bearer ' + tk };
+      if (opt.body) h['Content-Type'] = 'application/json';
+      var r = await fetch(API + path, { method: opt.method || 'GET', headers: h, body: opt.body ? JSON.stringify(opt.body) : undefined, signal: ctl.signal });
+      var j = await r.json().catch(function () { return {}; });
+      if (!r.ok && !j.status) { var er = new Error(j.error || ('http ' + r.status)); er.status = r.status; er.code = j.error; throw er; }
+      return j;
+    } finally { clearTimeout(tm); }
+  }
+
+  // ---------- faol buyruqlar (grants) ----------
+  var G = [], skew = 0, onGrants = [];
+  async function refresh() {
+    if (!me()) { G = []; fire(); return; }
+    try { var j = await api('/grants'); G = j.grants || []; skew = (j.now || Date.now()) - Date.now(); fire(); } catch (_) {}
+  }
+  function fire() { onGrants.forEach(function (f) { try { f(); } catch (_) {} }); }
+  function active(cmd) {
+    var now = Date.now() + skew;
+    return G.some(function (g) { return g.mine && g.cmd === cmd && (g.until == null || g.until > now); });
+  }
+  setInterval(function () { if (me()) refresh(); }, 45000);
+  setInterval(function () { paintFileBtn(); }, 3000);
+  setTimeout(refresh, 4000);
+
+  // ---------- fayl yuborish tugmasi (faqat "fayl uzatish" faol bo'lganda ko'rinadi) ----------
+  var fileBtn = null, fileIn = null, upBusy = false;
+  function ensureFileBtn() {
+    if (fileBtn) return;
+    var ab = document.getElementById('attachImageBtn');
+    if (!ab || !ab.parentNode) return;
+    fileBtn = el('button', 'display:none'); fileBtn.className = 'attach-btn'; fileBtn.id = 'pldnTermFileBtn'; fileBtn.textContent = '📄'; fileBtn.setAttribute('aria-label', 'Fayl yuborish');
+    ab.parentNode.insertBefore(fileBtn, ab.nextSibling);
+    fileIn = el('input', 'display:none'); fileIn.type = 'file'; document.body.appendChild(fileIn);
+    fileBtn.addEventListener('click', function () {
+      if (upBusy) { toast('Avvalgi fayl yuborilmoqda'); return; }
+      if (!active('fayl')) { toast('«fayl uzatish» buyrug\u2019i faol emas'); paintFileBtn(); return; }
+      fileIn.value = ''; fileIn.click();
+    });
+    fileIn.addEventListener('change', function () { var f = fileIn.files && fileIn.files[0]; fileIn.value = ''; if (f) sendFile(f); });
+  }
+  function paintFileBtn() { ensureFileBtn(); if (fileBtn) fileBtn.style.display = active('fayl') ? '' : 'none'; }
+
+  function sendFile(f) {
+    var chat = window.pldnCurChat && window.pldnCurChat();
+    if (!chat) { toast('Avval chatni oching'); return; }
+    upBusy = true;
+    var bar = el('div', 'position:fixed;left:12px;right:12px;bottom:84px;z-index:100010;background:rgba(20,20,24,.92);color:#fff;border-radius:14px;padding:10px 14px;font-size:14px');
+    var line = el('div', '', '📎 ' + f.name + ' — 0%');
+    var trk = el('div', 'height:5px;background:rgba(255,255,255,.2);border-radius:3px;margin-top:8px;overflow:hidden');
+    var fill = el('div', 'height:100%;width:0;background:#2AABEE;transition:width .2s'); trk.appendChild(fill); bar.append(line, trk); document.body.appendChild(bar);
+    token().then(function (tk) {
+      return new Promise(function (resolve, reject) {
+        var x = new XMLHttpRequest();
+        x.open('POST', API + '/file?chat=' + encodeURIComponent(chat.id) + '&name=' + encodeURIComponent(f.name));
+        x.setRequestHeader('Authorization', 'Bearer ' + tk);
+        x.setRequestHeader('Content-Type', 'application/octet-stream');
+        x.upload.onprogress = function (e) { if (e.lengthComputable) { var p = Math.round(e.loaded * 100 / e.total); line.textContent = '📎 ' + f.name + ' — ' + p + '%'; fill.style.width = p + '%'; } };
+        x.onload = function () { var j = {}; try { j = JSON.parse(x.responseText); } catch (_) {} if (x.status >= 200 && x.status < 300 && j.id) resolve(j); else { var er = new Error(j.error || ('http ' + x.status)); er.code = j.error; reject(er); } };
+        x.onerror = function () { reject(new Error('net')); };
+        x.send(f);
+      });
+    }).then(function (j) {
+      return window.pldnTermPost({ text: '📎 ' + j.name, file: { id: j.id, name: j.name, size: j.size } }, '📎 ' + j.name);
+    }).then(function () { toast('Fayl yuborildi'); }).catch(function (e) {
+      toast(e && e.code === 'disk' ? 'Amalda xatolik: serverda joy tugadi' : e && e.code === 'grant' ? 'Buyruq bajarilmadi: «fayl uzatish» faol emas' : 'Amalda xatolik');
+      refresh();
+    }).then(function () { upBusy = false; bar.remove(); });
+  }
+
+  // ---------- cheksiz matn (fbSendText ichidan chaqiriladi) ----------
+  function wantsBig(text) { return String(text || '').length > 2000; }
+  async function sendBig(text, chat, restore) {
+    if (!active('cheksiz')) {
+      toast('Xabar 2000 belgigacha qisqartirildi. Cheklovsiz yozish: Sozlamalar → Buyruqlar terminali', 4200);
+      return false;
+    }
+    try {
+      var r = await api('/text', { method: 'POST', body: { chat: chat.id, text: String(text) }, timeout: 120000 });
+      var I = window.pldnInl;
+      var pv = I ? I.clip(text, 600) : String(text).slice(0, 600);
+      var fields = { text: pv + (pv.length < text.length ? '…' : ''), big: { id: r.id, len: r.len } };
+      var inl = I ? I.take(pv) : null; if (inl) fields.inl = inl;
+      await window.pldnTermPost(fields, I ? I.plain(pv) : pv);
+      return true;
+    } catch (e) {
+      toast(e && e.code === 'grant' ? 'Buyruq bajarilmadi: «cheksiz matnli xabar» faol emas' : e && e.code === 'disk' ? 'Amalda xatolik: serverda joy tugadi' : 'Amalda xatolik', 3600);
+      refresh();
+      if (typeof restore === 'function') restore();
+      return true;
+    }
+  }
+
+  // ---------- chat pufakchasiga tugma qo'shish (to'liq matn / fayl) ----------
+  function viewer(m) {
+    var ov = el('div', 'position:fixed;inset:0;background:var(--bg-primary,#fff);color:var(--text-primary,#111);z-index:99995;display:flex;flex-direction:column');
+    var top = el('div', 'display:flex;align-items:center;gap:8px;padding:12px;border-bottom:1px solid rgba(128,128,128,.25)');
+    var back = el('button', 'border:0;background:none;font-size:26px;padding:4px 10px;color:inherit', '‹');
+    var ttl = el('div', 'font-weight:700;font-size:17px;flex:1', 'To\u2018liq matn · ' + m.big.len + ' belgi');
+    var cp = el('button', 'border:0;background:none;font-size:20px;padding:6px 10px;color:inherit', '⧉');
+    top.append(back, ttl, cp);
+    var body = el('div', 'flex:1;overflow:auto;padding:14px;white-space:pre-wrap;word-break:break-word;font-size:16px;line-height:1.45;-webkit-user-select:text;user-select:text', 'Yuklanmoqda…');
+    ov.append(top, body); document.body.appendChild(ov);
+    back.addEventListener('click', function () { ov.remove(); });
+    var full = '';
+    cp.addEventListener('click', function () { if (!full) return; copyText(full).then(function (ok) { toast(ok ? 'Nusxalandi' : 'Nusxalab bo\u2018lmadi'); }); });
+    api('/text/' + m.big.id, { timeout: 120000 }).then(function (j) {
+      var I = window.pldnInl; full = I ? I.plain(j.text) : j.text; body.textContent = full;
+    }).catch(function () { body.textContent = 'Amalda xatolik: matnni yuklab bo\u2018lmadi'; });
+  }
+
+  async function downloadFile(fm, setSt) {
+    var tk = await token();
+    var r = await fetch(API + '/file/' + fm.id, { headers: { Authorization: 'Bearer ' + tk } });
+    if (!r.ok) throw new Error('http ' + r.status);
+    var total = Number(r.headers.get('content-length')) || Number(fm.size) || 0;
+    var S = window.PldnSave, name = fm.name || 'fayl';
+    if (S && typeof S.begin === 'function' && r.body && r.body.getReader && S.begin(name)) {
+      var rd = r.body.getReader(), got = 0, parts = [], plen = 0, CH = 786432;
+      var flush = async function () {
+        if (!plen) return;
+        var all = new Uint8Array(plen), o = 0; parts.forEach(function (p) { all.set(p, o); o += p.length; }); parts = []; plen = 0;
+        var b64 = await new Promise(function (res) { var fr = new FileReader(); fr.onload = function () { res(String(fr.result).split(',')[1] || ''); }; fr.readAsDataURL(new Blob([all])); });
+        if (!S.chunk(b64)) throw new Error('write');
+      };
+      for (;;) {
+        var x = await rd.read(); if (x.done) break;
+        parts.push(x.value); plen += x.value.length; got += x.value.length;
+        if (total) setSt(Math.round(got * 100 / total) + '%');
+        if (plen >= CH) await flush();
+      }
+      await flush();
+      return String(S.end() || 'Downloads/PLDN');
+    }
+    var blob = await r.blob();
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    return 'Yuklab olingan fayllar';
+  }
+
+  function decorate(b, m) {
+    try {
+      var row = el('div', 'margin-top:6px;font-size:14px');
+      if (m.big && m.big.id) {
+        var bt = el('button', 'border:0;background:none;padding:2px 0;color:#2AABEE;font-weight:600;font-size:14px;text-align:left', '📄 To\u2018liq o\u2018qish · ' + Number(m.big.len || 0).toLocaleString('ru-RU') + ' belgi');
+        bt.addEventListener('click', function (ev) { ev.stopPropagation(); viewer(m); });
+        row.appendChild(bt);
+      } else if (m.file && m.file.id) {
+        var info = el('div', 'opacity:.8', fmtSize(m.file.size));
+        var dl = el('button', 'border:0;background:none;padding:2px 0;color:#2AABEE;font-weight:600;font-size:14px;text-align:left', '⬇ Yuklab olish');
+        var busy = false;
+        dl.addEventListener('click', function (ev) {
+          ev.stopPropagation(); if (busy) return; busy = true; dl.textContent = '⏳ 0%';
+          downloadFile(m.file, function (p) { dl.textContent = '⏳ ' + p; }).then(function (where) { dl.textContent = '✓ Saqlandi: ' + where; })
+            .catch(function () { dl.textContent = 'Amalda xatolik — qayta urinish'; busy = false; });
+        });
+        row.append(info, dl);
+      } else return;
+      var tm = b.querySelector('.msg-time');
+      if (tm && tm.parentNode === b) b.insertBefore(row, tm); else b.appendChild(row);
+    } catch (_) {}
+  }
+
+  // ---------- nusxalash / joylash ----------
+  async function copyText(s) {
+    try { await navigator.clipboard.writeText(s); return true; } catch (_) {}
+    try { var t = el('textarea', 'position:fixed;left:-999px;top:0;opacity:0'); t.value = s; document.body.appendChild(t); t.select(); var ok = document.execCommand('copy'); t.remove(); return !!ok; } catch (_) { return false; }
+  }
+  function seqFromString(s) {
+    s = String(s || '').toLowerCase().replace(/[^a-l]/g, '');
+    if (s.length !== 30) return null;
+    return codeSeq(s);
+  }
+  async function pasteCode() {
+    var s = '';
+    try { s = await navigator.clipboard.readText(); } catch (_) {}
+    var seq = seqFromString(s);
+    if (seq) { window.pldnTermFill(seq); toast('Kod joylandi'); return; }
+    // clipboard o'qib bo'lmasa yoki kod noto'g'ri: qo'lda joylash oynasi
+    var ov = el('div', 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100005;display:flex;align-items:center;justify-content:center;padding:20px');
+    var card = el('div', 'background:var(--bg-primary,#fff);color:var(--text-primary,#111);border-radius:16px;padding:16px;width:100%;max-width:380px');
+    var ta = el('textarea', 'width:100%;height:90px;border-radius:10px;border:1px solid rgba(128,128,128,.4);padding:10px;font-size:15px;box-sizing:border-box;background:transparent;color:inherit'); ta.placeholder = 'Kodni shu yerga joylang';
+    var msg = el('div', 'color:#e5484d;font-size:13px;min-height:18px;margin-top:6px');
+    var rowb = el('div', 'display:flex;gap:10px;margin-top:10px');
+    var cancel = el('button', 'flex:1;padding:11px;border-radius:10px;border:1px solid rgba(128,128,128,.4);background:none;color:inherit;font-size:15px', 'Bekor qilish');
+    var ok = el('button', 'flex:1;padding:11px;border-radius:10px;border:0;background:#2AABEE;color:#fff;font-size:15px;font-weight:600', 'Joylash');
+    rowb.append(cancel, ok); card.append(el('div', 'font-weight:700;margin-bottom:10px', 'Kodni joylash'), ta, msg, rowb); ov.appendChild(card); document.body.appendChild(ov);
+    cancel.addEventListener('click', function () { ov.remove(); });
+    ok.addEventListener('click', function () { var q = seqFromString(ta.value); if (!q) { msg.textContent = 'Kod 30 ta shakldan iborat bo\u2018lishi kerak'; return; } window.pldnTermFill(q); ov.remove(); toast('Kod joylandi'); });
+    setTimeout(function () { ta.focus(); }, 80);
+  }
+
+  // ---------- kod funksiyalaridan kelgan kod (submitPldnCode ichidan chaqiriladi) ----------
+  var pending = { cmdText: '', target: '__me__', time: '' };
+  function isCode(seq) {
+    var s = seq.map(function (i) { return ABC[i]; }).join('');
+    return CMDS.some(function (c) { return c.code === s; });
+  }
+  // true qaytarsa — kod terminal buyrug'i, asosiy tizim qayta ishlamaydi
+  function handle(seq, ctx) {
+    var s = seq.map(function (i) { return ABC[i]; }).join('');
+    var c = null; CMDS.forEach(function (x) { if (x.code === s) c = x; });
+    if (!c) return false;
+    ctx.btn.disabled = true;
+    ctx.feedback.classList.remove('success', 'error');
+    ctx.feedback.textContent = 'Bajarilmoqda...';
+    // buyruq matni: panelda yozilgan; bo'sh yoki boshqa buyruq bo'lsa kod bo'yicha aniqlanadi
+    var txt = pending.cmdText && cmdByText(pending.cmdText) && cmdByText(pending.cmdText).id === c.id ? pending.cmdText : (pending.cmdText ? pending.cmdText : '');
+    api('/run', { method: 'POST', body: { cmd: txt, code: s, target: pending.target, time: pending.time } }).then(function (j) {
+      if (j.ok) {
+        ctx.feedback.textContent = '✓ Buyruq bajarildi'; ctx.feedback.classList.add('success');
+        ctx.hist({ code: 'R', label: c.text, shapes: seq, message: 'Buyruq bajarildi' });
+        refresh();
+      } else {
+        ctx.feedback.textContent = 'Buyruq bajarilmadi' + (j.reason ? ': ' + j.reason : ''); ctx.feedback.classList.add('error');
+        ctx.hist({ code: null, wrong: true, shapes: seq, message: 'Buyruq bajarilmadi' });
+      }
+    }).catch(function () {
+      ctx.feedback.textContent = 'Amalda xatolik'; ctx.feedback.classList.add('error');
+    }).then(function () { ctx.btn.disabled = false; ctx.reset(); paintStatus(); });
+    return true;
+  }
+
+  // ---------- terminal ekrani ----------
+  var ov = null, ui = {};
+  function paintStatus() { if (ui.status) ui.status.textContent = ''; renderGrants(); }
+
+  function shapeChips(seq) {
+    var SH = window.pldnShapesX || [];
+    var groups = [];
+    seq.forEach(function (s) { var g = groups[groups.length - 1]; if (g && g.s === s) g.n++; else groups.push({ s: s, n: 1 }); });
+    return groups.map(function (g) {
+      var sh = SH[g.s]; if (!sh) return '';
+      return '<span class="pldn-shape-group"><svg class="pldn-shape-chip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:' + sh.c + '">' + sh.g + '</svg><span class="pldn-shape-n">' + g.n + '</span></span>';
+    }).join('');
+  }
+
+  var CARD = 'background:var(--bg-secondary,rgba(128,128,128,.10));border-radius:16px;padding:14px;margin:12px;';
+  var LBL = 'font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.65;margin:12px 0 6px;font-weight:600';
+  var INP = 'width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(128,128,128,.35);background:var(--bg-primary,#fff);color:var(--text-primary,#111);font-size:16px;outline:none';
+  var CHIP = 'border:1px solid rgba(128,128,128,.35);background:var(--bg-primary,#fff);color:inherit;border-radius:999px;padding:6px 12px;font-size:13px;margin:0 6px 6px 0';
+
+  function build() {
+    ov = el('div', 'position:fixed;inset:0;background:var(--bg-primary,#fff);color:var(--text-primary,#111);z-index:99990;display:none;flex-direction:column');
+    var top = el('div', 'display:flex;align-items:center;gap:8px;padding:12px;border-bottom:1px solid rgba(128,128,128,.25)');
+    var back = el('button', 'border:0;background:none;font-size:26px;padding:4px 10px;color:inherit', '‹');
+    top.append(back, el('div', 'font-weight:700;font-size:18px;flex:1', 'Buyruqlar terminali'));
+    var body = el('div', 'flex:1;overflow:auto;padding-bottom:30px');
+    ov.append(top, body); document.body.appendChild(ov);
+    back.addEventListener('click', close);
+
+    // --- Buyruq paneli ---
+    var card = el('div', CARD);
+    card.appendChild(el('div', LBL.replace('margin:12px 0 6px', 'margin:0 0 6px'), 'Buyruq matni'));
+    ui.text = el('input', INP); ui.text.type = 'text'; ui.text.placeholder = 'Masalan: cheksiz matnli xabar'; ui.text.autocomplete = 'off'; ui.text.autocapitalize = 'none';
+    var sug = el('div', 'margin-top:8px');
+    CMDS.forEach(function (c) { var b = el('button', CHIP, c.icon + ' ' + c.text); b.addEventListener('click', function () { ui.text.value = c.text; onText(); }); sug.appendChild(b); });
+    ui.info = el('div', 'font-size:13px;opacity:.7;min-height:18px');
+    card.append(ui.text, sug, ui.info);
+
+    card.appendChild(el('div', LBL, 'Buyruq kodi'));
+    ui.code = el('div', 'min-height:44px;display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:8px 10px;border-radius:12px;border:1px dashed rgba(128,128,128,.45)');
+    ui.codeRow = el('div', 'display:flex;gap:8px;margin-top:8px;align-items:center');
+    ui.copy = el('button', CHIP + ';margin:0', '⧉ Nusxalash'); ui.copy.style.display = 'none';
+    ui.codeHint = el('div', 'font-size:12px;opacity:.65;flex:1');
+    ui.codeRow.append(ui.copy, ui.codeHint);
+    card.append(ui.code, ui.codeRow);
+
+    card.appendChild(el('div', LBL, 'Buyruq hisobi'));
+    ui.acc = el('div', 'display:flex;gap:8px;align-items:center;flex-wrap:wrap');
+    card.appendChild(ui.acc);
+
+    card.appendChild(el('div', LBL, 'Buyruq vaqti'));
+    ui.time = el('input', INP); ui.time.type = 'text'; ui.time.placeholder = 'Masalan: 30 daqiqa, 2 soat, cheksiz'; ui.time.autocomplete = 'off'; ui.time.autocapitalize = 'none';
+    var tq = el('div', 'margin-top:8px');
+    TIME_QUICK.forEach(function (t) { var b = el('button', CHIP, t); b.addEventListener('click', function () { ui.time.value = t; onTime(); }); tq.appendChild(b); });
+    card.append(ui.time, tq);
+
+    ui.status = el('div', 'margin-top:10px;font-size:14px;min-height:20px');
+    var how = el('div', 'margin-top:8px;font-size:13px;opacity:.7;line-height:1.4', 'Kodni nusxalang → Sozlamalar › PLDN sozlamalari › kod maydonida «📋 Joylash» → «Kiritish». Buyruq shundan keyin ishga tushadi.');
+    card.append(ui.status, how);
+    body.appendChild(card);
+
+    // --- Faol buyruqlar ---
+    var gc = el('div', CARD);
+    gc.appendChild(el('div', LBL.replace('margin:12px 0 6px', 'margin:0 0 6px'), 'Faol buyruqlar'));
+    ui.grants = el('div'); gc.appendChild(ui.grants); body.appendChild(gc);
+
+    ui.text.addEventListener('input', onText);
+    ui.time.addEventListener('input', onTime);
+    ui.copy.addEventListener('click', function () {
+      var c = cmdByText(ui.text.value); if (!c) return;
+      copyText(c.code).then(function (ok) { toast(ok ? 'Kod nusxalandi' : 'Nusxalab bo\u2018lmadi'); });
+    });
+    onGrants.push(function () { if (ov && ov.style.display !== 'none') renderGrants(); });
+    setInterval(function () { if (ov && ov.style.display !== 'none') renderGrants(); }, 1000);
+    renderAcc(); onText(); onTime();
+  }
+
+  function onText() {
+    pending.cmdText = ui.text.value;
+    var c = cmdByText(ui.text.value);
+    ui.code.innerHTML = c ? shapeChips(codeSeq(c.code)) : '<span style="opacity:.5;font-size:14px">Buyruq matni yozilganda kod o\u2018zi chiqadi</span>';
+    ui.copy.style.display = c ? '' : 'none';
+    ui.codeHint.textContent = c ? '30 ta shakl · hamma foydalanuvchiga bir xil' : '';
+    ui.info.textContent = c ? c.info : (ui.text.value.trim() ? 'Bunday buyruq topilmadi' : '');
+    ui.info.style.color = (!c && ui.text.value.trim()) ? '#e5484d' : '';
+  }
+  function onTime() { pending.time = ui.time.value; }
+
+  function renderAcc() {
+    ui.acc.innerHTML = '';
+    var u = me();
+    if (pending.target === '__me__') {
+      var chip = el('div', 'display:flex;align-items:center;gap:8px;padding:8px 8px 8px 14px;border-radius:999px;background:var(--bg-primary,#fff);border:1px solid rgba(128,128,128,.35);font-size:15px');
+      var nm = (u && (u.displayName || '')) || '';
+      chip.appendChild(el('span', '', '👤 Mening hisobim'));
+      var x = el('button', 'border:0;background:rgba(128,128,128,.2);color:inherit;width:26px;height:26px;border-radius:50%;font-size:14px', '✕');
+      x.addEventListener('click', function () { pending.target = ''; renderAcc(); setTimeout(function () { var i = ui.acc.querySelector('input'); if (i) i.focus(); }, 50); });
+      chip.appendChild(x); ui.acc.appendChild(chip);
+    } else {
+      var inp = el('input', INP + ';flex:1;min-width:160px'); inp.type = 'text'; inp.placeholder = 'Foydalanuvchi nomi'; inp.maxLength = 20; inp.autocomplete = 'off'; inp.autocapitalize = 'none'; inp.value = pending.target;
+      inp.addEventListener('input', function () { pending.target = inp.value; });
+      var me2 = el('button', CHIP + ';margin:0', '↺ O\u2018z hisobim');
+      me2.addEventListener('click', function () { pending.target = '__me__'; renderAcc(); });
+      ui.acc.append(inp, me2);
+    }
+  }
+
+  function renderGrants() {
+    if (!ui.grants) return;
+    var now = Date.now() + skew;
+    var list = G.filter(function (g) { return g.until == null || g.until > now; });
+    ui.grants.innerHTML = '';
+    if (!list.length) { ui.grants.appendChild(el('div', 'opacity:.6;font-size:14px', 'Hozircha faol buyruq yo\u2018q')); return; }
+    list.forEach(function (g) {
+      var c = cmdById(g.cmd) || { icon: '⚙️' };
+      var row = el('div', 'display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid rgba(128,128,128,.2)');
+      row.appendChild(el('div', 'font-size:22px', c.icon));
+      var mid = el('div', 'flex:1;min-width:0');
+      mid.appendChild(el('div', 'font-weight:600;font-size:15px', g.cmdText));
+      var who = g.mine ? (g.byMe ? 'Mening hisobim' : 'Sizga: @' + (g.byName || '?')) : 'Hisob: @' + (g.targetName || '?');
+      mid.appendChild(el('div', 'font-size:13px;opacity:.7', who + ' · ' + (g.until == null ? 'cheksiz' : fmtLeft(g.until - now) + ' qoldi')));
+      var stop = el('button', CHIP + ';margin:0;color:#e5484d', 'Bekor');
+      stop.addEventListener('click', function () {
+        api('/stop', { method: 'POST', body: { id: g.id } }).then(function (j) { toast(j.ok ? 'Buyruq bekor qilindi' : (j.message || 'Buyruq bajarilmadi')); refresh(); }).catch(function () { toast('Amalda xatolik'); });
+      });
+      row.append(mid, stop); ui.grants.appendChild(row);
+    });
+  }
+
+  function open() {
+    if (!me()) { toast('Avval hisobga kiring'); return; }
+    if (!ov) build();
+    pending.target = '__me__'; renderAcc();
+    ov.style.display = 'flex'; renderGrants(); refresh();
+  }
+  function close() { if (ov) ov.style.display = 'none'; }
+
+  function wire() {
+    var row = document.getElementById('pldnTermRow');
+    if (row && !row._w) { row._w = 1; row.addEventListener('click', open); }
+    var pb = document.getElementById('pldnCodePasteBtn');
+    if (pb && !pb._w) { pb._w = 1; pb.addEventListener('click', pasteCode); }
+  }
+  wire(); setTimeout(wire, 1500);
+
+  window.pldnTerm = { open: open, wantsBig: wantsBig, sendBig: sendBig, decorate: decorate, isCode: isCode, handle: handle, refresh: refresh, active: active };
+})();
+</script>
+
 </body>
 </html>
