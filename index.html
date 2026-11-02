@@ -1,5 +1,5 @@
 <!-- VERSION: 244 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: term-1.0 | satr: 21361 | 30-okt-2026 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: mail-login-1.0 | satr: 21561 | 2-noy-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -2974,6 +2974,15 @@
     </div>
     <p class="subtitle" id="loginErr" style="color:#FF3B30; min-height:18px;"></p>
     <button class="done-btn" id="loginBtn">Kirish</button>
+    <div id="mailLoginBox" style="display:none; width:100%; margin-top:6px;">
+      <button class="done-btn" id="mailLoginBtn" style="background:transparent; color:inherit; border:1.5px solid #2AABEE;">Mail orqali kirish</button>
+      <div id="mailCodeBox" style="display:none; margin-top:12px;">
+        <p class="subtitle" id="mailCodeSub" style="margin-bottom:8px;"></p>
+        <input type="text" inputmode="numeric" class="name-input" id="mailCodeInput" placeholder="Mail'dagi kod" maxlength="14" autocomplete="one-time-code">
+        <button class="done-btn" id="mailVerifyBtn">Tasdiqlash</button>
+        <p class="subtitle" id="mailResend" style="text-decoration:underline; margin-top:10px; cursor:pointer;"></p>
+      </div>
+    </div>
   </div>
 
   <!-- ============ 3-EKRAN: MUVAFFAQIYATLI ============ -->
@@ -3626,6 +3635,13 @@
           <span class="settings-arrow">›</span>
         </div>
       </div>
+      <div class="settings-group">
+        <div class="settings-item" id="pldnMailRow">
+          <span class="settings-icon">✉️</span>
+          <span class="settings-label" id="pldnMailLabel">Mail ulash</span>
+          <span class="settings-arrow">›</span>
+        </div>
+      </div>
 
     </div>
 
@@ -3945,6 +3961,19 @@
       <p class="logout-modal-text" data-i18n="k116">Hisobingizdan chiqsangiz, qayta kirish uchun foydalanuvchi nomingizni kiritishingiz kerak bo'ladi.</p>
       <button class="logout-confirm-btn" id="logoutConfirmBtn" data-i18n="k67">Hisobdan chiqish</button>
       <button class="logout-cancel-btn" id="logoutCancelBtn" data-i18n="k118">Yo'q, qolish</button>
+    </div>
+  </div>
+
+  <!-- ============ MAIL ULASH MODALI ============ -->
+  <div class="lang-modal-overlay" id="mailLinkOverlay">
+    <div class="lang-modal-content">
+      <div class="lang-modal-title" id="mailLinkTitle">Mail ulash</div>
+      <p class="logout-modal-text" id="mailLinkText" style="white-space:pre-line; text-align:left;"></p>
+      <input type="text" inputmode="numeric" class="name-input" id="mailLinkInput" maxlength="10" autocomplete="off" style="display:none;">
+      <p class="logout-modal-text" id="mailLinkErr" style="min-height:18px; color:#FF3B30;"></p>
+      <button class="edit-profile-btn" id="mailLinkMainBtn" style="display:none;"></button>
+      <button class="edit-profile-btn" id="mailDlBtn" style="display:none; margin-top:8px; background:transparent; color:inherit; border:1px solid rgba(128,128,128,.4);"></button>
+      <button class="logout-cancel-btn" id="mailLinkCloseBtn">Yopish</button>
     </div>
   </div>
 
@@ -8144,6 +8173,177 @@
     } finally {
       btn.disabled = false;
     }
+  });
+
+  // ===== MAIL ORQALI KIRISH + MAIL ULASH (PLDN×RSLT Mail) =====
+  // VERSION: mail-login-v1
+  const MAIL_API = 'https://134-255-228-146.sslip.io/mail';
+  const MAIL_APK_URL = 'https://github.com/broker7576-droid/pldn-mail/releases/latest/download/pldn-mail.apk';
+  const mq = (id) => document.getElementById(id);
+
+  async function mailApi(path, body, idToken) {
+    const h = { 'Content-Type': 'application/json' };
+    if (idToken) h.Authorization = 'Bearer ' + idToken;
+    const ctl = new AbortController();
+    const tm = setTimeout(() => ctl.abort(), 15000);
+    try {
+      const r = await fetch(MAIL_API + path, { method: body === undefined ? 'GET' : 'POST', headers: h, body: body === undefined ? undefined : JSON.stringify(body), signal: ctl.signal });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { const e = new Error(j.error || fbT('Xatolik', 'Ошибка')); e.data = j; throw e; }
+      return j;
+    } catch (e) {
+      if (e.data) throw e;
+      throw new Error(fbT("Serverga ulanib bo'lmadi. Internetni tekshiring.", 'Не удалось подключиться к серверу. Проверьте интернет.'));
+    } finally { clearTimeout(tm); }
+  }
+  function mailLeftTxt(until) {
+    const m = Math.max(1, Math.ceil((until - Date.now()) / 60000));
+    const h = Math.floor(m / 60), mm = m % 60;
+    return (h ? h + fbT(' soat ', ' ч ') : '') + (mm ? mm + fbT(' daqiqa', ' мин') : '');
+  }
+
+  // --- Kirish ekrani ---
+  const mailBox = mq('mailLoginBox'), mailBtn = mq('mailLoginBtn'), mailCodeBox = mq('mailCodeBox');
+  const mailCodeInput = mq('mailCodeInput'), mailVerifyBtn = mq('mailVerifyBtn'), mailCodeSub = mq('mailCodeSub'), mailResend = mq('mailResend');
+  let mailInfoTimer = null, mailInfoFor = '', mailMask = '', mailResendTick = null;
+  function mailLoginErr(t) { mq('loginErr').textContent = t || ''; }
+  function mailReset() { mailBox.style.display = 'none'; mailCodeBox.style.display = 'none'; mailBtn.disabled = false; mailInfoFor = ''; clearInterval(mailResendTick); }
+  function mailBlocked(until) {
+    mailCodeBox.style.display = 'none'; mailBtn.disabled = true;
+    mailLoginErr(fbT('Mail kodi bilan kirish yopildi. Qolgan vaqt: ', 'Вход по коду Mail закрыт. Осталось: ') + mailLeftTxt(until) + fbT(". Parol bilan kirishingiz mumkin.", '. Можно войти с паролем.'));
+    setTimeout(() => { mailBtn.disabled = false; }, Math.max(1000, until - Date.now()));
+  }
+  async function mailCheckUser() {
+    const u = loginUsernameEl.value.trim();
+    if (u.length < 4) { mailReset(); return; }
+    if (u === mailInfoFor) return;
+    try {
+      const j = await mailApi('/login/info', { username: u });
+      if (loginUsernameEl.value.trim() !== u) return;
+      mailInfoFor = u;
+      if (j.linked) {
+        mailMask = j.mask;
+        mailBtn.textContent = '✉ ' + fbT('Mail orqali kirish', 'Войти через Mail') + '  ' + j.mask;
+        mailBox.style.display = 'block';
+      } else { mailBox.style.display = 'none'; mailCodeBox.style.display = 'none'; }
+    } catch (_) { /* Mail tugmasi shunchaki ko'rinmaydi; parol bilan kirish ishlayveradi */ }
+  }
+  loginUsernameEl.addEventListener('input', () => { mailReset(); clearTimeout(mailInfoTimer); mailInfoTimer = setTimeout(mailCheckUser, 900); });
+  function mailStartResendTimer() {
+    let s = 60; clearInterval(mailResendTick);
+    const paint = () => { mailResend.textContent = s > 0 ? fbT('Qayta yuborish (' + s + ')', 'Отправить снова (' + s + ')') : fbT('Kodni qayta yuborish', 'Отправить код снова'); };
+    paint();
+    mailResendTick = setInterval(() => { s--; paint(); if (s <= 0) clearInterval(mailResendTick); }, 1000);
+  }
+  async function mailRequest() {
+    const u = loginUsernameEl.value.trim();
+    mailLoginErr(''); mailBtn.disabled = true;
+    try {
+      const j = await mailApi('/login/request', { username: u });
+      mailCodeSub.textContent = fbT('Kod ' + j.mask + ' manziliga yuborildi. Mail ilovasini oching.', 'Код отправлен на ' + j.mask + '. Откройте приложение Mail.');
+      mailCodeInput.placeholder = fbT("Mail'dagi kod", 'Код из Mail');
+      mailVerifyBtn.textContent = fbT('Tasdiqlash', 'Подтвердить');
+      mailCodeBox.style.display = 'block'; mailCodeInput.value = ''; mailCodeInput.focus();
+      mailStartResendTimer(); mailBtn.disabled = false;
+    } catch (e) {
+      if (e.data && e.data.blockedUntil) { mailBlocked(e.data.blockedUntil); return; }
+      if (e.data && e.data.wait) mailCodeBox.style.display = 'block';
+      mailLoginErr(e.message); mailBtn.disabled = false;
+    }
+  }
+  mailBtn.addEventListener('click', mailRequest);
+  mailResend.addEventListener('click', () => { if (mailResendTick && /\(\d+\)/.test(mailResend.textContent)) return; mailRequest(); });
+  mailVerifyBtn.addEventListener('click', async () => {
+    const u = loginUsernameEl.value.trim();
+    const code = mailCodeInput.value.replace(/\D/g, '');
+    if (!code) { mailLoginErr(fbT('Kodni kiriting', 'Введите код')); return; }
+    if (!fbAuth) { mailLoginErr(fbT('Firebase yuklanmadi. Internetni tekshiring.', 'Firebase не загрузился. Проверьте интернет.')); return; }
+    mailLoginErr(''); mailVerifyBtn.disabled = true;
+    try {
+      const j = await mailApi('/login/verify', { username: u, code: code });
+      await fbAuth.signInWithCustomToken(j.token);
+      mailCodeInput.value = '';
+      // Keyingi o'tishni onAuthStateChanged bajaradi
+    } catch (e) {
+      if (e.data && e.data.blockedUntil) { mailBlocked(e.data.blockedUntil); }
+      else mailLoginErr(e.message + (e.data && e.data.left != null ? ' (' + fbT('qolgan urinish: ', 'осталось попыток: ') + e.data.left + ')' : ''));
+    } finally { mailVerifyBtn.disabled = false; }
+  });
+
+  // --- Sozlamalar: Mail ulash ---
+  const mailOv = mq('mailLinkOverlay');
+  let mailLinkState = null;
+  mq('pldnMailLabel').textContent = fbT('Mail ulash', 'Подключить Mail');
+  function mailMsg(t, bad) { const e = mq('mailLinkErr'); e.style.color = bad ? '#FF3B30' : '#2AABEE'; e.textContent = t || ''; }
+  function mailRenderOv() {
+    const s = mailLinkState || { linked: false };
+    mq('mailLinkTitle').textContent = fbT('Mail ulash', 'Подключение Mail');
+    mq('mailLinkCloseBtn').textContent = fbT('Yopish', 'Закрыть');
+    mq('mailLinkMainBtn').style.display = 'block';
+    if (s.linked) {
+      mq('mailLinkText').textContent = fbT("PLDN hisobingiz Mail'ga ulangan: ", 'Ваш аккаунт PLDN подключён к Mail: ') + s.mask + fbT(". Kirish kodlari shu Mail'ga keladi.", '. Коды входа приходят в этот Mail.');
+      mq('mailLinkInput').style.display = 'none';
+      mq('mailDlBtn').style.display = 'none';
+      mq('mailLinkMainBtn').textContent = fbT('Uzish', 'Отключить');
+    } else {
+      mq('mailLinkText').textContent = fbT("1) Mail ilovasini yuklab oling va hisob oching.\n2) Mail'da «PLDN hisobiga ulash» ni bosing va chiqqan 10 xonali kodni shu yerga kiriting.", '1) Скачайте приложение Mail и создайте аккаунт.\n2) В Mail нажмите «Подключить к PLDN» и введите 10-значный код сюда.');
+      mq('mailLinkInput').style.display = 'block'; mq('mailLinkInput').placeholder = fbT('10 xonali ulash kodi', '10-значный код');
+      mq('mailDlBtn').style.display = 'block'; mq('mailDlBtn').textContent = fbT('Mail ilovasini yuklab olish', 'Скачать приложение Mail');
+      mq('mailLinkMainBtn').textContent = fbT('Ulash', 'Подключить');
+    }
+  }
+  mq('pldnMailRow').addEventListener('click', async () => {
+    if (!fbAuth || !fbAuth.currentUser) return;
+    mq('mailLinkInput').value = ''; mailMsg('');
+    mailOv.classList.add('open');
+    mq('mailLinkText').textContent = fbT('Tekshirilmoqda...', 'Проверка...');
+    mq('mailLinkInput').style.display = 'none'; mq('mailLinkMainBtn').style.display = 'none'; mq('mailDlBtn').style.display = 'none';
+    try {
+      const t = await fbAuth.currentUser.getIdToken();
+      mailLinkState = await mailApi('/pldn/status', undefined, t);
+      mailRenderOv();
+    } catch (e) { mq('mailLinkText').textContent = ''; mailMsg(e.message, true); }
+  });
+  mq('mailLinkCloseBtn').addEventListener('click', () => mailOv.classList.remove('open'));
+  mq('mailLinkMainBtn').addEventListener('click', async () => {
+    const btn = mq('mailLinkMainBtn'); mailMsg(''); btn.disabled = true;
+    try {
+      const t = await fbAuth.currentUser.getIdToken();
+      if (mailLinkState && mailLinkState.linked) {
+        if (!confirm(fbT("PLDN hisobi Mail'dan uziladi. Davom etasizmi?", 'Аккаунт PLDN будет отключён от Mail. Продолжить?'))) return;
+        await mailApi('/pldn/unlink', {}, t);
+        mailLinkState = { linked: false };
+      } else {
+        const code = mq('mailLinkInput').value.replace(/\D/g, '');
+        if (code.length !== 10) { mailMsg(fbT("Kod 10 xonali bo'lishi kerak", 'Код должен состоять из 10 цифр'), true); return; }
+        const j = await mailApi('/pldn/link', { code: code }, t);
+        mailLinkState = { linked: true, mask: j.mask };
+      }
+      mailRenderOv();
+    } catch (e) { mailMsg(e.message, true); } finally { btn.disabled = false; }
+  });
+  mq('mailDlBtn').addEventListener('click', () => {
+    if (!(window.PldnUpd && PldnUpd.download)) { window.location.href = MAIL_APK_URL; return; }
+    let allowed = true;
+    try { allowed = !!PldnUpd.canInstall(); } catch (_) {}
+    if (!allowed) {
+      mailMsg(fbT("Avval PLDN'ga ilova o'rnatishga ruxsat bering, so'ng yana bosing.", 'Сначала разрешите PLDN устанавливать приложения, затем нажмите снова.'), true);
+      try { PldnUpd.openSettings(); } catch (_) {}
+      return;
+    }
+    mailMsg(fbT('Yuklanmoqda... 0%', 'Загрузка... 0%'));
+    try { PldnUpd.download(MAIL_APK_URL); } catch (e) { mailMsg(String(e), true); return; }
+    let seen = false;
+    const tm = setInterval(() => {
+      let a;
+      try { a = String(PldnUpd.status()).split('|'); } catch (e) { clearInterval(tm); mailMsg(String(e), true); return; }
+      if (a[0] === 'downloading') { seen = true; mailMsg(fbT('Yuklanmoqda... ', 'Загрузка... ') + (parseInt(a[1], 10) || 0) + '%'); }
+      else if (a[0] === 'done' && seen) {
+        clearInterval(tm); mailMsg(fbT("O'rnatish oynasi ochilmoqda...", 'Открывается окно установки...'));
+        const r = String(PldnUpd.install());
+        if (r !== 'ok') mailMsg(fbT("O'rnatib bo'lmadi: ", 'Не удалось установить: ') + r, true);
+      } else if (a[0] === 'error') { clearInterval(tm); mailMsg(fbT("Yuklab bo'lmadi: ", 'Не удалось скачать: ') + (a.slice(3).join('|') || ''), true); }
+    }, 300);
   });
 
   // Ilova ochilganda / kirilganda: sessiya bor bo'lsa chatlarga o'tish
