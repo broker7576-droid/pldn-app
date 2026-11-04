@@ -1,4 +1,4 @@
-<!-- VERSION: 246 -->
+<!-- VERSION: 250 | QATORLAR: 22047 -->
 <!-- PLDN-FAYL: index.html | uyg'otish versiyasi: mail-login-1.0 | satr: 21561 | 2-noy-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
@@ -21560,10 +21560,10 @@ var PLDNBattModel = (function () {
 <script>
 (function () {
   'use strict';
-  // VERSION: protect-ui-v1  (PLDN himoya kodlari: ilova/chat/guruh/kanal, online + offline kod, offline navbat)
+  // VERSION: protect-ui-v4  (PLDN himoya kodlari: ilova/chat/guruh/kanal, online + offline kod, offline navbat)
   var API = 'https://134-255-228-146.sslip.io/mail';
   var MINL = 4, MAXL = 55, Z = 2147483000;
-  var prot = new Set(), unlocked = new Set();
+  var prot = new Set(), srv = new Set(), unlocked = new Set(); // prot = shu qurilmada yoqilgan joylar; srv = akkauntda kodi bor joylar
   var lockShown = false, offlineShown = false, flushing = false, bypass = false, startedFor = '', cover = null;
 
   // ---------- yordamchilar ----------
@@ -21575,16 +21575,23 @@ var PLDNBattModel = (function () {
   function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
   var K = {
-    prot: function () { return 'pldn_prot_' + uid(); },
-    off: function () { return 'pldn_offc_' + uid(); },
+    prot: function () { return 'pldn_dev_' + uid(); },
+    off: function () { return 'pldn_offc_dev'; },
     q: function () { return 'pldn_offq_' + uid(); },
     last: function () { return 'pldn_lastchat_' + uid(); },
     names: function () { return 'pldn_pnames_' + uid(); }
   };
-  function saveProt() { lsSet(K.prot(), Array.from(prot)); }
+  function saveProt() { lsSet(K.prot(), Array.from(prot).filter(function (x) { return x !== 'app'; })); lsSet('pldn_appon', prot.has('app')); } // ilova kodi telefonga, qolganlari akkauntga tegishli
+  function devId() {
+    var d = ''; try { d = localStorage.getItem('pldn_devid') || ''; } catch (e) {}
+    if (!/^[a-f0-9]{32}$/.test(d)) { var a = new Uint8Array(16); crypto.getRandomValues(a); d = Array.prototype.map.call(a, function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); try { localStorage.setItem('pldn_devid', d); } catch (e) {} }
+    return d;
+  }
 
   async function api(path, body) {
     var u = cu(); if (!u) return { net: true };
+    if (path === '/protect/list') path += '?dev=' + devId();
+    if (body && body.scope === 'app') body.dev = devId();
     var tok; try { tok = await u.getIdToken(); } catch (e) { return { net: true }; }
     var ctl = new AbortController(), tm = setTimeout(function () { ctl.abort(); }, 12000);
     try {
@@ -21614,6 +21621,20 @@ var PLDNBattModel = (function () {
     var s = pre + ':' + id;
     return /^(chat|group|channel):[A-Za-z0-9_-]{1,100}$/.test(s) ? s : null;
   }
+  // chat himoyasi oynasi sarlavhasi: saqlangan ism bo'lsa o'sha, bo'lmasa akkaunt ismi - username
+  async function labelOf(i) {
+    try {
+      if (i.type === 'group' || i.type === 'channel') return i.name || '';
+      var ou = i.otherUid;
+      if (!ou && i.id && uid()) ou = String(i.id).split('_').filter(function (x) { return x !== uid(); })[0];
+      if (ou && typeof fbGetUser === 'function') {
+        var u = await fbGetUser(ou), saved = u.name && u.realName && u.name !== u.realName;
+        var nm = saved ? u.name : (u.realName || u.name || i.name || '');
+        return (saved || !u.username) ? nm : nm + ' - ' + u.username;
+      }
+    } catch (e) {}
+    return i.name || '';
+  }
   function lite(i) {
     return { id: chatIdOf(i), type: i.type || 'dm', otherUid: i.otherUid || null, name: i.name || '', color: i.color || '#888', members: i.members || [], owner: i.owner || '', admins: i.admins || [], username: i.username || '', access: i.access || 'open', discussion: i.discussion || '' };
   }
@@ -21630,9 +21651,19 @@ var PLDNBattModel = (function () {
       c.appendChild(el('div', 'font-size:13.5px;line-height:1.4;color:#aab3c2;margin-bottom:12px;white-space:pre-line', o.msg || ''));
       var inputs = [];
       (o.fields || []).forEach(function (f) {
-        var i = el('input', 'width:100%;box-sizing:border-box;padding:11px 12px;margin-bottom:10px;border-radius:10px;border:1px solid #394152;background:#0f131a;color:#fff;font-size:16px;outline:none');
+        var w = el('div', 'position:relative;margin-bottom:10px');
+        var i = el('input', 'width:100%;box-sizing:border-box;padding:11px 12px;margin:0;border-radius:10px;border:1px solid #394152;background:#0f131a;color:#fff;font-size:16px;outline:none;display:block');
         i.type = f.num ? 'tel' : 'password'; i.placeholder = f.ph || ''; i.maxLength = f.max || MAXL; i.autocomplete = 'off';
-        inputs.push(i); c.appendChild(i);
+        w.appendChild(i);
+        if (!f.num) { // ko'rsatish / yashirish (ilovadagi parol maydonlaridagi kabi)
+          i.style.paddingRight = '50px';
+          var eye = el('button', 'position:absolute;right:2px;top:0;width:46px;height:100%;background:none;border:0;font-size:20px;padding:0;cursor:pointer;opacity:.8', '\uD83D\uDC41');
+          eye.type = 'button'; eye.setAttribute('aria-label', 'Kodni ko\u2018rsatish');
+          eye.addEventListener('mousedown', function (e) { e.preventDefault(); });
+          eye.addEventListener('click', function () { var sh = i.type === 'password'; i.type = sh ? 'text' : 'password'; eye.textContent = sh ? '\uD83D\uDE48' : '\uD83D\uDC41'; });
+          w.appendChild(eye);
+        }
+        inputs.push(i); c.appendChild(w);
       });
       var row = el('div', 'display:flex;gap:10px;margin-top:4px');
       function done(v) { b.remove(); res(v); }
@@ -21707,7 +21738,7 @@ var PLDNBattModel = (function () {
       var a = await api('/protect/verify', { scope: scope, code: code });
       if (a.net) { msg = o.hard ? 'Internet yo\u2018q. Offline kodni kiriting.' : 'Internet yo\u2018q. Bu chatni ochish uchun internet kerak.'; continue; }
       if (a.ok) { unlocked.add(scope); return true; }
-      if (a.st === 404) { prot.delete(scope); saveProt(); unlocked.add(scope); return true; } // kod boshqa qurilmadan olib tashlangan
+      if (a.st === 404) { prot.delete(scope); srv.delete(scope); saveProt(); unlocked.add(scope); return true; } // kod boshqa qurilmadan olib tashlangan
       msg = errTxt(a.j);
     }
   }
@@ -21715,7 +21746,7 @@ var PLDNBattModel = (function () {
   // ---------- kod o'rnatish / o'zgartirish / o'chirish ----------
   async function setCode(scope, label) {
     var old = null;
-    if (prot.has(scope)) { var o = await dlg({ title: 'Joriy kodni kiriting', fields: [{ ph: 'Joriy kod' }], ok: 'Davom' }); if (!o) return false; old = o[0]; }
+    if (prot.has(scope) || srv.has(scope)) { var o = await dlg({ title: 'Joriy kodni kiriting', fields: [{ ph: 'Joriy kod' }], ok: 'Davom' }); if (!o) return false; old = o[0]; }
     var msg = '4\u201355 belgi. Unutsangiz, PLDN\u00D7RSLT Mail orqali tiklaysiz (Mail ulangan bo\u2018lishi kerak).';
     for (;;) {
       var v = await dlg({ title: label + ' uchun kod', msg: msg, fields: [{ ph: 'Yangi kod' }, { ph: 'Kodni takrorlang' }], ok: 'Saqlash' });
@@ -21724,17 +21755,32 @@ var PLDNBattModel = (function () {
       if (v[0].length < MINL || v[0].length > MAXL) { msg = 'Kod 4\u201355 belgi bo\u2018lishi kerak.'; continue; }
       var a = await api('/protect/set', { scope: scope, code: v[0], old: old });
       if (a.net) { msg = 'Internet yo\u2018q. Qayta urinib ko\u2018ring.'; continue; }
-      if (a.ok) { prot.add(scope); saveProt(); unlocked.add(scope); return true; }
+      if (a.ok) { prot.add(scope); srv.add(scope); saveProt(); unlocked.add(scope); return true; }
       await info('Xatolik', errTxt(a.j)); return false;
     }
   }
   async function removeCode(scope) {
-    var o = await dlg({ title: 'Kodni o\u2018chirish', msg: 'Joriy kodni kiriting.', fields: [{ ph: 'Joriy kod' }], ok: 'O\u2018chirish' });
+    var o = await dlg({ title: 'Kodni o\u2018chirish', msg: (scope === 'app' ? '' : 'Kod barcha qurilmalardan o\u2018chiriladi. ') + 'Joriy kodni kiriting.', fields: [{ ph: 'Joriy kod' }], ok: 'O\u2018chirish' });
     if (!o) return false;
     var a = await api('/protect/remove', { scope: scope, code: o[0] });
-    if (a.ok) { prot.delete(scope); saveProt(); unlocked.delete(scope); if (scope === 'app') lsDel(K.off()); return true; }
+    if (a.ok) { prot.delete(scope); srv.delete(scope); saveProt(); unlocked.delete(scope); if (scope === 'app') lsDel(K.off()); return true; }
     await info(a.net ? 'Internet yo\u2018q' : 'Xatolik', a.net ? 'Internetni tekshiring.' : errTxt(a.j)); return false;
   }
+  async function confirmCode(scope, title, msg) {
+    msg = msg || 'Kodni kiriting.';
+    for (;;) {
+      var v = await dlg({ title: title, msg: msg, fields: [{ ph: 'Kod' }], ok: 'Davom', forgot: true });
+      if (v === null) return false;
+      if (v === 'forgot') { if (await recover(scope)) return true; continue; }
+      var a = await api('/protect/verify', { scope: scope, code: v[0] });
+      if (a.net) { msg = 'Internet yo\u2018q.'; continue; }
+      if (a.ok) return true;
+      if (a.st === 404) { srv.delete(scope); prot.delete(scope); saveProt(); return false; }
+      msg = errTxt(a.j);
+    }
+  }
+  async function enableHere(scope, label) { if (await confirmCode(scope, label, 'Bu qurilmada himoyani yoqish uchun kodni kiriting.')) { prot.add(scope); saveProt(); unlocked.add(scope); return true; } return false; }
+  async function disableHere(scope, label) { if (await confirmCode(scope, label, 'Himoya faqat shu qurilmada o\u2018chadi. Kodni kiriting.')) { prot.delete(scope); saveProt(); unlocked.delete(scope); return true; } return false; }
   async function verifyAppOnline(title) {
     var o = await dlg({ title: title, msg: 'Online ilova kodini kiriting.', fields: [{ ph: 'Online kod' }], ok: 'Davom' });
     if (!o) return null;
@@ -21744,7 +21790,7 @@ var PLDNBattModel = (function () {
   }
   async function offlineSetup() {
     if (!window.crypto || !crypto.subtle) { await info('Qo\u2018llab-quvvatlanmaydi', 'Bu qurilmada offline kod ishlamaydi.'); return; }
-    if (!prot.has('app')) { await info('Avval ilova kodi', 'Offline kod ilova kodi bilan birga ishlaydi. Avval ilova kodini o\u2018rnating.'); return; }
+    if (!prot.has('app')) { await info('Avval ilova kodi', 'Offline kod ilova kodi bilan birga ishlaydi. Avval bu qurilmada ilova kodini yoqing.'); return; }
     var online = await verifyAppOnline('Offline kod o\u2018rnatish'); if (online === null) return;
     var msg = 'Bu kod hech qanday shaxsiy ma\u2019lumotni ochmaydi: faqat xabar yozib navbatga qo\u2018yish mumkin.';
     for (;;) {
@@ -21848,12 +21894,13 @@ var PLDNBattModel = (function () {
   }
   async function refreshList() {
     var a = await api('/protect/list');
-    if (a.ok && a.j && a.j.items) { prot = new Set(a.j.items.map(function (x) { return x.scope; })); saveProt(); return true; }
+    if (a.ok && a.j && a.j.items) { srv = new Set(a.j.items.map(function (x) { return x.scope; })); prot = new Set(Array.from(prot).filter(function (x) { return srv.has(x); })); saveProt(); return true; }
     return false;
   }
   function startLock() {
-    var u = uid(); if (startedFor !== u) { unlocked.clear(); startedFor = u; }
-    prot = new Set(lsGet(K.prot(), []));
+    var u = uid(); if (startedFor !== u) { var keep = unlocked.has('app'); unlocked.clear(); if (keep) unlocked.add('app'); startedFor = u; }
+    prot = new Set(lsGet(K.prot(), []).filter(function (x) { return x !== 'app'; }));
+    if (lsGet('pldn_appon', false)) prot.add('app');
     if (prot.has('app') && !unlocked.has('app')) showAppLock();
     refreshList().then(function (ok) {
       if (ok && prot.has('app') && !unlocked.has('app')) showAppLock();
@@ -21876,17 +21923,14 @@ var PLDNBattModel = (function () {
     async function render() {
       list.innerHTML = '';
       var names = lsGet(K.names(), {});
-      row('\uD83D\uDD10', 'Ilova kodi (online)', prot.has('app') ? 'Yoqilgan' : 'O\u2018chiq', function () {
-        if (!prot.has('app')) { setCode('app', 'PLDN ilovasi').then(render); return; }
-        sheet('Ilova kodi', [{ label: 'Kodni o\u2018zgartirish', fn: function () { setCode('app', 'PLDN ilovasi').then(render); } }, { label: 'Kodni o\u2018chirish', danger: true, fn: function () { removeCode('app').then(render); } }]);
-      });
+      row('\uD83D\uDD10', 'Ilova kodi (barcha akkauntlar)', srv.has('app') ? (prot.has('app') ? 'Yoqilgan' : 'Bu qurilmada o\u2018chiq') : 'O\u2018chiq', function () { protSheet('app', 'Ilova kodi', render); });
       row('\uD83D\uDCF4', 'Offline kod', lsGet(K.off(), null) ? 'Yoqilgan' : 'O\u2018chiq', function () {
         var has = !!lsGet(K.off(), null);
         sheet('Offline kod', [{ label: has ? 'Offline kodni o\u2018zgartirish' : 'Offline kod o\u2018rnatish', fn: function () { offlineSetup().then(render); } }].concat(has ? [{ label: 'Offline kodni o\u2018chirish', danger: true, fn: function () { offlineRemove().then(render); } }] : []));
       });
-      Array.from(prot).filter(function (s) { return s !== 'app'; }).forEach(function (s) {
+      Array.from(new Set(Array.from(srv).concat(Array.from(prot)))).filter(function (s) { return s !== 'app'; }).forEach(function (s) {
         var t = s.split(':')[0], nm = names[s] || (t === 'group' ? 'Guruh' : t === 'channel' ? 'Kanal' : 'Chat');
-        row(t === 'group' ? '\uD83D\uDC65' : t === 'channel' ? '\uD83D\uDCE2' : '\uD83D\uDCAC', nm, 'Yoqilgan', function () { protSheet(s, nm, render); });
+        row(t === 'group' ? '\uD83D\uDC65' : t === 'channel' ? '\uD83D\uDCE2' : '\uD83D\uDCAC', nm, prot.has(s) ? 'Yoqilgan' : 'Bu qurilmada o\u2018chiq', function () { protSheet(s, nm, render); });
       });
       var qn = qGet().length;
       row('\u23F3', 'Kutayotgan offline amallar', String(qn), function () {
@@ -21896,16 +21940,21 @@ var PLDNBattModel = (function () {
         var cl = el('button', BTN + ';flex:none;width:100%;margin-top:8px;background:#2a3140;color:#fff', 'Yopish'); cl.onclick = function () { pb.remove(); render(); }; pc.appendChild(cl);
         pb.appendChild(pc); document.body.appendChild(pb); renderQueue(qb);
       });
-      list.appendChild(el('div', 'font-size:12.5px;color:#7d8797;margin-top:10px;line-height:1.45', 'Chat, guruh yoki kanal kodini o\u2018rnatish uchun shu chatni oching va tepadagi \uD83D\uDD10 tugmasini bosing.'));
+      list.appendChild(el('div', 'font-size:12.5px;color:#7d8797;margin-top:10px;line-height:1.45', 'Ilova kodi shu telefondagi barcha akkauntlar uchun bitta. Chat, guruh yoki kanal kodini o\u2018rnatish uchun shu chatni oching va tepadagi \uD83D\uDD10 tugmasini bosing.'));
     }
     document.body.appendChild(b); render();
     refreshList().then(function (ok) { if (ok) render(); });
   }
   function protSheet(sc, name, after) {
-    var names = lsGet(K.names(), {}); if (name) { names[sc] = name; lsSet(K.names(), names); }
-    var done = function () { if (after) after(); };
-    if (!prot.has(sc)) { sheet(name || 'Chat', [{ label: 'Himoya kodini o\u2018rnatish', fn: function () { setCode(sc, name || 'Chat').then(done); } }]); return; }
-    sheet(name || 'Chat', [{ label: 'Kodni o\u2018zgartirish', fn: function () { setCode(sc, name || 'Chat').then(done); } }, { label: 'Kodni o\u2018chirish', danger: true, fn: function () { removeCode(sc).then(done); } }]);
+    if (sc !== 'app' && name) { var names = lsGet(K.names(), {}); names[sc] = name; lsSet(K.names(), names); }
+    var title = name || 'Chat', done = function () { if (after) after(); };
+    var has = srv.has(sc), on = prot.has(sc), items = [];
+    if (!has) { sheet(title, [{ label: 'Himoya kodini o\u2018rnatish', fn: function () { setCode(sc, title).then(done); } }]); return; }
+    if (!on) items.push({ label: 'Bu qurilmada yoqish', fn: function () { enableHere(sc, title).then(done); } });
+    items.push({ label: 'Kodni o\u2018zgartirish', fn: function () { setCode(sc, title).then(done); } });
+    if (on && sc !== 'app') items.push({ label: 'Bu qurilmada o\u2018chirish', fn: function () { disableHere(sc, title).then(done); } });
+    items.push({ label: sc === 'app' ? 'Ilova kodini o\u2018chirish' : 'Barcha qurilmalardan o\u2018chirish', danger: true, fn: function () { removeCode(sc).then(done); } });
+    sheet(title, items);
   }
 
   // ---------- ilovaga ulash ----------
@@ -21921,9 +21970,9 @@ var PLDNBattModel = (function () {
     // 2) chat sarlavhasida tugma
     var emo = document.getElementById('emoBtn');
     if (emo && !document.getElementById('pProtBtn')) {
-      var pb = document.createElement('button'); pb.className = 'call-hdr-btn'; pb.id = 'pProtBtn'; pb.textContent = '\uD83D\uDD10'; pb.setAttribute('aria-label', 'Himoya kodi');
+      var pb = document.createElement('button'); pb.id = 'pProtBtn'; pb.style.cssText = 'background:none;border:0;font-size:21px;line-height:1;padding:8px 6px;cursor:pointer;flex-shrink:0'; pb.textContent = '\uD83D\uDD10'; pb.setAttribute('aria-label', 'Himoya kodi');
       emo.insertAdjacentElement('afterend', pb);
-      pb.addEventListener('click', function (e) { e.stopPropagation(); var c = cur(), sc = c && scopeOf(c); if (sc) protSheet(sc, c.name, null); });
+      pb.addEventListener('click', async function (e) { e.stopPropagation(); var c = cur(), sc = c && scopeOf(c); if (!sc) return; await refreshList(); protSheet(sc, await labelOf(c), null); });
     }
     // 3) chat ochilishida kod so'rash
     var origOpen = window.fbOpenChat;
@@ -21934,7 +21983,7 @@ var PLDNBattModel = (function () {
           try {
             var sc = scopeOf(info_);
             if (sc && prot.has(sc) && !unlocked.has(sc)) {
-              var ok = await unlockScope(sc, 'Chat himoyalangan', {});
+              var ok = await unlockScope(sc, await labelOf(info_), { msg: 'Chat himoyalangan. Kodni kiriting.' });
               if (ok !== true) return new Promise(function () {}); // bekor: chat ochilmaydi
             }
           } catch (e) { console.error(e); }
@@ -21983,11 +22032,11 @@ var PLDNBattModel = (function () {
       else hideCover();
     });
     // 7) kirish holati
-    var hooked = false, iv = setInterval(function () {
+    var hooked = false, sawNull = false, iv = setInterval(function () {
       var a = auth();
       if (a && !hooked) {
         hooked = true; clearInterval(iv);
-        a.onAuthStateChanged(function (u) { if (u) startLock(); else { prot = new Set(); unlocked.clear(); startedFor = ''; hideCover(); } });
+        a.onAuthStateChanged(function (u) { if (u) { if (sawNull) unlocked.add('app'); startLock(); } else { sawNull = true; prot = new Set(); unlocked.clear(); startedFor = ''; hideCover(); } }); // yangi kirgandan keyin ilova kodi qayta so'ralmaydi
       }
     }, 300);
   }
