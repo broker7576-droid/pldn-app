@@ -1,5 +1,5 @@
-<!-- VERSION: 248 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: mail-login-1.0 | satr: 22249 | 4-noy-2026 -->
+<!-- VERSION: 250 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: mail-login-1.0 | satr: 22668 | 5-noy-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -7438,11 +7438,13 @@
 
   function pldnHistAdd(entry) {
     entry.id = ++pldnCodeHistoryIdCounter;
-    entry.time = new Date();
+    entry.time = entry.time ? new Date(entry.time) : new Date();
     pldnCodeHistory.unshift(entry);
     if (pldnCodeHistory.length > 50) pldnCodeHistory.pop();
     if (document.getElementById('pldnCodeHistoryScreen').classList.contains('active')) renderCodeHistory();
   }
+
+  window.pldnHistAdd = pldnHistAdd; window.pldnHistHas = function (tag) { return pldnCodeHistory.some(function (h) { return h.tag === tag; }); };
 
   function pldnCodeFail(shapes, text) {
     pldnCodeFeedback.textContent = text;
@@ -10038,6 +10040,7 @@ async function fbOpenChat(info, ensure) {
   }
 
   window.fbSendImageFile = fbSendImageFile;
+  window.fbSendText = fbSendText; window.fbSendVoice = fbSendVoice; // Shaxsiy materiallar (terminal) almashtiruvchi xabarlarni yuborish uchun
 
   // ----- Username bo'yicha topish ekrani -----
   (() => {
@@ -21205,7 +21208,7 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== BUYRUQLAR TERMINALI ===== VERSION: term-2.0
+// ===== BUYRUQLAR TERMINALI ===== VERSION: term-3.0 (shaxsiy materiallar PM-1.0)
 // Server: https://134-255-228-146.sslip.io/term/* (termsrv.js, port 3010). Hozircha faqat o'zbekcha.
 (function () {
   'use strict';
@@ -21464,7 +21467,7 @@ var PLDNBattModel = (function () {
 
   // ---------- terminal ekrani (Cyber Terminal dizayni) ----------
   var ov = null, ui = {}, buffer = '';
-  var TERM_VERSION = 'term-2.0', TERM_LINES = '22249';
+  var TERM_VERSION = 'term-3.0', TERM_LINES = '22668';
 
   var TM_CSS = `
 .tm-ov{position:fixed;inset:0;z-index:99990;display:none;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:max(15px,env(safe-area-inset-top)) 15px 15px;background:radial-gradient(ellipse at 20% 10%,#073b7040,transparent 45%),radial-gradient(ellipse at 90% 90%,#003d7540,transparent 45%),#050914;color:#f4f8ff;font-family:Consolas,'Courier New',monospace}
@@ -21548,6 +21551,7 @@ var PLDNBattModel = (function () {
   function tmPrint(text, type) {
     var d = el('div'); d.className = 'tm-line tm-' + (type || 'response'); d.textContent = text;
     ui.content.appendChild(d); ui.screen.scrollTop = ui.screen.scrollHeight;
+    return d;
   }
   function trow(label, val, cls) {
     var r = el('div'); r.className = 'tm-result-row' + (cls ? ' ' + cls : '');
@@ -21641,7 +21645,8 @@ var PLDNBattModel = (function () {
           'BUYRUQ YOZISH QOIDASI:', 'Buyruq nuqta bilan tugaydi. Nuqta qo\u2018yilmaguncha terminal buyruqni yig\u2018adi.', '',
           '1) CHEKSIZ MATNLI XABAR:', 'cheksiz matnli xabar imkoniyati', 'mening hisobim', '10minut.', '',
           '2) FAYL UZATISH:', 'fayl uzatish imkoniyati', 'mening hisobim', 'cheksiz.', '',
-          'Boshqa hisobga: ikkinchi qatorga foydalanuvchi nomini yozing.', 'Vaqt: 10minut, 2soat, 1kun yoki cheksiz.'
+          'Boshqa hisobga: ikkinchi qatorga foydalanuvchi nomini yozing.', 'Vaqt: 10minut, 2soat, 1kun yoki cheksiz.', '',
+          'SHAXSIY MATERIALLAR:', 'shaxsiy materiallar - paket yaratish (shifrlangan)', 'shaxsiy materiallarni ochish - maxfiy kod bilan ochish', 'tarix - faollashtirilgan funksiyalar tarixi'
         ].forEach(function (x) { tmPrint(x); });
         return true;
       case 'clear': clearTerm(); return true;
@@ -21702,7 +21707,8 @@ var PLDNBattModel = (function () {
     var typed = ui.input.value.replace(/\r\n/g, '\n');
     if (!typed.trim()) { tmEffect(); tmPrint('[ERROR] Buyruq kiritilmagan!', 'error'); return; }
     tmEffect();
-    tmPrint('PLDN $ ' + typed, 'command');
+    tmPrint('PLDN $ ' + (pmMask() ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' : typed), 'command');
+    if (!buffer && pmHandle(typed)) { ui.input.value = ''; return; }
     if (!buffer && sysCmd(norm(typed).replace(/\.$/, ''))) { ui.input.value = ''; return; }
     buffer += (buffer ? '\n' : '') + typed;
     // nuqta bilan tugamasa: buyruq davom etadi
@@ -21743,9 +21749,422 @@ var PLDNBattModel = (function () {
     if (!me()) { toast('Avval hisobga kiring'); return; }
     if (!ov) build();
     buffer = ''; ui.live = null; ui.content.innerHTML = ''; ui.input.value = ''; // kirganda terminal toza
-    ov.classList.add('tm-show'); refresh();
+    ov.classList.add('tm-show'); refresh(); pmRestoreHist(); pmChip(); if (PM) pmResume();
   }
   function close() { if (ov) ov.classList.remove('tm-show'); }
+
+  // ---------- SHAXSIY MATERIALLAR (PM-1.0) ----------
+  // Asl materiallar telefonning o'zida AES-GCM bilan shifrlanadi (kalit: maxfiy koddan PBKDF2). Serverga faqat shifrlangan ma'lumot boradi.
+  var PM = null, PMO = null, PM_ITER = 200000, PM_RAW = 524286, PM_MAX = 25 * 1048576;
+  var PK = [null,
+    { k: 'text', n: 'Matnli xabar', i: '\u2709\uFE0F' }, { k: 'voice', n: 'Ovozli xabar', i: '\uD83C\uDFA4' }, { k: 'image', n: 'Rasm', i: '\uD83D\uDDBC\uFE0F' },
+    { k: 'video', n: 'Video', i: '\uD83C\uDFA5' }, { k: 'pdf', n: 'PDF', i: '\uD83D\uDCC4' }, { k: 'file', n: 'Fayllar', i: '\uD83D\uDCCE' }];
+  var pmIn = {};
+
+  function u8ToB64(u8) { var s = '', ch = 0x8000; for (var i = 0; i < u8.length; i += ch) s += String.fromCharCode.apply(null, u8.subarray(i, i + ch)); return btoa(s); }
+  function b64ToU8(b) { var s = atob(b), u = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
+  function blobDataUrl(blob) { return new Promise(function (r) { var fr = new FileReader(); fr.onload = function () { r(String(fr.result)); }; fr.readAsDataURL(blob); }); }
+  function fmtDT(ms) { try { return new Date(ms).toLocaleString(); } catch (_) { return ''; } }
+  function tmBtn(label, fn, cls) { var b = el('button'); b.className = 'tm-copy-btn' + (cls ? ' ' + cls : ''); b.textContent = label; b.addEventListener('click', fn); return b; }
+  function tmCard() { var c = el('div'); c.className = 'tm-result'; ui.content.appendChild(c); ui.screen.scrollTop = ui.screen.scrollHeight; return c; }
+
+  // ----- kriptografiya (faqat tekshirilgan WebCrypto) -----
+  async function pmKey(code, salt, iter) {
+    var base = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: salt, iterations: iter, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+  async function pmEncRaw(key, bytes, aad, iv) {
+    return new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv, additionalData: new TextEncoder().encode(aad) }, key, bytes));
+  }
+  async function pmEnc(key, bytes, aad) {
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    return { iv: u8ToB64(iv), ct: u8ToB64(await pmEncRaw(key, bytes, aad, iv)) };
+  }
+  async function pmDec(key, o, aad) {
+    return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToU8(o.iv), additionalData: new TextEncoder().encode(aad) }, key, b64ToU8(o.ct)));
+  }
+
+  // ----- tarix: kod funksiyalaridagi «Tarix» ga ham yoziladi va terminalda ham saqlanadi -----
+  function histKey() { var u = me(); return 'pldnTermHist_' + (u ? u.uid : ''); }
+  function histGet() { try { return JSON.parse(localStorage.getItem(histKey()) || '[]'); } catch (_) { return []; } }
+  function histAdd(what, note, toTarix) {
+    var t = Date.now();
+    try { var a = histGet(); a.unshift({ t: t, w: what, n: note || '' }); localStorage.setItem(histKey(), JSON.stringify(a.slice(0, 300))); } catch (_) {}
+    if (toTarix && window.pldnHistAdd) { try { window.pldnHistAdd({ code: 'R', label: what, shapes: [], message: note || '', tag: 'pm' + t, time: t }); } catch (_) {} }
+  }
+  function pmRestoreHist() { // ilova qayta ochilganda faollashtirilgan funksiyalar Tarixga qaytariladi
+    try {
+      var a = histGet().filter(function (h) { return h.tar; }).reverse();
+      a.forEach(function (h) { if (window.pldnHistHas && !window.pldnHistHas('pm' + h.t) && window.pldnHistAdd) window.pldnHistAdd({ code: 'R', label: h.w, shapes: [], message: h.n, tag: 'pm' + h.t, time: h.t }); });
+    } catch (_) {}
+  }
+  function histAddT(what, note) { // Tarixda ko'rinadigan (faollashtirish) yozuv
+    var t = Date.now();
+    try { var a = histGet(); a.unshift({ t: t, w: what, n: note || '', tar: 1 }); localStorage.setItem(histKey(), JSON.stringify(a.slice(0, 300))); } catch (_) {}
+    if (window.pldnHistAdd) { try { window.pldnHistAdd({ code: 'R', label: what, shapes: [], message: note || '', tag: 'pm' + t, time: t }); } catch (_) {} }
+  }
+  function showHistory() {
+    var a = histGet(), c = tmCard();
+    c.appendChild(trow('tarix:', a.length ? a.length + ' ta yozuv' : 'hozircha bo\u2018sh'));
+    a.slice(0, 40).forEach(function (h) { c.appendChild(el('div', 'font-size:12px;padding:5px 0;border-top:1px solid #168cff30;overflow-wrap:anywhere', fmtDT(h.t) + ' \u00B7 ' + h.w + (h.n ? ' \u00B7 ' + h.n : ''))); });
+    tmPrint('Kod funksiyalaridagi \u00ABTarix\u00BB da ham shu faollashtirishlar saqlanadi.', 'pending');
+  }
+
+  // ----- chat yozish maydonidagi indikator -----
+  function pmChip() {
+    var bar = document.querySelector('#chatDetailScreen .chat-input-bar'), c = document.getElementById('pldnPmChip');
+    if (!bar || !bar.parentNode) return;
+    if (!PM) { if (c) c.style.display = 'none'; return; }
+    if (!c) {
+      c = el('div', 'align-items:center;gap:8px;padding:6px 12px;background:#0b1a30;color:#00c8ff;font:700 11px/1.3 Consolas,monospace;letter-spacing:1px;border-top:1px solid #168cff55'); c.id = 'pldnPmChip';
+      c.appendChild(el('span', 'flex:1', '\uD83D\uDD12 SHAXSIY MATERIALLAR \u2014 FAOL'));
+      c.appendChild(tmBtn('TERMINAL', function () { open(); }));
+      c.appendChild(tmBtn('\u2715', async function () { var ok = window.pldnConfirm ? await window.pldnConfirm('Shaxsiy materiallar paketini bekor qilasizmi? Joylangan materiallar o\u2018chadi.') : true; if (ok) pmCancel(); }, 'tm-danger'));
+      bar.parentNode.insertBefore(c, bar);
+    }
+    c.style.display = 'flex';
+  }
+  function pmCancel() { PM = null; PMO = null; pmChip(); if (ov && ov.classList.contains('tm-show')) tmPrint('[SYSTEM] Shaxsiy materiallar bekor qilindi.'); }
+
+  // ----- terminal buyruqlari -----
+  function pmMask() { return !!((PM && (PM.phase === 'code' || PM.phase === 'code2')) || (PMO && PMO.phase === 'code')); }
+  function pmHandle(typed) {
+    var t = typed.trim(), n = norm(t).replace(/\.$/, '');
+    if (PMO) return pmOpenInput(t);
+    if (PM) return pmInput(t, n);
+    if (n === 'shaxsiy materiallar') { pmStart(); return true; }
+    if (n === 'shaxsiy materiallarni ochish') { pmOpenStart(); return true; }
+    if (n === 'tarix') { showHistory(); return true; }
+    return false;
+  }
+  function pmStart() {
+    PM = { phase: 'collect', real: {}, decoy: {}, queue: [], await: null, to: null, code: '', busy: false };
+    histAddT('Shaxsiy materiallar', 'terminal orqali faollashtirildi');
+    pmChip();
+    ['PLDN TERMINAL', '', 'SHAXSIY MATERIAL:', 'Maxfiylikni to\u2018ldiring.', ''].forEach(function (x) { tmPrint(x); });
+    pmPaint();
+    ['Materiallarni tegishli raqamlar orqali joylashtiring.', 'Barcha materiallar tayyor bo\u2018lgach, nuqta (.) belgisini yuboring.', '',
+      'OGOHLANTIRISH:', 'Nuqta (.) buyrug\u2018i paketni yakunlash va bajarish jarayonini boshlash uchun ishlatiladi.', 'Nuqta yuborilishidan oldin tasdiqlash ogohlantirishi ko\u2018rsatiladi.', '',
+      'Boshqa buyruqlar: holat \u00B7 -3 (3-materialni olib tashlash) \u00B7 bekor'].forEach(function (x) { tmPrint(x, 'pending'); });
+  }
+  function pmSlots() { return [1, 2, 3, 4, 5, 6].filter(function (s) { return PM && PM.real[s]; }); }
+  function matLine(m) { return m.kind === 'text' ? '\u201C' + (m.text.length > 40 ? m.text.slice(0, 40) + '\u2026' : m.text) + '\u201D' : (m.name || m.kind) + (m.size ? ' \u00B7 ' + fmtSize(m.size) : ''); }
+  function pmPaint() {
+    var c = tmCard();
+    c.appendChild(trow('SHAXSIY MATERIAL:', 'paket tayyorlanmoqda'));
+    for (var s = 1; s <= 6; s++) c.appendChild(el('div', 'padding:2px 0;overflow-wrap:anywhere', s + '. ' + PK[s].n + ': ' + (PM.real[s] ? '\u2713 ' + matLine(PM.real[s]) : '\u2014')));
+  }
+  function pmInput(t, n) {
+    if (PM.busy) { tmPrint('[SYSTEM] Yuborilmoqda, kuting...', 'pending'); return true; }
+    if (n === 'bekor') { pmCancel(); return true; }
+    if (PM.await) { // matn yoki fayl nomi kutilmoqda
+      if (!t) { tmPrint('[ERROR] Bo\u2018sh bo\u2018lmasin.', 'error'); return true; }
+      var a = PM.await, K = PK[a.slot].k;
+      pmSetMat(a.slot, a.side, K === 'text' ? { kind: 'text', text: t, size: new TextEncoder().encode(t).length } : { kind: K, name: t, fake: true });
+      return true;
+    }
+    if (PM.phase === 'collect') {
+      if (t === '.') { pmFinalAsk(); return true; }
+      if (/^[1-6]$/.test(t)) { pmAcquire(Number(t), 'real', true); return true; }
+      var m = /^-\s*([1-6])$/.exec(t) || /^o.?chir\s*([1-6])$/.exec(n);
+      if (m) { delete PM.real[m[1]]; tmPrint('[OK] ' + m[1] + '-material olib tashlandi.'); pmPaint(); return true; }
+      if (n === 'holat') { pmPaint(); return true; }
+      tmPrint('[ERROR] Raqam (1\u20136) yoki nuqta (.) yozing.', 'error'); return true;
+    }
+    if (PM.phase === 'confirm') { tmPrint('Pastdagi tugmalardan birini tanlang.', 'pending'); return true; }
+    if (PM.phase === 'decoy') { tmPrint('Almashtiruvchi materialni pastdagi tugma orqali tanlang.', 'pending'); return true; }
+    if (PM.phase === 'target') { pmSetTarget(t); return true; }
+    if (PM.phase === 'code') {
+      if (t.length < 6) { tmPrint('[ERROR] Kod kamida 6 belgi bo\u2018lsin.', 'error'); return true; }
+      PM.code = t; PM.phase = 'code2'; tmPrint('Kodni takrorlang:'); return true;
+    }
+    if (PM.phase === 'code2') {
+      if (t !== PM.code) { PM.phase = 'code'; PM.code = ''; tmPrint('[ERROR] Kodlar mos kelmadi. Kodni qaytadan o\u2018rnating:', 'error'); return true; }
+      pmSend(); return true;
+    }
+    if (PM.phase === 'retry') { if (n === 'qayta') { pmSend(); } else tmPrint('\u00ABqayta\u00BB yoki \u00ABbekor\u00BB deb yozing.', 'pending'); return true; }
+    return true;
+  }
+
+  // ----- material olish -----
+  function pmFileIn(kind) {
+    if (pmIn[kind]) return pmIn[kind];
+    var i = el('input', 'display:none'); i.type = 'file';
+    i.accept = kind === 'video' ? 'video/*' : kind === 'pdf' ? 'application/pdf,.pdf' : kind === 'voice' ? 'audio/*' : kind === 'image' ? 'image/*' : '';
+    document.body.appendChild(i); pmIn[kind] = i;
+    i.addEventListener('change', function () { var f = i.files && i.files[0]; i.value = ''; if (f && i._cb) i._cb(f); });
+    return i;
+  }
+  function pmPickFile(kind, slot, side) {
+    var i = pmFileIn(kind);
+    i._cb = function (f) {
+      if (f.size > PM_MAX) { tmPrint('[ERROR] Fayl juda katta (' + fmtSize(f.size) + '). Eng ko\u2018pi: ' + fmtSize(PM_MAX) + '.', 'error'); return; }
+      pmSetMat(slot, side, { kind: kind, blob: f, file: f, name: f.name || kind, mime: f.type || '', size: f.size });
+    };
+    i.click();
+  }
+  async function pmPickImage(slot, side) {
+    var Cam = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Camera;
+    if (!Cam) { pmPickFile('image', slot, side); return; }
+    try {
+      var r = await Cam.getPhoto({ source: 'PROMPT', resultType: 'dataUrl', quality: 85, width: 1600, correctOrientation: true });
+      if (!r || !r.dataUrl) return;
+      var blob = await (await fetch(r.dataUrl)).blob();
+      pmSetMat(slot, side, { kind: 'image', blob: blob, name: 'rasm.jpg', mime: blob.type || 'image/jpeg', size: blob.size });
+    } catch (e) {
+      if (/cancel/i.test(String((e && (e.message || e.errorMessage)) || e))) return;
+      pmPickFile('image', slot, side);
+    }
+  }
+  function pmRecBtn(slot, side) {
+    var VR = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.VoiceRecorder, on = false, t0 = 0, iv = null;
+    var b = tmBtn('\uD83C\uDF99 Yozish', async function () {
+      if (!VR) { toast('Ovoz yozish mavjud emas: faylni tanlang'); return; }
+      if (!on) {
+        try {
+          var h = await VR.hasAudioRecordingPermission();
+          if (!h || h.value === false) { var rq = await VR.requestAudioRecordingPermission(); if (!rq || rq.value === false) { toast('Mikrofon ruxsati yo\u2018q'); return; } }
+          try { var st = await VR.getCurrentStatus(); if (st && st.status && st.status !== 'NONE') await VR.stopRecording(); } catch (_) {}
+          await VR.startRecording(); on = true; t0 = Date.now();
+          iv = setInterval(function () { b.textContent = '\u23F9 ' + Math.round((Date.now() - t0) / 1000) + ' s'; if (Date.now() - t0 > 45000) b.click(); }, 400);
+        } catch (e) { toast('Yozib bo\u2018lmadi'); }
+      } else {
+        on = false; clearInterval(iv); b.textContent = '\uD83C\uDF99 Yozish';
+        var dur = Math.max(1, Math.round((Date.now() - t0) / 1000));
+        try {
+          var r = await VR.stopRecording(), rec = r && r.value;
+          if (!rec || !rec.recordDataBase64) { toast('Ovoz yozilmadi'); return; }
+          var mime = rec.mimeType || 'audio/aac', blob = await (await fetch('data:' + mime + ';base64,' + rec.recordDataBase64)).blob();
+          pmSetMat(slot, side, { kind: 'voice', blob: blob, name: 'ovoz.aac', mime: mime, size: blob.size, dur: dur });
+        } catch (e) { toast('Ovoz yozilmadi'); }
+      }
+    });
+    return b;
+  }
+  function pmAcquire(slot, side, auto) {
+    var P = PK[slot], kind = P.k;
+    PM.await = null;
+    if (kind === 'text' || (side === 'decoy' && (kind === 'pdf' || kind === 'file'))) {
+      PM.await = { slot: slot, side: side };
+      tmPrint(kind === 'text' ? 'Matnni yozing va EXECUTE bosing:' : 'Fayl nomini yozing (masalan: hisobot.pdf):'); return;
+    }
+    var c = tmCard();
+    c.appendChild(trow(P.i + ' ' + P.n + ':', side === 'decoy' ? 'almashtiruvchi material' : 'asl material'));
+    var row = el('div', 'display:flex;gap:8px;flex-wrap:wrap;margin-top:8px');
+    if (kind === 'voice') { row.appendChild(pmRecBtn(slot, side)); row.appendChild(tmBtn('\uD83D\uDCC1 Fayl tanlash', function () { pmPickFile('voice', slot, side); })); }
+    else if (kind === 'image') row.appendChild(tmBtn('\uD83D\uDCF7 Galereya / Kamera', function () { pmPickImage(slot, side); }));
+    else row.appendChild(tmBtn('\uD83D\uDCC2 Tanlash', function () { pmPickFile(kind, slot, side); }));
+    c.appendChild(row);
+    if (auto) { if (kind === 'image') pmPickImage(slot, side); else if (kind !== 'voice') pmPickFile(kind, slot, side); }
+  }
+  function pmSetMat(slot, side, mat) {
+    var P = PK[slot]; if (!PM) return;
+    PM[side][slot] = mat; PM.await = null;
+    tmPrint('[OK] ' + P.i + ' ' + slot + '. ' + P.n + (side === 'decoy' ? ' (almashtiruvchi)' : '') + ': ' + matLine(mat));
+    if (side === 'real') pmPaint(); else { PM.queue.shift(); pmDecoyNext(); }
+  }
+
+  // ----- nuqta: tasdiqlash, almashtiruvchilar, qabul qiluvchi, kod -----
+  function pmFinalAsk() {
+    if (!pmSlots().length) { tmPrint('[ERROR] Hech qanday material joylanmadi.', 'error'); return; }
+    PM.phase = 'confirm';
+    var c = tmCard();
+    ['DIQQAT!', '', 'Siz shaxsiy materiallar paketini yakunlamoqchisiz.', 'Nuqta (.) buyrug\u2018i yuborilgach, materiallarni tayyorlash bosqichi tugaydi.', '', 'Davom etishni xohlaysizmi?'].forEach(function (x, i) { c.appendChild(el('div', i === 0 ? 'color:#ff3434;font-weight:bold' : '', x || '\u00A0')); });
+    var row = el('div', 'display:flex;gap:8px;margin-top:10px');
+    row.appendChild(tmBtn('BEKOR QILISH', function () { if (PM && PM.phase === 'confirm') { PM.phase = 'collect'; tmPrint('Tahrirlash davom etmoqda. Materiallar o\u2018chirilmadi.'); pmPaint(); } }, 'tm-danger'));
+    row.appendChild(tmBtn('DAVOM ETISH', function () { if (PM && PM.phase === 'confirm') pmStartDecoy(); }));
+    c.appendChild(row);
+  }
+  function pmStartDecoy() {
+    PM.phase = 'decoy'; PM.queue = pmSlots(); PM.decoy = {};
+    tmPrint('ALMASHTIRUVCHI MATERIALLAR:'); tmPrint('Har bir asl material uchun qabul qiluvchiga ko\u2018rinadigan boshqa material joylang.', 'pending');
+    pmDecoyNext();
+  }
+  function pmDecoyNext() {
+    if (!PM) return;
+    if (!PM.queue.length) { pmAskTarget(); return; }
+    var s = PM.queue[0];
+    tmPrint('Almashtiruvchi ' + s + ' \u2014 ' + PK[s].n + ' (asl: ' + matLine(PM.real[s]) + ')');
+    pmAcquire(s, 'decoy', false);
+  }
+  function pmAskTarget() { PM.phase = 'target'; tmPrint('Kimga yuboriladi? Foydalanuvchi nomini yozing (PLDN/- dan keyingi qismi):'); }
+  async function pmSetTarget(t) {
+    var u = t.trim().toLowerCase().replace(/^@/, '').replace(/^pldn\/-/, '');
+    if (!/^[a-z0-9_.]{2,24}$/.test(u)) { tmPrint('[ERROR] Foydalanuvchi nomi noto\u2018g\u2018ri.', 'error'); return; }
+    PM.busy = true;
+    try {
+      var q = await firebase.firestore().collection('users').where('username', '==', u).limit(1).get();
+      if (q.empty) { tmPrint('[ERROR] Foydalanuvchi topilmadi.', 'error'); return; }
+      var d = q.docs[0], v = d.data() || {};
+      if (me() && d.id === me().uid) { tmPrint('[ERROR] O\u2018zingizga yuborib bo\u2018lmaydi.', 'error'); return; }
+      PM.to = { uid: d.id, name: v.name || v.displayName || ('PLDN/-' + u), username: u, avatar: v.avatar || null };
+      PM.phase = 'code';
+      tmPrint('Qabul qiluvchi: ' + PM.to.name + ' (PLDN/-' + u + ')');
+      tmPrint('Maxfiy kodni o\u2018rnating (kamida 6 belgi). Uni qabul qiluvchi bilan oldindan, chatdan tashqarida kelishing.');
+      tmPrint('DIQQAT: kod yo\u2018qolsa, asl materiallarni hech kim tiklay olmaydi.', 'error');
+    } catch (e) { tmPrint('[ERROR] Foydalanuvchini qidirib bo\u2018lmadi.', 'error'); }
+    finally { if (PM) PM.busy = false; }
+  }
+  function pmResume() {
+    if (!PM) return;
+    tmPrint('[SYSTEM] Shaxsiy materiallar paketi davom etmoqda.');
+    var ph = PM.phase;
+    if (ph === 'collect') pmPaint(); else if (ph === 'confirm') pmFinalAsk(); else if (ph === 'decoy') { if (PM.await) tmPrint('Matn/nom yozing va EXECUTE bosing:'); else pmDecoyNext(); }
+    else if (ph === 'target') tmPrint('Kimga yuboriladi? Foydalanuvchi nomini yozing:'); else if (ph === 'code') tmPrint('Maxfiy kodni o\u2018rnating:'); else if (ph === 'code2') tmPrint('Kodni takrorlang:'); else if (ph === 'retry') tmPrint('\u00ABqayta\u00BB yoki \u00ABbekor\u00BB deb yozing.');
+  }
+
+  // ----- yuborish -----
+  async function pmSendDecoys(slots) {
+    var to = PM.to;
+    await Promise.race([window.fbOpenChat({ otherUid: to.uid, name: to.name, color: '#2AABEE', avatar: to.avatar }, true), new Promise(function (_, rj) { setTimeout(function () { rj(new Error('chat ochilmadi')); }, 120000); })]);
+    for (var i = PM.sent || 0; i < slots.length; i++) {
+      var d = PM.decoy[slots[i]], k = d.kind;
+      if (k === 'text') await window.fbSendText(d.text);
+      else if (k === 'pdf' || k === 'file') await window.fbSendText((k === 'pdf' ? '\uD83D\uDCC4 ' : '\uD83D\uDCCE ') + d.name);
+      else if (k === 'image') await window.fbSendImageFile(await blobDataUrl(d.blob));
+      else if (k === 'voice') { var du = await blobDataUrl(d.blob); if (du.indexOf('data:audio/') !== 0) du = 'data:audio/aac;base64,' + du.split(',')[1]; await window.fbSendVoice(du, d.dur || 1); }
+      else if (k === 'video') await window.pldnSendVideo(d.file || new File([d.blob], d.name || 'video.mp4', { type: d.mime || 'video/mp4' }));
+      PM.sent = i + 1;
+    }
+  }
+  async function pmSend() {
+    if (PM.busy) return;
+    PM.busy = true; PM.phase = 'sending';
+    var prog = tmPrint('[SEND] Tayyorlanmoqda...', 'pending'), made = [];
+    var db = firebase.firestore(), u = me(), slots = pmSlots(), ref = null;
+    try {
+      if (!PM.pkgOk) {
+        var pid = db.collection('privatePkgs').doc().id; ref = db.collection('privatePkgs').doc(pid);
+        var salt = crypto.getRandomValues(new Uint8Array(16)), enc = new TextEncoder();
+        prog.textContent = '[SEND] Kalit yaratilmoqda...';
+        var key = await pmKey(PM.code, salt, PM_ITER), items = [];
+        slots.forEach(function (s) {
+          var m = PM.real[s], size = m.kind === 'text' ? enc.encode(m.text).length : m.blob.size;
+          items.push({ s: s, k: m.kind, name: m.name || '', mime: m.mime || '', size: size, dur: m.dur || 0, iv: u8ToB64(crypto.getRandomValues(new Uint8Array(12))), n: Math.ceil((size + 16) / PM_RAW) });
+        });
+        var meta = await pmEnc(key, enc.encode(JSON.stringify({ v: 1, items: items })), pid + ':meta');
+        var check = await pmEnc(key, enc.encode('PLDN-PM-OK'), pid + ':check');
+        await ref.set({ from: u.uid, to: PM.to.uid, v: 1, iter: PM_ITER, salt: u8ToB64(salt), check: check, meta: meta, cnt: items.length, ready: false, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+        for (var q = 0; q < items.length; q++) {
+          var it = items[q], m2 = PM.real[it.s];
+          var plain = m2.kind === 'text' ? enc.encode(m2.text) : new Uint8Array(await m2.blob.arrayBuffer());
+          var ct = await pmEncRaw(key, plain, pid + ':' + it.s, b64ToU8(it.iv)); plain = null;
+          for (var j = 0; j < it.n; j++) {
+            prog.textContent = '[SEND] Material ' + (q + 1) + '/' + items.length + ' shifrlanib yuklanmoqda: ' + Math.round(j * 100 / it.n) + '%';
+            var cid = it.s + '_' + String(j).padStart(4, '0');
+            await ref.collection('chunks').doc(cid).set({ d: u8ToB64(ct.subarray(j * PM_RAW, (j + 1) * PM_RAW)) }); made.push(cid);
+          }
+        }
+        await ref.update({ ready: true });
+        PM.pkgOk = true; PM.pkgId = pid;
+      }
+      prog.textContent = '[SEND] Chatga almashtiruvchi materiallar yuborilmoqda...';
+      await pmSendDecoys(slots);
+      prog.textContent = '[SUCCESS] Paket yuborildi.'; prog.className = 'tm-line tm-response';
+      var to = PM.to; histAdd('Shaxsiy materiallar paketi yuborildi', '@' + to.username + ' \u00B7 ' + slots.length + ' ta material');
+      PM = null; pmChip();
+      var c = tmCard();
+      c.appendChild(trow('natija:', 'asl materiallar shifrlangan holda saqlandi, ' + to.name + ' esa almashtiruvchi materiallarni ko\u2018radi.'));
+      c.appendChild(el('div', 'margin-top:8px', tmBtn('Chatni ko\u2018rish', function () { close(); })));
+    } catch (e) {
+      console.error(e);
+      var code = e && (e.code || e.message);
+      if (ref && !PM.pkgOk) { made.forEach(function (cid) { ref.collection('chunks').doc(cid).delete().catch(function () {}); }); ref.delete().catch(function () {}); }
+      prog.className = 'tm-line tm-error';
+      prog.textContent = '[ERROR] ' + (code === 'permission-denied' ? 'Ruxsat yo\u2018q: Firestore qoidalariga \u00ABprivatePkgs\u00BB bloki qo\u2018shilmagan (rules-private.txt).' : 'Yuborib bo\u2018lmadi (' + code + ').');
+      if (PM) { PM.phase = 'retry'; PM.busy = false; tmPrint('\u00ABqayta\u00BB deb yozib urinib ko\u2018ring yoki \u00ABbekor\u00BB.', 'pending'); }
+      return;
+    }
+  }
+
+  // ----- qabul qiluvchi: asl materiallarni ochish -----
+  function pmOpenStart() {
+    PMO = { phase: 'code' };
+    ['PLDN PRIVATE MATERIALS', '', 'Maxfiy kodni kiriting:'].forEach(function (x) { tmPrint(x); });
+  }
+  function pmOpenInput(t) {
+    if (PMO.busy) { tmPrint('[SYSTEM] Tekshirilmoqda, kuting...', 'pending'); return true; }
+    if (norm(t) === 'bekor') { PMO = null; tmPrint('[SYSTEM] Bekor qilindi.'); return true; }
+    if (!t) { tmPrint('[ERROR] Kod kiritilmagan!', 'error'); return true; }
+    pmOpenCode(t); return true;
+  }
+  async function pmOpenCode(code) {
+    PMO.busy = true;
+    var prog = tmPrint('[CHECK] Paketlar tekshirilmoqda...', 'pending'), hits = 0;
+    try {
+      var db = firebase.firestore(), u = me();
+      var rs = await Promise.all([db.collection('privatePkgs').where('to', '==', u.uid).get(), db.collection('privatePkgs').where('from', '==', u.uid).get()]);
+      var map = {}; rs.forEach(function (s) { s.forEach(function (d) { map[d.id] = d; }); });
+      var ms = function (d) { var c = d.data().createdAt; return c && c.toMillis ? c.toMillis() : 0; };
+      var list = Object.keys(map).map(function (k) { return map[k]; }).filter(function (d) { return d.data().ready; }).sort(function (a, b) { return ms(b) - ms(a); }).slice(0, 15);
+      for (var i = 0; i < list.length; i++) {
+        var d = list[i], v = d.data();
+        prog.textContent = '[CHECK] Paketlar tekshirilmoqda... ' + (i + 1) + '/' + list.length;
+        var key;
+        try { key = await pmKey(code, b64ToU8(v.salt), v.iter || PM_ITER); await pmDec(key, v.check, d.id + ':check'); } catch (_) { continue; }
+        hits++; await pmShowPkg(d, key, ms(d));
+      }
+      if (!hits) { prog.className = 'tm-line tm-error'; prog.textContent = '[ERROR] Kiritilgan maxfiy kod noto\u2018g\u2018ri.'; tmPrint('Asl materiallarga kirish taqdim etilmadi.', 'error'); }
+      else { prog.className = 'tm-line tm-response'; prog.textContent = '[SUCCESS] SHAXSIY MATERIAL OCHILDI'; histAdd('Shaxsiy materiallar ochildi', hits + ' ta paket'); }
+    } catch (e) {
+      console.error(e); prog.className = 'tm-line tm-error';
+      prog.textContent = '[ERROR] ' + ((e && e.code) === 'permission-denied' ? 'Ruxsat yo\u2018q: Firestore qoidalariga \u00ABprivatePkgs\u00BB bloki qo\u2018shilmagan.' : 'Ochib bo\u2018lmadi.');
+    } finally { PMO = null; }
+  }
+  async function pmFetchItem(pid, it, key) {
+    var col = firebase.firestore().collection('privatePkgs').doc(pid).collection('chunks'), parts = [], tot = 0;
+    for (var j = 0; j < it.n; j += 4) {
+      var rq = [];
+      for (var q = j; q < Math.min(it.n, j + 4); q++) rq.push(col.doc(it.s + '_' + String(q).padStart(4, '0')).get());
+      (await Promise.all(rq)).forEach(function (r) { if (!r.exists) throw new Error('chunk'); var b = b64ToU8(r.data().d); parts.push(b); tot += b.length; });
+    }
+    var all = new Uint8Array(tot), o = 0; parts.forEach(function (p) { all.set(p, o); o += p.length; });
+    return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToU8(it.iv), additionalData: new TextEncoder().encode(pid + ':' + it.s) }, key, all));
+  }
+  async function pmSaveBlob(blob, name) {
+    var S = window.PldnSave;
+    if (S && typeof S.begin === 'function' && S.begin(name)) {
+      for (var o = 0; o < blob.size; o += 786432) { var b = (await blobDataUrl(blob.slice(o, o + 786432))).split(',')[1] || ''; if (!S.chunk(b)) throw new Error('write'); }
+      return String(S.end() || 'Downloads/PLDN');
+    }
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    return 'Yuklab olingan fayllar';
+  }
+  async function pmShowPkg(d, key, t) {
+    var v = d.data(), meta = JSON.parse(new TextDecoder().decode(await pmDec(key, v.meta, d.id + ':meta')));
+    var c = tmCard(), who = '';
+    try { var us = await firebase.firestore().collection('users').doc(v.from).get(); var uv = us.data() || {}; who = uv.name || uv.displayName || ('PLDN/-' + (uv.username || '')); } catch (_) {}
+    c.appendChild(trow('SHAXSIY MATERIAL OCHILDI', ''));
+    c.appendChild(trow('yuboruvchi:', (who || '?') + (t ? ' \u00B7 ' + fmtDT(t) : '')));
+    for (var i = 0; i < meta.items.length; i++) {
+      (function (it) {
+        var P = PK[it.s] || PK[6], box = el('div', 'margin-top:10px;padding-top:8px;border-top:1px solid #168cff30');
+        box.appendChild(trow(P.i + ' ' + P.n + ':', it.k === 'text' ? '' : (it.name || '') + ' \u00B7 ' + fmtSize(it.size)));
+        c.appendChild(box);
+        var show = async function (btn) {
+          if (btn) { btn.disabled = true; btn.textContent = '\u23F3 ...'; }
+          try {
+            var plain = await pmFetchItem(d.id, it, key);
+            if (it.k === 'text') { box.appendChild(el('div', 'white-space:pre-wrap;overflow-wrap:anywhere;margin-top:4px;color:#fff', new TextDecoder().decode(plain))); }
+            else {
+              var blob = new Blob([plain], { type: it.mime || 'application/octet-stream' }), url = URL.createObjectURL(blob), node = null;
+              if (it.k === 'image') { node = el('img', 'max-width:100%;border-radius:8px;margin-top:6px'); node.src = url; }
+              else if (it.k === 'voice') { node = el('audio', 'width:100%;margin-top:6px'); node.controls = true; node.src = url; }
+              else if (it.k === 'video') { node = el('video', 'max-width:100%;border-radius:8px;margin-top:6px'); node.controls = true; node.playsInline = true; node.src = url; }
+              if (node) box.appendChild(node);
+              var sv = tmBtn('\u2B07 Saqlash', async function () { sv.textContent = '\u23F3 ...'; try { sv.textContent = '\u2713 Saqlandi: ' + await pmSaveBlob(blob, it.name || ('fayl_' + it.s)); } catch (_) { sv.textContent = 'Xatolik \u2014 qayta urinish'; } });
+              box.appendChild(el('div', 'margin-top:6px', sv));
+            }
+            if (btn) btn.remove();
+          } catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Xatolik \u2014 qayta urinish'; } else tmPrint('[ERROR] Materialni ochib bo\u2018lmadi.', 'error'); }
+        };
+        if (it.k === 'text') show(null);
+        else { var ob = tmBtn('\uD83D\uDD13 Ochish', function () { show(ob); }); box.appendChild(el('div', 'margin-top:6px', ob)); }
+      })(meta.items[i]);
+    }
+  }
+
+  setTimeout(pmRestoreHist, 5000); setInterval(function () { if (me()) pmRestoreHist(); }, 60000);
 
   function wire() {
     var row = document.getElementById('pldnTermRow');
