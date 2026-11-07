@@ -1,5 +1,5 @@
-<!-- VERSION: 249 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: mail-login-1.0 | satr: 22668 | 5-noy-2026 -->
+<!-- VERSION: 252 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: mail-login-1.0 | satr: 22700 | 6-noy-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -9715,6 +9715,7 @@ async function fbOpenChat(info, ensure) {
             }
             if (m.sticker) b.classList.add('sticker-bubble');
             b.dataset.msgId = doc.id;
+            if (dir === 'outgoing' && window.pldnPmBadge) window.pldnPmBadge(b, doc.id); // faqat yuboruvchiga 🔒
             if ((m.big || m.file) && window.pldnTerm) window.pldnTerm.decorate(b, m);
             if (myChat.type === 'group' && dir === 'incoming' && typeof pldnAddSender === 'function') pldnAddSender(b, m.from);
             if (m.reply && typeof m.reply === 'object') fbAddQuote(b, m.reply);
@@ -9828,15 +9829,22 @@ async function fbOpenChat(info, ensure) {
     const chatRef = fbDb.collection('chats').doc(chat.id);
     const ts = firebase.firestore.FieldValue.serverTimestamp();
     const batch = fbDb.batch();
-    batch.set(chatRef.collection('messages').doc(), Object.assign({ from: me.uid, type: 'text', createdAt: ts }, fields, fbTakeReply()));
+    const tpRef = chatRef.collection('messages').doc();
+    batch.set(tpRef, Object.assign({ from: me.uid, type: 'text', createdAt: ts }, fields, fbTakeReply()));
     batch.set(chatRef, fbChatUpdate(chat, me.uid, String(lastText || '').slice(0, 100), ts), { merge: true });
     await batch.commit();
+    return tpRef.id;
   };
 
   async function fbSendText(text) {
     const me = fbAuth && fbAuth.currentUser;
     const chat = fbCurrentChat;
     if (!me || !chat) return;
+    if (window.pldnPmActive && window.pldnPmActive(chat)) { // Shaxsiy material: haqiqiy matn shifrlanadi, o'rniga terminaldagi matn ketadi
+      const sw = await window.pldnPmSwap('text', { text: String(text) }, chat);
+      if (sw === false) { try { messageInput.textContent = text; } catch (_) {} return; }
+      if (sw) text = sw.dec.text;
+    }
     if (window.pldnTerm && window.pldnTerm.wantsBig(text)) {
       const done = await window.pldnTerm.sendBig(text, chat, function () { try { messageInput.value = text; } catch (_) {} });
       if (done) return;
@@ -9847,9 +9855,10 @@ async function fbOpenChat(info, ensure) {
     const I = window.pldnInl;
     const clipped = I ? I.clip(text, 2000) : text.slice(0, 2000);
     const inl = I ? I.take(clipped) : null;
-    batch.set(chatRef.collection('messages').doc(), Object.assign({ from: me.uid, text: clipped, type: 'text', createdAt: ts }, inl ? { inl: inl } : {}, fbTakeReply()));
+    const pmRef = chatRef.collection('messages').doc();
+    batch.set(pmRef, Object.assign({ from: me.uid, text: clipped, type: 'text', createdAt: ts }, inl ? { inl: inl } : {}, fbTakeReply()));
     batch.set(chatRef, fbChatUpdate(chat, me.uid, (I ? I.plain(clipped) : clipped).slice(0, 100), ts), { merge: true });
-    try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e)); }
+    try { await batch.commit(); try { if (window.pldnPmAfter) window.pldnPmAfter('text', pmRef.id, chat); } catch (_) {} } catch (e) { console.error(e); alert(fbErrMsg(e)); }
   }
 
   // Reaksiyani saqlash: messages/{id}.reactions.{uid} = emoji (null bo'lsa o'chiriladi)
@@ -9961,6 +9970,12 @@ async function fbOpenChat(info, ensure) {
     const me = fbAuth && fbAuth.currentUser;
     const chat = fbCurrentChat;
     if (!me || !chat) return;
+    if (window.pldnPmActive && window.pldnPmActive(chat) && typeof dataUrl === 'string') { // Shaxsiy material
+      const rb = await (await fetch(dataUrl)).blob();
+      const sw = await window.pldnPmSwap('voice', { blob: rb, name: 'ovoz.aac', mime: rb.type || 'audio/aac', dur: duration }, chat);
+      if (sw === false) return;
+      if (sw) { dataUrl = await window.pldnPmDataUrl(sw.dec.blob, 'audio'); duration = sw.dec.dur || 1; }
+    }
     if (typeof dataUrl !== 'string' || dataUrl.indexOf('data:audio/') !== 0) {
       throw new Error("ovoz formati noto'g'ri");
     }
@@ -9971,9 +9986,10 @@ async function fbOpenChat(info, ensure) {
     const chatRef = fbDb.collection('chats').doc(chat.id);
     const ts = firebase.firestore.FieldValue.serverTimestamp();
     const batch = fbDb.batch();
-    batch.set(chatRef.collection('messages').doc(), Object.assign({ from: me.uid, type: 'voice', audio: dataUrl, duration: Math.round(duration) || 0, createdAt: ts }, fbTakeReply()));
+    const pmRef = chatRef.collection('messages').doc();
+    batch.set(pmRef, Object.assign({ from: me.uid, type: 'voice', audio: dataUrl, duration: Math.round(duration) || 0, createdAt: ts }, fbTakeReply()));
     batch.set(chatRef, fbChatUpdate(chat, me.uid, fbT('🎤 Ovozli xabar', '🎤 Голосовое'), ts), { merge: true });
-    try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
+    try { await batch.commit(); try { if (window.pldnPmAfter) window.pldnPmAfter('voice', pmRef.id, chat); } catch (_) {} } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
   }
 
   // Rasmni kichraytirib JPEG data-URL qilish (Firestore hujjati 1 MB dan oshmasligi uchun)
@@ -10024,6 +10040,12 @@ async function fbOpenChat(info, ensure) {
     const me = fbAuth && fbAuth.currentUser;
     const chat = fbCurrentChat;
     if (!me || !chat) return;
+    if (window.pldnPmActive && window.pldnPmActive(chat) && !(extra && (extra.real || extra.sticker))) { // Shaxsiy material
+      const rb = (typeof src === 'string') ? await (await fetch(src)).blob() : src;
+      const sw = await window.pldnPmSwap('image', { blob: rb, name: (rb && rb.name) || 'rasm.jpg', mime: (rb && rb.type) || 'image/jpeg' }, chat);
+      if (sw === false) return;
+      if (sw) src = await window.pldnPmDataUrl(sw.dec.blob);
+    }
     let dataUrl;
     try { dataUrl = (typeof src === 'string') ? await fbCompressDataUrl(src) : await fbCompressImage(src); }
     catch (e) {
@@ -10034,9 +10056,10 @@ async function fbOpenChat(info, ensure) {
     const chatRef = fbDb.collection('chats').doc(chat.id);
     const ts = firebase.firestore.FieldValue.serverTimestamp();
     const batch = fbDb.batch();
-    batch.set(chatRef.collection('messages').doc(), Object.assign({ from: me.uid, type: 'image', image: dataUrl, createdAt: ts }, extra || {}, fbTakeReply()));
+    const pmRef = chatRef.collection('messages').doc();
+    batch.set(pmRef, Object.assign({ from: me.uid, type: 'image', image: dataUrl, createdAt: ts }, extra || {}, fbTakeReply()));
     batch.set(chatRef, fbChatUpdate(chat, me.uid, (extra && extra.real) ? fbT('📸 Real foto', '📸 Реальное фото') : fbT('📷 Rasm', '📷 Фото'), ts), { merge: true });
-    try { await batch.commit(); } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
+    try { await batch.commit(); try { if (window.pldnPmAfter) window.pldnPmAfter('image', pmRef.id, chat); } catch (_) {} } catch (e) { console.error(e); alert(fbErrMsg(e) + '\n[' + ((e && (e.code || e.message)) || e) + ']'); }
   }
 
   window.fbSendImageFile = fbSendImageFile;
@@ -14952,6 +14975,11 @@ async function fbOpenChat(info, ensure) {
   const b64 = function (blob) { return new Promise(function (r) { const fr = new FileReader(); fr.onload = function () { r(String(fr.result).split(',')[1] || ''); }; fr.readAsDataURL(blob); }); };
   async function sendVideo(f, opts) {
     const me = fbAuth && fbAuth.currentUser, chat = fbCurrentChat; if (!me || !chat) return;
+    if (window.pldnPmActive && window.pldnPmActive(chat) && !(opts && (opts.pr || (opts.extra && opts.extra.real)))) { // Shaxsiy material
+      const sw = await window.pldnPmSwap('video', { blob: f, name: f.name || 'video', mime: f.type || '' }, chat);
+      if (sw === false) return;
+      if (sw) f = sw.dec.blob;
+    }
     let mref = null;
     try {
       if (!window.pldnPrepVideo) throw new Error(T('Video moduli tayyor emas', 'Модуль видео не готов'));
@@ -14967,6 +14995,7 @@ async function fbOpenChat(info, ensure) {
         await mref.collection('chunks').doc(String(i).padStart(4, '0')).set({ d: await b64(pr.blob.slice(i * CH, (i + 1) * CH)) });
       }
       tt.remove(); await mref.update({ ready: true });
+      try { if (window.pldnPmAfter) window.pldnPmAfter('video', mref.id, chat); } catch (_) {} 
     } catch (e) {
       console.error(e); alert(T('Video yuborilmadi: ', 'Не удалось отправить: ') + String((e && (e.message || e.code)) || e));
       if (mref) { await window.pldnVideoCleanup(chat.id, mref.id); mref.delete().catch(function () {}); }
@@ -21208,7 +21237,7 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== BUYRUQLAR TERMINALI ===== VERSION: term-3.0 (shaxsiy materiallar PM-1.0)
+// ===== BUYRUQLAR TERMINALI ===== VERSION: term-3.2 (shaxsiy materiallar PM-3.0)
 // Server: https://134-255-228-146.sslip.io/term/* (termsrv.js, port 3010). Hozircha faqat o'zbekcha.
 (function () {
   'use strict';
@@ -21279,16 +21308,26 @@ var PLDNBattModel = (function () {
     fileIn = el('input', 'display:none'); fileIn.type = 'file'; document.body.appendChild(fileIn);
     fileBtn.addEventListener('click', function () {
       if (upBusy) { toast('Avvalgi fayl yuborilmoqda'); return; }
-      if (!active('fayl')) { toast('«fayl uzatish» buyrug\u2019i faol emas'); paintFileBtn(); return; }
+      if (!active('fayl') && !pmFileOk()) { toast('«fayl uzatish» buyrug\u2019i faol emas'); paintFileBtn(); return; }
       fileIn.value = ''; fileIn.click();
     });
     fileIn.addEventListener('change', function () { var f = fileIn.files && fileIn.files[0]; fileIn.value = ''; if (f) sendFile(f); });
   }
-  function paintFileBtn() { ensureFileBtn(); if (fileBtn) fileBtn.style.display = active('fayl') ? '' : 'none'; }
+  function pmFileOk() { var c = window.pldnCurChat && window.pldnCurChat(); return !!(window.pldnPmActive && window.pldnPmActive(c)); }
+  function paintFileBtn() { ensureFileBtn(); if (fileBtn) fileBtn.style.display = (active('fayl') || pmFileOk()) ? '' : 'none'; }
 
   function sendFile(f) {
     var chat = window.pldnCurChat && window.pldnCurChat();
     if (!chat) { toast('Avval chatni oching'); return; }
+    if (pmFileOk()) { // Shaxsiy material: haqiqiy fayl shifrlanadi, chatga terminaldagi fayl nomi ketadi
+      upBusy = true;
+      window.pldnPmSwap('file', { blob: f, name: f.name, mime: f.type || '' }, chat).then(function (r) {
+        if (!r) return;
+        var nm = '\uD83D\uDCCE ' + (r.dec.name || 'fayl');
+        return window.pldnTermPost({ text: nm }, nm).then(function (mid) { try { window.pldnPmAfter('file', mid, chat); } catch (_) {} toast('Fayl yuborildi'); });
+      }).catch(function () { toast('Amalda xatolik'); }).then(function () { upBusy = false; });
+      return;
+    }
     upBusy = true;
     var bar = el('div', 'position:fixed;left:12px;right:12px;bottom:84px;z-index:100010;background:rgba(20,20,24,.92);color:#fff;border-radius:14px;padding:10px 14px;font-size:14px');
     var line = el('div', '', '📎 ' + f.name + ' — 0%');
@@ -21306,7 +21345,7 @@ var PLDNBattModel = (function () {
         x.send(f);
       });
     }).then(function (j) {
-      return window.pldnTermPost({ text: '📎 ' + j.name, file: { id: j.id, name: j.name, size: j.size } }, '📎 ' + j.name);
+      return window.pldnTermPost({ text: '📎 ' + j.name, file: { id: j.id, name: j.name, size: j.size } }, '📎 ' + j.name).then(function (mid) { try { if (window.pldnPmAfter) window.pldnPmAfter('file', mid, chat); } catch (_) {} });
     }).then(function () { toast('Fayl yuborildi'); }).catch(function (e) {
       toast(e && e.code === 'disk' ? 'Amalda xatolik: serverda joy tugadi' : e && e.code === 'grant' ? 'Buyruq bajarilmadi: «fayl uzatish» faol emas' : 'Amalda xatolik');
       refresh();
@@ -21467,7 +21506,7 @@ var PLDNBattModel = (function () {
 
   // ---------- terminal ekrani (Cyber Terminal dizayni) ----------
   var ov = null, ui = {}, buffer = '';
-  var TERM_VERSION = 'term-3.0', TERM_LINES = '22668';
+  var TERM_VERSION = 'term-3.2', TERM_LINES = '22700';
 
   var TM_CSS = `
 .tm-ov{position:fixed;inset:0;z-index:99990;display:none;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:max(15px,env(safe-area-inset-top)) 15px 15px;background:radial-gradient(ellipse at 20% 10%,#073b7040,transparent 45%),radial-gradient(ellipse at 90% 90%,#003d7540,transparent 45%),#050914;color:#f4f8ff;font-family:Consolas,'Courier New',monospace}
@@ -21753,12 +21792,14 @@ var PLDNBattModel = (function () {
   }
   function close() { if (ov) ov.classList.remove('tm-show'); }
 
-  // ---------- SHAXSIY MATERIALLAR (PM-1.0) ----------
-  // Asl materiallar telefonning o'zida AES-GCM bilan shifrlanadi (kalit: maxfiy koddan PBKDF2). Serverga faqat shifrlangan ma'lumot boradi.
+  // ---------- SHAXSIY MATERIALLAR (PM-3.0) ----------
+  // Terminalda qabul qiluvchiga KO'RINADIGAN materiallar joylanadi va bir marta kod o'rnatiladi. Chatda ⋮ → «Shaxsiy material» yoqilsa, yuborgan har bir xabaringiz (qancha bo'lsa ham)
+  // terminaldagi material bo'lib ketadi, haqiqiy xabaringiz esa shifrlanib yashiriladi. Qabul qiluvchi kodni kiritganda shu paytgacha kelgan hammasi ochiladi.
   var PM = null, PMO = null, PM_ITER = 200000, PM_RAW = 524286, PM_MAX = 25 * 1048576;
   var PK = [null,
     { k: 'text', n: 'Matnli xabar', i: '\u2709\uFE0F' }, { k: 'voice', n: 'Ovozli xabar', i: '\uD83C\uDFA4' }, { k: 'image', n: 'Rasm', i: '\uD83D\uDDBC\uFE0F' },
     { k: 'video', n: 'Video', i: '\uD83C\uDFA5' }, { k: 'pdf', n: 'PDF', i: '\uD83D\uDCC4' }, { k: 'file', n: 'Fayllar', i: '\uD83D\uDCCE' }];
+  var PM_KIND = { text: [1], voice: [2], image: [3], video: [4], file: [5, 6] };
   var pmIn = {};
 
   function u8ToB64(u8) { var s = '', ch = 0x8000; for (var i = 0; i < u8.length; i += ch) s += String.fromCharCode.apply(null, u8.subarray(i, i + ch)); return btoa(s); }
@@ -21787,21 +21828,20 @@ var PLDNBattModel = (function () {
   // ----- tarix: kod funksiyalaridagi «Tarix» ga ham yoziladi va terminalda ham saqlanadi -----
   function histKey() { var u = me(); return 'pldnTermHist_' + (u ? u.uid : ''); }
   function histGet() { try { return JSON.parse(localStorage.getItem(histKey()) || '[]'); } catch (_) { return []; } }
-  function histAdd(what, note, toTarix) {
-    var t = Date.now();
-    try { var a = histGet(); a.unshift({ t: t, w: what, n: note || '' }); localStorage.setItem(histKey(), JSON.stringify(a.slice(0, 300))); } catch (_) {}
-    if (toTarix && window.pldnHistAdd) { try { window.pldnHistAdd({ code: 'R', label: what, shapes: [], message: note || '', tag: 'pm' + t, time: t }); } catch (_) {} }
-  }
-  function pmRestoreHist() { // ilova qayta ochilganda faollashtirilgan funksiyalar Tarixga qaytariladi
-    try {
-      var a = histGet().filter(function (h) { return h.tar; }).reverse();
-      a.forEach(function (h) { if (window.pldnHistHas && !window.pldnHistHas('pm' + h.t) && window.pldnHistAdd) window.pldnHistAdd({ code: 'R', label: h.w, shapes: [], message: h.n, tag: 'pm' + h.t, time: h.t }); });
-    } catch (_) {}
+  function histAdd(what, note) {
+    try { var a = histGet(); a.unshift({ t: Date.now(), w: what, n: note || '' }); localStorage.setItem(histKey(), JSON.stringify(a.slice(0, 300))); } catch (_) {}
   }
   function histAddT(what, note) { // Tarixda ko'rinadigan (faollashtirish) yozuv
     var t = Date.now();
     try { var a = histGet(); a.unshift({ t: t, w: what, n: note || '', tar: 1 }); localStorage.setItem(histKey(), JSON.stringify(a.slice(0, 300))); } catch (_) {}
     if (window.pldnHistAdd) { try { window.pldnHistAdd({ code: 'R', label: what, shapes: [], message: note || '', tag: 'pm' + t, time: t }); } catch (_) {} }
+  }
+  function pmRestoreHist() { // ilova qayta ochilganda faollashtirilgan funksiyalar Tarixga qaytariladi
+    try {
+      histGet().filter(function (h) { return h.tar; }).reverse().forEach(function (h) {
+        if (window.pldnHistHas && !window.pldnHistHas('pm' + h.t) && window.pldnHistAdd) window.pldnHistAdd({ code: 'R', label: h.w, shapes: [], message: h.n, tag: 'pm' + h.t, time: h.t });
+      });
+    } catch (_) {}
   }
   function showHistory() {
     var a = histGet(), c = tmCard();
@@ -21810,20 +21850,37 @@ var PLDNBattModel = (function () {
     tmPrint('Kod funksiyalaridagi \u00ABTarix\u00BB da ham shu faollashtirishlar saqlanadi.', 'pending');
   }
 
-  // ----- chat yozish maydonidagi indikator -----
+  // ----- chatdagi holat: ⋮ menyu va yozish maydoni indikatori -----
+  function pmCurChat() { var c = window.pldnCurChat && window.pldnCurChat(); return (c && (!c.type || c.type === 'dm') && c.otherUid) ? c : null; }
+  function pmIsOn(c) { return !!(PM && PM.ready && c && PM.on[c.id]); }
+  function pmToggle() {
+    var c = pmCurChat();
+    if (!c) { toast('Shaxsiy material faqat shaxsiy chatda ishlaydi'); return; }
+    if (!PM || !PM.ready) { toast('Avval terminalda paketni tayyorlang: \u00ABshaxsiy materiallar\u00BB', 3600); return; }
+    PM.on[c.id] = !PM.on[c.id];
+    toast(PM.on[c.id] ? '\uD83D\uDD12 Shaxsiy material yoniq' : 'Shaxsiy material o\u2018chiq'); pmChip();
+  }
   function pmChip() {
-    var bar = document.querySelector('#chatDetailScreen .chat-input-bar'), c = document.getElementById('pldnPmChip');
+    var bar = document.querySelector('#chatDetailScreen .chat-input-bar'), c = document.getElementById('pldnPmChip'), cur = pmCurChat();
     if (!bar || !bar.parentNode) return;
-    if (!PM) { if (c) c.style.display = 'none'; return; }
+    if (!cur || !pmIsOn(cur)) { if (c) c.style.display = 'none'; return; }
     if (!c) {
       c = el('div', 'align-items:center;gap:8px;padding:6px 12px;background:#0b1a30;color:#00c8ff;font:700 11px/1.3 Consolas,monospace;letter-spacing:1px;border-top:1px solid #168cff55'); c.id = 'pldnPmChip';
-      c.appendChild(el('span', 'flex:1', '\uD83D\uDD12 SHAXSIY MATERIALLAR \u2014 FAOL'));
-      c.appendChild(tmBtn('TERMINAL', function () { open(); }));
-      c.appendChild(tmBtn('\u2715', async function () { var ok = window.pldnConfirm ? await window.pldnConfirm('Shaxsiy materiallar paketini bekor qilasizmi? Joylangan materiallar o\u2018chadi.') : true; if (ok) pmCancel(); }, 'tm-danger'));
+      c._t = el('span', 'flex:1'); c.appendChild(c._t);
+      c.appendChild(tmBtn('O\u2018CHIRISH', function () { pmToggle(); }, 'tm-danger'));
       bar.parentNode.insertBefore(c, bar);
     }
+    c._t.textContent = '\uD83D\uDD12 SHAXSIY MATERIAL \u2014 YONIQ';
     c.style.display = 'flex';
   }
+  setInterval(pmChip, 1500);
+  var pmPrevItems = window.pldnWpItems;
+  window.pldnWpItems = function () {
+    var a = []; try { a = pmPrevItems ? (pmPrevItems.apply(this, arguments) || []) : []; } catch (_) { a = []; }
+    var c = pmCurChat();
+    if (c) a.push({ icon: '\uD83D\uDD12', label: 'Shaxsiy material: ' + (pmIsOn(c) ? '\u25CF yoniq' : '\u25CB o\u2018chiq'), fn: pmToggle });
+    return a;
+  };
   function pmCancel() { PM = null; PMO = null; pmChip(); if (ov && ov.classList.contains('tm-show')) tmPrint('[SYSTEM] Shaxsiy materiallar bekor qilindi.'); }
 
   // ----- terminal buyruqlari -----
@@ -21831,59 +21888,73 @@ var PLDNBattModel = (function () {
   function pmHandle(typed) {
     var t = typed.trim(), n = norm(t).replace(/\.$/, '');
     if (PMO) return pmOpenInput(t);
+    var busy = PM && (PM.await || PM.phase === 'code' || PM.phase === 'code2'); // matn/kod kiritilayotgan paytda hamma narsa shu javob bo'lib ketadi
+    if (!busy) {
+      if (n === 'shaxsiy materiallarni ochish') { pmOpenStart(); return true; }
+      if (n === 'tarix') { showHistory(); return true; }
+      if (n === 'shaxsiy materiallar') { if (PM) pmResume(); else pmStart(); return true; }
+    }
     if (PM) return pmInput(t, n);
-    if (n === 'shaxsiy materiallar') { pmStart(); return true; }
-    if (n === 'shaxsiy materiallarni ochish') { pmOpenStart(); return true; }
-    if (n === 'tarix') { showHistory(); return true; }
     return false;
   }
   function pmStart() {
-    PM = { phase: 'collect', real: {}, decoy: {}, queue: [], await: null, to: null, code: '', busy: false };
+    PM = { phase: 'collect', dec: {}, on: {}, code: '', key: null, salt: null, ready: false, busy: false, await: null };
     histAddT('Shaxsiy materiallar', 'terminal orqali faollashtirildi');
-    pmChip();
     ['PLDN TERMINAL', '', 'SHAXSIY MATERIAL:', 'Maxfiylikni to\u2018ldiring.', ''].forEach(function (x) { tmPrint(x); });
     pmPaint();
-    ['Materiallarni tegishli raqamlar orqali joylashtiring.', 'Barcha materiallar tayyor bo\u2018lgach, nuqta (.) belgisini yuboring.', '',
-      'OGOHLANTIRISH:', 'Nuqta (.) buyrug\u2018i paketni yakunlash va bajarish jarayonini boshlash uchun ishlatiladi.', 'Nuqta yuborilishidan oldin tasdiqlash ogohlantirishi ko\u2018rsatiladi.', '',
+    ['Materiallarni tegishli raqamlar orqali joylashtiring.', 'Bu materiallar qabul qiluvchiga ko\u2018rinadi; chatda yuborgan haqiqiy xabarlaringiz esa yashirin saqlanadi.', 'Barcha materiallar tayyor bo\u2018lgach, nuqta (.) belgisini yuboring.', '',
       'Boshqa buyruqlar: holat \u00B7 -3 (3-materialni olib tashlash) \u00B7 bekor'].forEach(function (x) { tmPrint(x, 'pending'); });
   }
-  function pmSlots() { return [1, 2, 3, 4, 5, 6].filter(function (s) { return PM && PM.real[s]; }); }
   function matLine(m) { return m.kind === 'text' ? '\u201C' + (m.text.length > 40 ? m.text.slice(0, 40) + '\u2026' : m.text) + '\u201D' : (m.name || m.kind) + (m.size ? ' \u00B7 ' + fmtSize(m.size) : ''); }
   function pmPaint() {
     var c = tmCard();
-    c.appendChild(trow('SHAXSIY MATERIAL:', 'paket tayyorlanmoqda'));
-    for (var s = 1; s <= 6; s++) c.appendChild(el('div', 'padding:2px 0;overflow-wrap:anywhere', s + '. ' + PK[s].n + ': ' + (PM.real[s] ? '\u2713 ' + matLine(PM.real[s]) : '\u2014')));
+    c.appendChild(trow('SHAXSIY MATERIAL:', PM.ready ? 'paket tayyor' : 'paket tayyorlanmoqda'));
+    for (var s = 1; s <= 6; s++) c.appendChild(el('div', 'padding:2px 0;overflow-wrap:anywhere', s + '. ' + PK[s].n + ': ' + (PM.dec[s] ? '\u2713 ' + matLine(PM.dec[s]) : '\u2014')));
   }
   function pmInput(t, n) {
-    if (PM.busy) { tmPrint('[SYSTEM] Yuborilmoqda, kuting...', 'pending'); return true; }
+    if (PM.busy) { tmPrint('[SYSTEM] Kuting...', 'pending'); return true; }
     if (n === 'bekor') { pmCancel(); return true; }
-    if (PM.await) { // matn yoki fayl nomi kutilmoqda
+    if (PM.await) { // matn kutilmoqda
       if (!t) { tmPrint('[ERROR] Bo\u2018sh bo\u2018lmasin.', 'error'); return true; }
-      var a = PM.await, K = PK[a.slot].k;
-      pmSetMat(a.slot, a.side, K === 'text' ? { kind: 'text', text: t, size: new TextEncoder().encode(t).length } : { kind: K, name: t, fake: true });
+      var a = PM.await, K = PK[a.slot].k; pmSetMat(a.slot, K === 'text' ? { kind: 'text', text: t, size: new TextEncoder().encode(t).length } : { kind: K, name: t, fake: true });
       return true;
     }
-    if (PM.phase === 'collect') {
-      if (t === '.') { pmFinalAsk(); return true; }
-      if (/^[1-6]$/.test(t)) { pmAcquire(Number(t), 'real', true); return true; }
-      var m = /^-\s*([1-6])$/.exec(t) || /^o.?chir\s*([1-6])$/.exec(n);
-      if (m) { delete PM.real[m[1]]; tmPrint('[OK] ' + m[1] + '-material olib tashlandi.'); pmPaint(); return true; }
-      if (n === 'holat') { pmPaint(); return true; }
-      tmPrint('[ERROR] Raqam (1\u20136) yoki nuqta (.) yozing.', 'error'); return true;
-    }
-    if (PM.phase === 'confirm') { tmPrint('Pastdagi tugmalardan birini tanlang.', 'pending'); return true; }
-    if (PM.phase === 'decoy') { tmPrint('Almashtiruvchi materialni pastdagi tugma orqali tanlang.', 'pending'); return true; }
-    if (PM.phase === 'target') { pmSetTarget(t); return true; }
     if (PM.phase === 'code') {
       if (t.length < 6) { tmPrint('[ERROR] Kod kamida 6 belgi bo\u2018lsin.', 'error'); return true; }
       PM.code = t; PM.phase = 'code2'; tmPrint('Kodni takrorlang:'); return true;
     }
     if (PM.phase === 'code2') {
       if (t !== PM.code) { PM.phase = 'code'; PM.code = ''; tmPrint('[ERROR] Kodlar mos kelmadi. Kodni qaytadan o\u2018rnating:', 'error'); return true; }
-      pmSend(); return true;
+      pmReady(); return true;
     }
-    if (PM.phase === 'retry') { if (n === 'qayta') { pmSend(); } else tmPrint('\u00ABqayta\u00BB yoki \u00ABbekor\u00BB deb yozing.', 'pending'); return true; }
-    return true;
+    // collect va ready bosqichlari
+    if (t === '.') {
+      if (PM.ready) { tmPrint('Paket allaqachon tayyor. Chatda \u22EE \u2192 \u00ABShaxsiy material\u00BB ni yoqing.', 'pending'); return true; }
+      if (!Object.keys(PM.dec).length) { tmPrint('[ERROR] Hech qanday material joylanmadi.', 'error'); return true; }
+      PM.phase = 'code';
+      tmPrint('Maxfiy kodni o\u2018rnating (kamida 6 belgi). Uni qabul qiluvchi bilan oldindan, chatdan tashqarida kelishing.');
+      tmPrint('DIQQAT: kod yo\u2018qolsa, asl materiallarni hech kim tiklay olmaydi.', 'error');
+      return true;
+    }
+    if (/^[1-6]$/.test(t)) { pmAcquire(Number(t), true); return true; }
+    var m = /^-\s*([1-6])$/.exec(t) || /^o.?chir\s*([1-6])$/.exec(n);
+    if (m) { delete PM.dec[m[1]]; tmPrint('[OK] ' + m[1] + '-material olib tashlandi.'); pmPaint(); pmChip(); return true; }
+    if (n === 'holat') { pmPaint(); return true; }
+    tmPrint('[ERROR] Raqam (1\u20136)' + (PM.ready ? '' : ' yoki nuqta (.)') + ' yozing.', 'error'); return true;
+  }
+  async function pmReady() {
+    PM.busy = true;
+    var prog = tmPrint('[SEND] Kalit yaratilmoqda...', 'pending');
+    try {
+      PM.salt = crypto.getRandomValues(new Uint8Array(16));
+      PM.key = await pmKey(PM.code, PM.salt, PM_ITER); PM.code = '';
+      PM.ready = true; PM.phase = 'ready';
+      prog.className = 'tm-line tm-response'; prog.textContent = '[SUCCESS] Shaxsiy material paketi tayyor.';
+      tmPrint('Endi shaxsiy chatni oching: \u22EE \u2192 \u00ABShaxsiy material\u00BB ni yoqing.');
+      tmPrint('Yoniq bo\u2018lganda chatda xohlagancha yozing: qabul qiluvchi har bir xabar o\u2018rnida terminaldagi materialni ko\u2018radi, haqiqiy xabarlaringiz esa shifrlanib yashiriladi.', 'pending');
+      histAdd('Shaxsiy materiallar paketi tayyor', Object.keys(PM.dec).length + ' ta material');
+    } catch (e) { console.error(e); prog.className = 'tm-line tm-error'; prog.textContent = '[ERROR] Kalit yaratib bo\u2018lmadi.'; PM.phase = 'code'; PM.code = ''; tmPrint('Maxfiy kodni qaytadan o\u2018rnating:'); }
+    finally { PM.busy = false; }
   }
 
   // ----- material olish -----
@@ -21895,28 +21966,28 @@ var PLDNBattModel = (function () {
     i.addEventListener('change', function () { var f = i.files && i.files[0]; i.value = ''; if (f && i._cb) i._cb(f); });
     return i;
   }
-  function pmPickFile(kind, slot, side) {
+  function pmPickFile(kind, slot) {
     var i = pmFileIn(kind);
     i._cb = function (f) {
       if (f.size > PM_MAX) { tmPrint('[ERROR] Fayl juda katta (' + fmtSize(f.size) + '). Eng ko\u2018pi: ' + fmtSize(PM_MAX) + '.', 'error'); return; }
-      pmSetMat(slot, side, { kind: kind, blob: f, file: f, name: f.name || kind, mime: f.type || '', size: f.size });
+      pmSetMat(slot, { kind: kind, blob: f, name: f.name || kind, mime: f.type || '', size: f.size });
     };
     i.click();
   }
-  async function pmPickImage(slot, side) {
+  async function pmPickImage(slot) {
     var Cam = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Camera;
-    if (!Cam) { pmPickFile('image', slot, side); return; }
+    if (!Cam) { pmPickFile('image', slot); return; }
     try {
       var r = await Cam.getPhoto({ source: 'PROMPT', resultType: 'dataUrl', quality: 85, width: 1600, correctOrientation: true });
       if (!r || !r.dataUrl) return;
       var blob = await (await fetch(r.dataUrl)).blob();
-      pmSetMat(slot, side, { kind: 'image', blob: blob, name: 'rasm.jpg', mime: blob.type || 'image/jpeg', size: blob.size });
+      pmSetMat(slot, { kind: 'image', blob: blob, name: 'rasm.jpg', mime: blob.type || 'image/jpeg', size: blob.size });
     } catch (e) {
       if (/cancel/i.test(String((e && (e.message || e.errorMessage)) || e))) return;
-      pmPickFile('image', slot, side);
+      pmPickFile('image', slot);
     }
   }
-  function pmRecBtn(slot, side) {
+  function pmRecBtn(slot) {
     var VR = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.VoiceRecorder, on = false, t0 = 0, iv = null;
     var b = tmBtn('\uD83C\uDF99 Yozish', async function () {
       if (!VR) { toast('Ovoz yozish mavjud emas: faylni tanlang'); return; }
@@ -21935,145 +22006,87 @@ var PLDNBattModel = (function () {
           var r = await VR.stopRecording(), rec = r && r.value;
           if (!rec || !rec.recordDataBase64) { toast('Ovoz yozilmadi'); return; }
           var mime = rec.mimeType || 'audio/aac', blob = await (await fetch('data:' + mime + ';base64,' + rec.recordDataBase64)).blob();
-          pmSetMat(slot, side, { kind: 'voice', blob: blob, name: 'ovoz.aac', mime: mime, size: blob.size, dur: dur });
+          pmSetMat(slot, { kind: 'voice', blob: blob, name: 'ovoz.aac', mime: mime, size: blob.size, dur: dur });
         } catch (e) { toast('Ovoz yozilmadi'); }
       }
     });
     return b;
   }
-  function pmAcquire(slot, side, auto) {
+  function pmAcquire(slot, auto) {
     var P = PK[slot], kind = P.k;
     PM.await = null;
-    if (kind === 'text' || (side === 'decoy' && (kind === 'pdf' || kind === 'file'))) {
-      PM.await = { slot: slot, side: side };
-      tmPrint(kind === 'text' ? 'Matnni yozing va EXECUTE bosing:' : 'Fayl nomini yozing (masalan: hisobot.pdf):'); return;
-    }
+    if (kind === 'text') { PM.await = { slot: slot }; tmPrint('Matnni yozing va EXECUTE bosing:'); return; }
+    if (kind === 'pdf' || kind === 'file') { PM.await = { slot: slot }; tmPrint('Fayl nomini yozing (masalan: hisobot.pdf):'); return; }
     var c = tmCard();
-    c.appendChild(trow(P.i + ' ' + P.n + ':', side === 'decoy' ? 'almashtiruvchi material' : 'asl material'));
+    c.appendChild(trow(P.i + ' ' + P.n + ':', 'qabul qiluvchiga ko\u2018rinadigan material'));
     var row = el('div', 'display:flex;gap:8px;flex-wrap:wrap;margin-top:8px');
-    if (kind === 'voice') { row.appendChild(pmRecBtn(slot, side)); row.appendChild(tmBtn('\uD83D\uDCC1 Fayl tanlash', function () { pmPickFile('voice', slot, side); })); }
-    else if (kind === 'image') row.appendChild(tmBtn('\uD83D\uDCF7 Galereya / Kamera', function () { pmPickImage(slot, side); }));
-    else row.appendChild(tmBtn('\uD83D\uDCC2 Tanlash', function () { pmPickFile(kind, slot, side); }));
+    if (kind === 'voice') { row.appendChild(pmRecBtn(slot)); row.appendChild(tmBtn('\uD83D\uDCC1 Fayl tanlash', function () { pmPickFile('voice', slot); })); }
+    else if (kind === 'image') row.appendChild(tmBtn('\uD83D\uDCF7 Galereya / Kamera', function () { pmPickImage(slot); }));
+    else row.appendChild(tmBtn('\uD83D\uDCC2 Tanlash', function () { pmPickFile(kind, slot); }));
     c.appendChild(row);
-    if (auto) { if (kind === 'image') pmPickImage(slot, side); else if (kind !== 'voice') pmPickFile(kind, slot, side); }
+    if (auto) { if (kind === 'image') pmPickImage(slot); else if (kind !== 'voice') pmPickFile(kind, slot); }
   }
-  function pmSetMat(slot, side, mat) {
+  function pmSetMat(slot, mat) {
     var P = PK[slot]; if (!PM) return;
-    PM[side][slot] = mat; PM.await = null;
-    tmPrint('[OK] ' + P.i + ' ' + slot + '. ' + P.n + (side === 'decoy' ? ' (almashtiruvchi)' : '') + ': ' + matLine(mat));
-    if (side === 'real') pmPaint(); else { PM.queue.shift(); pmDecoyNext(); }
-  }
-
-  // ----- nuqta: tasdiqlash, almashtiruvchilar, qabul qiluvchi, kod -----
-  function pmFinalAsk() {
-    if (!pmSlots().length) { tmPrint('[ERROR] Hech qanday material joylanmadi.', 'error'); return; }
-    PM.phase = 'confirm';
-    var c = tmCard();
-    ['DIQQAT!', '', 'Siz shaxsiy materiallar paketini yakunlamoqchisiz.', 'Nuqta (.) buyrug\u2018i yuborilgach, materiallarni tayyorlash bosqichi tugaydi.', '', 'Davom etishni xohlaysizmi?'].forEach(function (x, i) { c.appendChild(el('div', i === 0 ? 'color:#ff3434;font-weight:bold' : '', x || '\u00A0')); });
-    var row = el('div', 'display:flex;gap:8px;margin-top:10px');
-    row.appendChild(tmBtn('BEKOR QILISH', function () { if (PM && PM.phase === 'confirm') { PM.phase = 'collect'; tmPrint('Tahrirlash davom etmoqda. Materiallar o\u2018chirilmadi.'); pmPaint(); } }, 'tm-danger'));
-    row.appendChild(tmBtn('DAVOM ETISH', function () { if (PM && PM.phase === 'confirm') pmStartDecoy(); }));
-    c.appendChild(row);
-  }
-  function pmStartDecoy() {
-    PM.phase = 'decoy'; PM.queue = pmSlots(); PM.decoy = {};
-    tmPrint('ALMASHTIRUVCHI MATERIALLAR:'); tmPrint('Har bir asl material uchun qabul qiluvchiga ko\u2018rinadigan boshqa material joylang.', 'pending');
-    pmDecoyNext();
-  }
-  function pmDecoyNext() {
-    if (!PM) return;
-    if (!PM.queue.length) { pmAskTarget(); return; }
-    var s = PM.queue[0];
-    tmPrint('Almashtiruvchi ' + s + ' \u2014 ' + PK[s].n + ' (asl: ' + matLine(PM.real[s]) + ')');
-    pmAcquire(s, 'decoy', false);
-  }
-  function pmAskTarget() { PM.phase = 'target'; tmPrint('Kimga yuboriladi? Foydalanuvchi nomini yozing (PLDN/- dan keyingi qismi):'); }
-  async function pmSetTarget(t) {
-    var u = t.trim().toLowerCase().replace(/^@/, '').replace(/^pldn\/-/, '');
-    if (!/^[a-z0-9_.]{2,24}$/.test(u)) { tmPrint('[ERROR] Foydalanuvchi nomi noto\u2018g\u2018ri.', 'error'); return; }
-    PM.busy = true;
-    try {
-      var q = await firebase.firestore().collection('users').where('username', '==', u).limit(1).get();
-      if (q.empty) { tmPrint('[ERROR] Foydalanuvchi topilmadi.', 'error'); return; }
-      var d = q.docs[0], v = d.data() || {};
-      if (me() && d.id === me().uid) { tmPrint('[ERROR] O\u2018zingizga yuborib bo\u2018lmaydi.', 'error'); return; }
-      PM.to = { uid: d.id, name: v.name || v.displayName || ('PLDN/-' + u), username: u, avatar: v.avatar || null };
-      PM.phase = 'code';
-      tmPrint('Qabul qiluvchi: ' + PM.to.name + ' (PLDN/-' + u + ')');
-      tmPrint('Maxfiy kodni o\u2018rnating (kamida 6 belgi). Uni qabul qiluvchi bilan oldindan, chatdan tashqarida kelishing.');
-      tmPrint('DIQQAT: kod yo\u2018qolsa, asl materiallarni hech kim tiklay olmaydi.', 'error');
-    } catch (e) { tmPrint('[ERROR] Foydalanuvchini qidirib bo\u2018lmadi.', 'error'); }
-    finally { if (PM) PM.busy = false; }
+    if (mat.kind === 'voice' && mat.blob && mat.blob.size > 700000) { tmPrint('[ERROR] Ovoz juda uzun: ko\u2018rinadigan ovoz 45 soniyagacha (taxminan 700 KB) bo\u2018lsin.', 'error'); return; }
+    PM.dec[slot] = mat; PM.await = null;
+    tmPrint('[OK] ' + P.i + ' ' + slot + '. ' + P.n + ': ' + matLine(mat));
+    pmPaint(); pmChip();
   }
   function pmResume() {
     if (!PM) return;
     tmPrint('[SYSTEM] Shaxsiy materiallar paketi davom etmoqda.');
-    var ph = PM.phase;
-    if (ph === 'collect') pmPaint(); else if (ph === 'confirm') pmFinalAsk(); else if (ph === 'decoy') { if (PM.await) tmPrint('Matn/nom yozing va EXECUTE bosing:'); else pmDecoyNext(); }
-    else if (ph === 'target') tmPrint('Kimga yuboriladi? Foydalanuvchi nomini yozing:'); else if (ph === 'code') tmPrint('Maxfiy kodni o\u2018rnating:'); else if (ph === 'code2') tmPrint('Kodni takrorlang:'); else if (ph === 'retry') tmPrint('\u00ABqayta\u00BB yoki \u00ABbekor\u00BB deb yozing.');
+    if (PM.phase === 'code') tmPrint('Maxfiy kodni o\u2018rnating:'); else if (PM.phase === 'code2') tmPrint('Kodni takrorlang:'); else pmPaint();
   }
 
-  // ----- yuborish -----
-  async function pmSendDecoys(slots) {
-    var to = PM.to;
-    await Promise.race([window.fbOpenChat({ otherUid: to.uid, name: to.name, color: '#2AABEE', avatar: to.avatar }, true), new Promise(function (_, rj) { setTimeout(function () { rj(new Error('chat ochilmadi')); }, 120000); })]);
-    for (var i = PM.sent || 0; i < slots.length; i++) {
-      var d = PM.decoy[slots[i]], k = d.kind;
-      if (k === 'text') await window.fbSendText(d.text);
-      else if (k === 'pdf' || k === 'file') await window.fbSendText((k === 'pdf' ? '\uD83D\uDCC4 ' : '\uD83D\uDCCE ') + d.name);
-      else if (k === 'image') await window.fbSendImageFile(await blobDataUrl(d.blob));
-      else if (k === 'voice') { var du = await blobDataUrl(d.blob); if (du.indexOf('data:audio/') !== 0) du = 'data:audio/aac;base64,' + du.split(',')[1]; await window.fbSendVoice(du, d.dur || 1); }
-      else if (k === 'video') await window.pldnSendVideo(d.file || new File([d.blob], d.name || 'video.mp4', { type: d.mime || 'video/mp4' }));
-      PM.sent = i + 1;
-    }
-  }
-  async function pmSend() {
-    if (PM.busy) return;
-    PM.busy = true; PM.phase = 'sending';
-    var prog = tmPrint('[SEND] Tayyorlanmoqda...', 'pending'), made = [];
-    var db = firebase.firestore(), u = me(), slots = pmSlots(), ref = null;
+  // ----- chatda yuborish: haqiqiy material shifrlanadi, o'rniga terminaldagi material ketadi -----
+  window.pldnPmActive = function (chat) { return !!(PM && PM.ready && chat && PM.on[chat.id] && (!chat.type || chat.type === 'dm') && chat.otherUid); };
+  window.pldnPmDataUrl = async function (blob, kind) {
+    var du = await blobDataUrl(blob);
+    if (kind === 'audio' && du.indexOf('data:audio/') !== 0) du = 'data:audio/aac;base64,' + du.split(',')[1];
+    return du;
+  };
+  // natija: null (faol emas, oddiy yuboring) | false (yuborilmasin) | { dec, pid } (dec o'rniga yuboring)
+  window.pldnPmSwap = async function (kind, real, chat) {
+    if (!window.pldnPmActive(chat)) return null;
+    var slots = PM_KIND[kind] || [], slot = 0;
+    if (kind === 'file') { var isPdf = real.mime === 'application/pdf' || /\.pdf$/i.test(real.name || ''); slots = isPdf ? [5, 6] : [6, 5]; }
+    for (var i = 0; i < slots.length; i++) if (PM.dec[slots[i]]) { slot = slots[i]; break; }
+    if (!slot) { toast('\uD83D\uDD12 Yuborilmadi: bu tur uchun terminalda material joylanmagan (' + (slots[0] || '?') + ' raqami)', 4800); return false; }
+    var size = real.blob ? real.blob.size : new TextEncoder().encode(real.text || '').length;
+    if (size > PM_MAX) { toast('\uD83D\uDD12 Yuborilmadi: material juda katta (' + fmtSize(size) + '). Eng ko\u2018pi: ' + fmtSize(PM_MAX), 4800); return false; }
+    try { var pid = await pmUpload(real, kind, chat); PM.pend = true; return { slot: slot, dec: PM.dec[slot], pid: pid }; }
+    catch (e) { console.error(e); toast((e && e.code) === 'permission-denied' ? '\uD83D\uDD12 Yuborilmadi: Firestore qoidalariga \u00ABprivatePkgs\u00BB bloki qo\u2018shilmagan' : '\uD83D\uDD12 Yuborilmadi: shifrlab bo\u2018lmadi', 4800); return false; }
+  };
+  // yuborilgan xabar id'si: yuboruvchining o'zi uchun 🔒 belgisi (qabul qiluvchida belgi yo'q)
+  function pmMarks() { try { return JSON.parse(localStorage.getItem('pldnPmMsgs_' + (me() ? me().uid : '')) || '{}'); } catch (_) { return {}; } }
+  window.pldnPmAfter = function (kind, msgId, chat) {
+    if (!PM || !PM.pend || !msgId) return; PM.pend = false;
+    try { var k = 'pldnPmMsgs_' + (me() ? me().uid : ''), o = pmMarks(), ids = Object.keys(o); if (ids.length > 3000) ids.slice(0, 500).forEach(function (x) { delete o[x]; }); o[msgId] = 1; localStorage.setItem(k, JSON.stringify(o)); } catch (_) {}
+  };
+  window.pldnPmBadge = function (b, id) {
+    try { if (!pmMarks()[id]) return; var s2 = el('span', 'font-size:11px;opacity:.75;margin-left:6px', '\uD83D\uDD12'); var tm = b.querySelector('.msg-time'); if (tm && tm.parentNode === b) b.insertBefore(s2, tm); else b.appendChild(s2); } catch (_) {}
+  };
+  async function pmUpload(real, kind, chat) {
+    var db = firebase.firestore(), u = me(), key = PM.key, salt = PM.salt, enc = new TextEncoder();
+    var rs = kind === 'file' ? ((real.mime === 'application/pdf' || /\.pdf$/i.test(real.name || '')) ? 5 : 6) : PM_KIND[kind][0];
+    var pid = db.collection('privatePkgs').doc().id, ref = db.collection('privatePkgs').doc(pid), made = [];
+    var plain = kind === 'text' ? enc.encode(real.text) : new Uint8Array(await real.blob.arrayBuffer());
+    var it = { s: rs, k: kind === 'file' ? PK[rs].k : kind, name: real.name || '', mime: real.mime || '', size: plain.length, dur: real.dur || 0, iv: u8ToB64(crypto.getRandomValues(new Uint8Array(12))), n: Math.ceil((plain.length + 16) / PM_RAW) };
     try {
-      if (!PM.pkgOk) {
-        var pid = db.collection('privatePkgs').doc().id; ref = db.collection('privatePkgs').doc(pid);
-        var salt = crypto.getRandomValues(new Uint8Array(16)), enc = new TextEncoder();
-        prog.textContent = '[SEND] Kalit yaratilmoqda...';
-        var key = await pmKey(PM.code, salt, PM_ITER), items = [];
-        slots.forEach(function (s) {
-          var m = PM.real[s], size = m.kind === 'text' ? enc.encode(m.text).length : m.blob.size;
-          items.push({ s: s, k: m.kind, name: m.name || '', mime: m.mime || '', size: size, dur: m.dur || 0, iv: u8ToB64(crypto.getRandomValues(new Uint8Array(12))), n: Math.ceil((size + 16) / PM_RAW) });
-        });
-        var meta = await pmEnc(key, enc.encode(JSON.stringify({ v: 1, items: items })), pid + ':meta');
-        var check = await pmEnc(key, enc.encode('PLDN-PM-OK'), pid + ':check');
-        await ref.set({ from: u.uid, to: PM.to.uid, v: 1, iter: PM_ITER, salt: u8ToB64(salt), check: check, meta: meta, cnt: items.length, ready: false, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
-        for (var q = 0; q < items.length; q++) {
-          var it = items[q], m2 = PM.real[it.s];
-          var plain = m2.kind === 'text' ? enc.encode(m2.text) : new Uint8Array(await m2.blob.arrayBuffer());
-          var ct = await pmEncRaw(key, plain, pid + ':' + it.s, b64ToU8(it.iv)); plain = null;
-          for (var j = 0; j < it.n; j++) {
-            prog.textContent = '[SEND] Material ' + (q + 1) + '/' + items.length + ' shifrlanib yuklanmoqda: ' + Math.round(j * 100 / it.n) + '%';
-            var cid = it.s + '_' + String(j).padStart(4, '0');
-            await ref.collection('chunks').doc(cid).set({ d: u8ToB64(ct.subarray(j * PM_RAW, (j + 1) * PM_RAW)) }); made.push(cid);
-          }
-        }
-        await ref.update({ ready: true });
-        PM.pkgOk = true; PM.pkgId = pid;
+      var meta = await pmEnc(key, enc.encode(JSON.stringify({ v: 1, items: [it] })), pid + ':meta');
+      var check = await pmEnc(key, enc.encode('PLDN-PM-OK'), pid + ':check');
+      await ref.set({ from: u.uid, to: chat.otherUid, chatId: chat.id, v: 1, iter: PM_ITER, salt: u8ToB64(salt), check: check, meta: meta, cnt: 1, ready: false, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+      var ct = await pmEncRaw(key, plain, pid + ':' + rs, b64ToU8(it.iv)); plain = null;
+      for (var j = 0; j < it.n; j++) {
+        var cid = rs + '_' + String(j).padStart(4, '0');
+        await ref.collection('chunks').doc(cid).set({ d: u8ToB64(ct.subarray(j * PM_RAW, (j + 1) * PM_RAW)) }); made.push(cid);
       }
-      prog.textContent = '[SEND] Chatga almashtiruvchi materiallar yuborilmoqda...';
-      await pmSendDecoys(slots);
-      prog.textContent = '[SUCCESS] Paket yuborildi.'; prog.className = 'tm-line tm-response';
-      var to = PM.to; histAdd('Shaxsiy materiallar paketi yuborildi', '@' + to.username + ' \u00B7 ' + slots.length + ' ta material');
-      PM = null; pmChip();
-      var c = tmCard();
-      c.appendChild(trow('natija:', 'asl materiallar shifrlangan holda saqlandi, ' + to.name + ' esa almashtiruvchi materiallarni ko\u2018radi.'));
-      c.appendChild(el('div', 'margin-top:8px', tmBtn('Chatni ko\u2018rish', function () { close(); })));
+      await ref.update({ ready: true });
+      return pid;
     } catch (e) {
-      console.error(e);
-      var code = e && (e.code || e.message);
-      if (ref && !PM.pkgOk) { made.forEach(function (cid) { ref.collection('chunks').doc(cid).delete().catch(function () {}); }); ref.delete().catch(function () {}); }
-      prog.className = 'tm-line tm-error';
-      prog.textContent = '[ERROR] ' + (code === 'permission-denied' ? 'Ruxsat yo\u2018q: Firestore qoidalariga \u00ABprivatePkgs\u00BB bloki qo\u2018shilmagan (rules-private.txt).' : 'Yuborib bo\u2018lmadi (' + code + ').');
-      if (PM) { PM.phase = 'retry'; PM.busy = false; tmPrint('\u00ABqayta\u00BB deb yozib urinib ko\u2018ring yoki \u00ABbekor\u00BB.', 'pending'); }
-      return;
+      made.forEach(function (cid) { ref.collection('chunks').doc(cid).delete().catch(function () {}); }); ref.delete().catch(function () {});
+      throw e;
     }
   }
 
@@ -22090,22 +22103,41 @@ var PLDNBattModel = (function () {
   }
   async function pmOpenCode(code) {
     PMO.busy = true;
-    var prog = tmPrint('[CHECK] Paketlar tekshirilmoqda...', 'pending'), hits = 0;
+    var prog = tmPrint('[CHECK] Paketlar tekshirilmoqda...', 'pending'), hits = 0, keys = {}, TRY = 5;
     try {
-      var db = firebase.firestore(), u = me();
+      var db = firebase.firestore(), u = me(), tk = 'pldnPmTries_' + u.uid;
       var rs = await Promise.all([db.collection('privatePkgs').where('to', '==', u.uid).get(), db.collection('privatePkgs').where('from', '==', u.uid).get()]);
       var map = {}; rs.forEach(function (s) { s.forEach(function (d) { map[d.id] = d; }); });
       var ms = function (d) { var c = d.data().createdAt; return c && c.toMillis ? c.toMillis() : 0; };
-      var list = Object.keys(map).map(function (k) { return map[k]; }).filter(function (d) { return d.data().ready; }).sort(function (a, b) { return ms(b) - ms(a); }).slice(0, 15);
+      var all = Object.keys(map).map(function (k) { return map[k]; });
+      var inbox = all.filter(function (d) { var v = d.data(); return v.to === u.uid && v.from !== u.uid && !v.gone; }); // menga kelganlar
+      // shu paytgacha kelgan hammasi (keyingilari emas): hozirgi vaqtgacha mavjud bo'lganlar
+      var list = all.filter(function (d) { var v = d.data(); return v.ready && !(v.to === u.uid && v.gone); }).sort(function (a, b) { return ms(a) - ms(b); }).slice(-60);
       for (var i = 0; i < list.length; i++) {
         var d = list[i], v = d.data();
         prog.textContent = '[CHECK] Paketlar tekshirilmoqda... ' + (i + 1) + '/' + list.length;
         var key;
-        try { key = await pmKey(code, b64ToU8(v.salt), v.iter || PM_ITER); await pmDec(key, v.check, d.id + ':check'); } catch (_) { continue; }
+        try {
+          if (!(v.salt in keys)) keys[v.salt] = await pmKey(code, b64ToU8(v.salt), v.iter || PM_ITER); // bir xil tuz uchun kalit bir marta hisoblanadi
+          key = keys[v.salt]; await pmDec(key, v.check, d.id + ':check');
+        } catch (_) { continue; }
         hits++; await pmShowPkg(d, key, ms(d));
       }
-      if (!hits) { prog.className = 'tm-line tm-error'; prog.textContent = '[ERROR] Kiritilgan maxfiy kod noto\u2018g\u2018ri.'; tmPrint('Asl materiallarga kirish taqdim etilmadi.', 'error'); }
-      else { prog.className = 'tm-line tm-response'; prog.textContent = '[SUCCESS] SHAXSIY MATERIAL OCHILDI'; histAdd('Shaxsiy materiallar ochildi', hits + ' ta paket'); }
+      if (hits) {
+        try { localStorage.removeItem(tk); } catch (_) {}
+        prog.className = 'tm-line tm-response'; prog.textContent = '[SUCCESS] SHAXSIY MATERIAL OCHILDI \u00B7 ' + hits + ' ta'; histAdd('Shaxsiy materiallar ochildi', hits + ' ta');
+        tmPrint('Keyin kelgan shaxsiy materiallar uchun kodni yana kiritasiz.', 'pending');
+      } else {
+        prog.className = 'tm-line tm-error'; prog.textContent = '[ERROR] XATO! Kiritilgan maxfiy kod noto\u2018g\u2018ri.'; tmPrint('Asl materiallarga kirish taqdim etilmadi.', 'error');
+        if (inbox.length) {
+          var n = 0; try { n = (Number(localStorage.getItem(tk)) || 0) + 1; localStorage.setItem(tk, String(n)); } catch (_) { n = 1; }
+          if (n >= TRY) { // 5 marta noto'g'ri: shaxsiy materiallar qabul qiluvchidan butunlay o'chadi (yuboruvchida qoladi)
+            await Promise.all(inbox.map(function (d) { return db.collection('privatePkgs').doc(d.id).update({ gone: true }).catch(function () {}); }));
+            try { localStorage.removeItem(tk); } catch (_) {}
+            tmPrint('Kod ' + TRY + ' marta noto\u2018g\u2018ri kiritildi: shaxsiy materiallar sizdan butunlay o\u2018chirildi.', 'error');
+          } else tmPrint('Qolgan urinishlar: ' + (TRY - n) + '. ' + TRY + ' marta xato bo\u2018lsa, shaxsiy materiallar o\u2018chib ketadi.', 'error');
+        }
+      }
     } catch (e) {
       console.error(e); prog.className = 'tm-line tm-error';
       prog.textContent = '[ERROR] ' + ((e && e.code) === 'permission-denied' ? 'Ruxsat yo\u2018q: Firestore qoidalariga \u00ABprivatePkgs\u00BB bloki qo\u2018shilmagan.' : 'Ochib bo\u2018lmadi.');
