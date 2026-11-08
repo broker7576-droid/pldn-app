@@ -1,5 +1,5 @@
-<!-- VERSION: 250 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: mail-login-1.0 | satr: 22700 | 6-noy-2026 -->
+<!-- VERSION: 251 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: userfuncs-1.0 | satr: 23432 | 8-noy-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -3628,6 +3628,14 @@
         </div>
       </div>
 
+      <div class="settings-group">
+        <div class="settings-item" id="pldnFuncsRow">
+          <span class="settings-icon">🧪</span>
+          <span class="settings-label" id="pldnFuncsLabel">Foydalanuvchi funksiyalari</span>
+          <span class="settings-arrow">›</span>
+        </div>
+      </div>
+      <div id="pldnFnQuick"></div>
       <div class="settings-group">
         <div class="settings-item" id="pldnTermRow">
           <span class="settings-icon">⌨️</span>
@@ -7435,6 +7443,7 @@
 
   // Buyruqlar terminali: joylangan kodni kod maydoniga qo'yish
   window.pldnTermFill = function (seq) { pldnShapeSequence = seq.slice(0, PLDN_CODE_LEN); renderShapeDisplay(); };
+  window.pldnShapeChipHtml = pldnShapeChipHtml;
 
   function pldnHistAdd(entry) {
     entry.id = ++pldnCodeHistoryIdCounter;
@@ -7610,6 +7619,18 @@
     pldnCodeSubmitBtn.disabled = true;
     pldnCodeFeedback.textContent = fbT('Tekshirilmoqda...', 'Проверка...');
     pldnCfInstall(key).then(rec => {
+      if (!rec && window.PLDNFuncs) {
+        // Foydalanuvchi funksiyalari (funcsrv.js): kod bo'yicha topib o'rnatadi
+        return window.PLDNFuncs.byCode(key).then(r => {
+          if (!r) { pldnCodeFail(seq, t('k83')); return; }
+          const msg2 = fbT('«' + r.name + '» qo\'shildi (Foydalanuvchi funksiyalari)', '«' + r.name + '» добавлено (Функции пользователей)');
+          pldnCodeFeedback.textContent = '✓ ' + msg2;
+          pldnCodeFeedback.classList.add('success');
+          pldnHistAdd({ code: 'R', label: r.name, shapes: seq, message: msg2 });
+          pldnShapeSequence = [];
+          renderShapeDisplay();
+        });
+      }
       if (!rec) {
         pldnCodeFail(seq, t('k83'));
         return;
@@ -22694,6 +22715,717 @@ var PLDNBattModel = (function () {
     }, 300);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install); else install();
+})();
+</script>
+<script>
+// ===== FOYDALANUVCHI FUNKSIYALARI (Функции пользователей) ===== VERSION: userfuncs-1.0
+// Server: https://134-255-228-146.sslip.io/funcs/* (funcsrv.js, port 3011).
+// Foydalanuvchi kodi faqat iframe sandbox ichida ishlaydi (opaque origin + CSP + postMessage ko'prigi).
+(function () {
+  'use strict';
+  var API = 'https://134-255-228-146.sslip.io/funcs';
+  var ABC = 'abcdefghijkl';
+  var QUOTA = 1000000;
+
+  function T(uz, ru) { return localStorage.getItem('pldnLang') === 'ru' ? ru : uz; }
+  function me() { try { return firebase.auth().currentUser; } catch (_) { return null; } }
+  function uid() { var u = me(); return u ? u.uid : ''; }
+  function h(tag, a) {
+    var e = document.createElement(tag); a = a || {};
+    for (var k in a) {
+      var v = a[k];
+      if (k === 'css') e.style.cssText = v; else if (k === 'cls') e.className = v; else if (k === 'text') e.textContent = v;
+      else if (k === 'html') e.innerHTML = v; else if (k.slice(0, 2) === 'on') e.addEventListener(k.slice(2), v);
+      else if (v != null) e.setAttribute(k, v);
+    }
+    for (var i = 2; i < arguments.length; i++) add(e, arguments[i]);
+    return e;
+  }
+  function add(e, c) {
+    if (c == null || c === false) return;
+    if (Array.isArray(c)) { c.forEach(function (x) { add(e, x); }); return; }
+    e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
+  function toast(m, ms) {
+    var d = h('div', { css: 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(0,0,0,.85);color:#fff;padding:10px 18px;border-radius:18px;z-index:100060;font-size:15px;max-width:86%;text-align:center' , text: String(m) });
+    document.body.appendChild(d); setTimeout(function () { d.remove(); }, ms || 2600);
+  }
+  function fmtDate(ts) { if (!ts) return ''; var d = new Date(ts), p = function (n) { return (n < 10 ? '0' : '') + n; }; return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }
+  function fmtSize(n) { n = Number(n) || 0; if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }
+  async function sha256hex(s) {
+    var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+    return Array.prototype.map.call(new Uint8Array(buf), function (b) { return (b < 16 ? '0' : '') + b.toString(16); }).join('');
+  }
+
+  // ---------- xato matnlari ----------
+  var ERR = {
+    auth: ['Avval hisobga kiring', 'Сначала войдите в аккаунт'], net: ['Serverga ulanib bo\u2018lmadi. Internetni tekshiring', 'Нет связи с сервером'],
+    bad_team: ['Jamoa nomi 5–21 belgi: harf, son, _ va -', 'Название команды: 5–21 символ, буквы, цифры, _ и -'],
+    bad_name: ['Funksiya nomi 2–40 belgi: harf va son', 'Название функции: 2–40 символов, буквы и цифры'],
+    bad_ver: ['Versiya 1–12 belgi: harf va son', 'Версия: 1–12 символов, буквы и цифры'],
+    bad_desc: ['Tavsif bo\u2018sh bo\u2018lmasin (20000 belgigacha)', 'Описание не должно быть пустым (до 20000 символов)'],
+    no_code: ['Kod kiritilmagan', 'Код не введён'], too_large: ['Kod juda katta (20 MB gacha)', 'Код слишком большой (до 20 МБ)'],
+    rate_limit: ['Bugungi yuborish limiti tugadi', 'Лимит отправок на сегодня исчерпан'], too_many_pending: ['Tekshiruvda juda ko\u2018p funksiya bor', 'Слишком много функций на проверке'],
+    team_taken: ['Bu jamoa nomi band', 'Это название команды занято'], name_taken: ['Bu jamoada bunday nomli funksiya bor', 'В этой команде уже есть такая функция'],
+    ver_exists: ['Bu versiya allaqachon mavjud', 'Такая версия уже существует'], ver_pending: ['Bu versiya tekshiruvda', 'Эта версия уже на проверке'],
+    not_found: ['Topilmadi', 'Не найдено'], forbidden: ['Ruxsat yo\u2018q', 'Нет доступа'], reason: ['Sababni yozing (kamida 3 belgi)', 'Укажите причину (минимум 3 символа)'],
+    test_required: ['Avval Test Mode\u2019da sinab ko\u2018ring (xatosiz, kamida 2 soniya)', 'Сначала проверьте в Test Mode (без ошибок, минимум 2 секунды)'],
+    server: ['Server xatosi, keyinroq urinib ko\u2018ring', 'Ошибка сервера, попробуйте позже'], cannot: ['Bu amalni bajarib bo\u2018lmaydi', 'Действие недоступно']
+  };
+  function errMsg(e) { var m = ERR[e && e.code]; return m ? T(m[0], m[1]) : T('Xatolik', 'Ошибка') + (e && e.code ? ' [' + e.code + ']' : ''); }
+
+  // ---------- server ----------
+  async function api(path, o) {
+    o = o || {}; var u = me(); if (!u) { var e0 = new Error('auth'); e0.code = 'auth'; throw e0; }
+    var tk = await u.getIdToken(); var ctl = new AbortController(); var tm = setTimeout(function () { ctl.abort(); }, o.timeout || 30000);
+    try {
+      var hd = { Authorization: 'Bearer ' + tk }; if (o.body) hd['Content-Type'] = 'application/json';
+      var r = await fetch(API + path, { method: o.method || 'GET', headers: hd, body: o.body ? JSON.stringify(o.body) : undefined, signal: ctl.signal });
+      var j = await r.json().catch(function () { return {}; });
+      if (!r.ok) { var e = new Error(j.error || ('http ' + r.status)); e.code = j.error || 'http'; e.data = j; throw e; }
+      return j;
+    } catch (e) { if (!e.code) e.code = 'net'; throw e; } finally { clearTimeout(tm); }
+  }
+
+  // ---------- mahalliy saqlash ----------
+  function ik() { return 'pfn_inst_' + uid(); }
+  function loadInst() { if (!uid()) return {}; try { return JSON.parse(localStorage.getItem(ik()) || '{}') || {}; } catch (_) { return {}; } }
+  function saveInst(m) { try { localStorage.setItem(ik(), JSON.stringify(m)); } catch (_) {} }
+  function ck(id) { return 'pfn_code_' + uid() + '_' + id; }
+  function getCache(id) { try { return JSON.parse(localStorage.getItem(ck(id)) || 'null'); } catch (_) { return null; } }
+  function setCache(id, ver, code) { try { localStorage.setItem(ck(id), JSON.stringify({ ver: ver, code: code })); return true; } catch (_) { return false; } }
+  function sp(id) { return 'pfn_s_' + uid() + '_' + id + '_'; }
+  function wipeStore(id) { var p = sp(id), del = []; for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf(p) === 0) del.push(k); } del.forEach(function (k) { localStorage.removeItem(k); }); }
+  function dk(fid) { return 'pfn_draft_' + uid() + '_' + (fid || 'new'); }
+  function saveDraft(F) { try { localStorage.setItem(dk(F.fid), JSON.stringify({ team: F.team, name: F.name, ver: F.ver, desc: F.desc, code: F.code, icon: F.icon, vis: F.vis, place: F.place })); } catch (_) {} }
+  function loadDraft(fid) { try { return JSON.parse(localStorage.getItem(dk(fid)) || 'null'); } catch (_) { return null; } }
+  function clearDraft(fid) { try { localStorage.removeItem(dk(fid)); } catch (_) {} }
+  function seenKey() { return 'pfn_seen_' + uid(); }
+  function loadSeen() { try { return JSON.parse(localStorage.getItem(seenKey()) || '{}') || {}; } catch (_) { return {}; } }
+
+  // ---------- uslub ----------
+  var css = document.createElement('style');
+  css.textContent = [
+    '#pfnRoot{position:fixed;inset:0;z-index:100020;background:var(--bg-page,#fff);color:var(--text-primary,#000);display:none;flex-direction:column;padding-top:env(safe-area-inset-top,0px);font-family:inherit}',
+    '.pfn-page{position:absolute;inset:0;display:flex;flex-direction:column;background:var(--bg-page,#fff);padding-top:env(safe-area-inset-top,0px)}',
+    '.pfn-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid rgba(128,128,128,.25);flex:none}',
+    '.pfn-head .t{flex:1;font-size:18px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.pfn-ib{background:none;border:none;color:inherit;font-size:24px;padding:4px 10px;cursor:pointer}',
+    '.pfn-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 12px calc(24px + env(safe-area-inset-bottom,0px))}',
+    '.pfn-tabs{display:flex;gap:6px;padding:8px 10px;overflow-x:auto;flex:none;border-bottom:1px solid rgba(128,128,128,.2)}',
+    '.pfn-tab{white-space:nowrap;border:1px solid rgba(128,128,128,.35);background:none;color:inherit;border-radius:16px;padding:7px 12px;font-size:14px;cursor:pointer;position:relative}',
+    '.pfn-tab.on{background:#3fa1d0;color:#fff;border-color:#3fa1d0}',
+    '.pfn-dot{background:#e53935;color:#fff;border-radius:9px;font-size:11px;padding:1px 6px;margin-left:5px}',
+    '.pfn-card{background:var(--bg-card,#f2f2f7);border-radius:14px;padding:12px;margin-bottom:10px}',
+    '.pfn-row{display:flex;align-items:center;gap:10px}',
+    '.pfn-ic{font-size:30px;width:40px;text-align:center;flex:none}',
+    '.pfn-grow{flex:1;min-width:0}',
+    '.pfn-nm{font-weight:600;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.pfn-sub{font-size:13px;color:var(--text-secondary,#8e8e93);margin-top:2px}',
+    '.pfn-btn{background:#3fa1d0;color:#fff;border:none;border-radius:12px;padding:11px 14px;font-size:15px;font-weight:600;cursor:pointer}',
+    '.pfn-btn.sec{background:transparent;color:inherit;border:1px solid rgba(128,128,128,.45)}',
+    '.pfn-btn.red{background:#e53935}.pfn-btn.grn{background:#2e9d5b}.pfn-btn[disabled]{opacity:.5}',
+    '.pfn-badge{display:inline-block;font-size:12px;border-radius:8px;padding:2px 7px;margin:3px 4px 0 0;background:rgba(128,128,128,.2)}',
+    '.pfn-badge.warn{background:#ffe0b2;color:#7a4a00}.pfn-badge.ok{background:#c8e6c9;color:#1b5e20}.pfn-badge.err{background:#ffcdd2;color:#b71c1c}',
+    '.pfn-inp{width:100%;box-sizing:border-box;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;border-radius:10px;padding:10px;font-size:16px}',
+    '.pfn-blk{border:2px solid #4a4a4a;background:#3fa1d0;color:#fff;padding:9px 11px;box-sizing:border-box;margin:0 auto}',
+    '.pfn-blk label{display:block;font-size:11px;letter-spacing:.4px;text-transform:uppercase;opacity:.9;margin-bottom:5px}',
+    '.pfn-blk input,.pfn-blk textarea{width:100%;box-sizing:border-box;border:none;border-radius:6px;background:rgba(255,255,255,.2);color:#fff;padding:8px;font-size:16px;outline:none;font-family:inherit}',
+    '.pfn-blk input::placeholder,.pfn-blk textarea::placeholder{color:rgba(255,255,255,.7)}',
+    '.pfn-blk input[readonly]{opacity:.65}',
+    '.pfn-blk .bad{box-shadow:0 0 0 2px #ffeb3b}',
+    '.pfn-blk textarea.code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;white-space:pre;overflow:auto;min-height:300px;line-height:1.4;tab-size:2}',
+    '.pfn-cnt{font-size:11px;opacity:.85;text-align:right;margin-top:3px}',
+    '.pfn-chip{display:inline-block;border:1px solid rgba(128,128,128,.5);border-radius:14px;padding:6px 12px;margin:0 6px 6px 0;font-size:14px;cursor:pointer}',
+    '.pfn-chip.on{background:#3fa1d0;border-color:#3fa1d0;color:#fff}',
+    '.pfn-codebox{display:flex;flex-wrap:wrap;gap:6px;background:rgba(255,255,255,.92);color:#222;border-radius:8px;padding:6px;min-height:34px;align-items:center;font-size:13px}',
+    '.pfn-sw{position:relative;width:46px;height:26px;flex:none}.pfn-sw input{opacity:0;width:100%;height:100%;position:absolute;margin:0;z-index:1}',
+    '.pfn-sw i{position:absolute;inset:0;background:#9e9e9e;border-radius:13px;transition:.2s}.pfn-sw i:after{content:"";position:absolute;width:20px;height:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}',
+    '.pfn-sw input:checked+i{background:#2e9d5b}.pfn-sw input:checked+i:after{left:23px}',
+    '.pfn-modal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100040;display:flex;align-items:center;justify-content:center;padding:18px}',
+    '.pfn-mbox{background:var(--bg-elevated,#fff);color:var(--text-primary,#000);border-radius:16px;width:100%;max-width:420px;max-height:86%;display:flex;flex-direction:column;overflow:hidden}',
+    '.pfn-mbox .mt{font-weight:700;font-size:17px;padding:14px 16px 6px}.pfn-mbox .mb{padding:4px 16px 10px;overflow-y:auto;font-size:15px;white-space:pre-wrap;word-break:break-word}',
+    '.pfn-mbox .mf{display:flex;flex-direction:column;gap:8px;padding:8px 16px 14px}',
+    '.pfn-pre{white-space:pre-wrap;word-break:break-word;font-size:14px}',
+    '.pfn-mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;white-space:pre;overflow:auto;background:rgba(128,128,128,.12);border-radius:10px;padding:8px;max-height:260px}',
+    '#pfnRun{position:fixed;inset:0;z-index:100030;background:var(--bg-page,#fff);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}',
+    '#pfnRun .bar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(128,128,128,.3);color:var(--text-primary,#000);flex:none}',
+    '#pfnRun .bar.test{background:#fff3cd;color:#5c4400}',
+    '#pfnRun .errs{background:#fdecea;color:#b71c1c;font-size:12px;padding:6px 10px;max-height:90px;overflow:auto;white-space:pre-wrap;flex:none}'
+  ].join('\n');
+  document.head.appendChild(css);
+
+  // ---------- modallar ----------
+  var modals = [];
+  function modal(title, body, buttons) {
+    var box = h('div', { cls: 'pfn-mbox' }, h('div', { cls: 'mt', text: title }), h('div', { cls: 'mb' }, body), h('div', { cls: 'mf' }));
+    var ov = h('div', { cls: 'pfn-modal', onclick: function (e) { if (e.target === ov) api_.close(); } }, box);
+    var api_ = { el: ov, close: function () { ov.remove(); modals = modals.filter(function (m) { return m !== api_; }); } };
+    (buttons || []).forEach(function (b) {
+      box.lastChild.appendChild(h('button', { cls: 'pfn-btn ' + (b.cls || ''), text: b.label, onclick: function () { if (b.keep) { b.fn && b.fn(api_); } else { api_.close(); b.fn && b.fn(api_); } } }));
+    });
+    document.body.appendChild(ov); modals.push(api_); return api_;
+  }
+  function confirmBox(title, text, ok, cls) {
+    return new Promise(function (res) {
+      modal(title, text, [{ label: ok || 'OK', cls: cls || '', fn: function () { res(true); } }, { label: T('Bekor qilish', 'Отмена'), cls: 'sec', fn: function () { res(false); } }]);
+    });
+  }
+  function askText(title, ph) {
+    return new Promise(function (res) {
+      var ta = h('textarea', { cls: 'pfn-inp', rows: '4', placeholder: ph || '', maxlength: '500' });
+      modal(title, ta, [{ label: 'OK', fn: function () { res(ta.value.trim()); } }, { label: T('Bekor qilish', 'Отмена'), cls: 'sec', fn: function () { res(null); } }]);
+    });
+  }
+  function sheet(title, items) {
+    modal(title, '', items.map(function (it) { return { label: it.label, cls: it.cls || 'sec', fn: it.fn }; }).concat([{ label: T('Yopish', 'Закрыть'), cls: 'sec' }]));
+  }
+
+  // ---------- shakl kodi ----------
+  function codeNode(code, light) {
+    var box = h('div', { cls: 'pfn-codebox' });
+    if (!code) { box.appendChild(h('span', { css: 'opacity:.7', text: T('Administrator tasdiqlagach server 30 ta shaklli kod beradi', 'После одобрения сервер выдаст код из 30 фигур') })); return box; }
+    var groups = [];
+    for (var i = 0; i < code.length; i++) { var ix = ABC.indexOf(code[i]); var g = groups[groups.length - 1]; if (g && g.s === ix) g.n++; else groups.push({ s: ix, n: 1 }); }
+    box.innerHTML = groups.map(function (g) { return '<span class="pldn-shape-group">' + (window.pldnShapeChipHtml ? window.pldnShapeChipHtml(g.s) : ABC[g.s]) + '<span class="pldn-shape-n">' + g.n + '</span></span>'; }).join('');
+    return box;
+  }
+
+  // ---------- sandbox ----------
+  var BRIDGE = '(function(){var P=window.parent,pend={},n=0;function send(m){try{P.postMessage(m,"*")}catch(e){}}' +
+    'function call(t,a){return new Promise(function(res){var id=++n;pend[id]=res;a=a||{};a.t=t;a.id=id;send(a);setTimeout(function(){if(pend[id]){delete pend[id];res(null)}},8000)})}' +
+    'window.addEventListener("message",function(e){var d=e.data;if(d&&d.t==="res"&&pend[d.id]){pend[d.id](d.v);delete pend[d.id]}else if(d&&d.t==="theme"){document.documentElement.setAttribute("data-theme",d.dark?"dark":"light")}});' +
+    'function err(m,l){send({t:"err",m:String(m).slice(0,300),l:l||0})}' +
+    'window.addEventListener("error",function(e){err(e.message,e.lineno)});' +
+    'window.addEventListener("unhandledrejection",function(e){err("Promise: "+(e.reason&&e.reason.message||e.reason))});' +
+    'var ce=console.error;console.error=function(){err([].join.call(arguments," "));try{ce.apply(console,arguments)}catch(_){}};' +
+    'window.PLDN=Object.freeze({version:1,dark:__DARK__,toast:function(m){send({t:"toast",m:String(m).slice(0,200)})},close:function(){send({t:"close"})},' +
+    'store:{get:function(k){return call("sg",{k:String(k)})},set:function(k,v){return call("ss",{k:String(k),v:String(v)})},del:function(k){return call("sd",{k:String(k)})}}});' +
+    'send({t:"ready"});})();';
+  var CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; worker-src blob:; base-uri 'none'; form-action 'none'";
+  function buildDoc(code, dark) {
+    var isHtml = /<\s*(?:!doctype|html|head|body|div|span|p|h[1-6]|button|canvas|svg|style|script|input|form|ul|ol|table|a|img|section|main|label|textarea|select)\b/i.test(code);
+    var pre = '<meta http-equiv="Content-Security-Policy" content="' + CSP + '"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">' +
+      '<style>:root{--pldn-bg:' + (dark ? '#1c1c1e' : '#ffffff') + ';--pldn-text:' + (dark ? '#f2f2f7' : '#000000') + ';--pldn-accent:#3fa1d0;color-scheme:' + (dark ? 'dark' : 'light') + '}html,body{margin:0}body{background:var(--pldn-bg);color:var(--pldn-text);font-family:-apple-system,Roboto,sans-serif}</style>' +
+      '<script>' + BRIDGE.replace('__DARK__', dark ? 'true' : 'false') + '<\/script>';
+    var body = isHtml ? code : '<script>' + code + '<\/script>';
+    var m = body.match(/^\s*<!doctype[^>]*>/i);
+    return m ? m[0] + pre + body.slice(m[0].length) : pre + body;
+  }
+
+  var run = null, crashFlag = 'pfn_running';
+  function setFlag(on, o) { try { if (on) localStorage.setItem(crashFlag, JSON.stringify({ uid: uid(), fid: o.fid || 0, test: !!o.test, at: Date.now() })); else localStorage.removeItem(crashFlag); } catch (_) {} }
+  function closeRun() {
+    if (!run) return; var r = run; run = null;
+    window.removeEventListener('message', r.onMsg); document.removeEventListener('visibilitychange', r.onVis);
+    r.el.remove(); setFlag(false);
+    if (r.o.test && r.o.onEnd) {
+      var ms = Date.now() - r.t0;
+      sha256hex(r.o.code).then(function (hash) { r.o.onEnd({ ok: r.errs.length === 0 && ms >= 2000, ms: ms, errors: r.errs.length, list: r.errs, hash: hash }); }).catch(function () { r.o.onEnd({ ok: false, ms: ms, errors: r.errs.length, list: r.errs, hash: '' }); });
+    }
+  }
+  // o: { title, code, fid, test (vaqtinchalik xotira, natija qaytaradi), onEnd }
+  function runSandbox(o) {
+    closeRun();
+    var dark = document.body.classList.contains('pldn-dark');
+    var errs = [], mem = {}, lastToast = 0;
+    var fr = h('iframe', { sandbox: 'allow-scripts', referrerpolicy: 'no-referrer', css: 'flex:1;border:0;width:100%;background:#fff' });
+    fr.srcdoc = buildDoc(o.code, dark);
+    var errBox = h('div', { cls: 'errs', css: 'display:none' });
+    var cnt = h('span', { text: '0', css: 'font-weight:700' });
+    var bar = h('div', { cls: 'bar' + (o.test ? ' test' : '') },
+      h('button', { cls: 'pfn-ib', text: o.test ? '\u2713' : '\u2715', css: 'color:inherit', onclick: function () {
+        if (o.test && Date.now() - r.t0 < 2500) { toast(T('Kamida 3 soniya sinab ko\u2018ring', 'Тестируйте минимум 3 секунды')); return; }
+        closeRun();
+      } }),
+      h('div', { css: 'flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap', text: (o.test ? '\uD83E\uDDEA ' + T('SINOV: ', 'ТЕСТ: ') : '') + (o.title || '') }),
+      o.test ? h('span', {}, T('Xatolar: ', 'Ошибки: '), cnt) : null);
+    var el = h('div', { id: 'pfnRun' }, bar, errBox, fr);
+    document.body.appendChild(el);
+    var r = { el: el, o: o, errs: errs, t0: Date.now() };
+    function reply(id, v) { try { fr.contentWindow.postMessage({ t: 'res', id: id, v: v }, '*'); } catch (_) {} }
+    function used() { var p = sp(o.fid), tot = 0; for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf(p) === 0) tot += (localStorage.getItem(k) || '').length; } return tot; }
+    r.onMsg = function (e) {
+      if (e.source !== fr.contentWindow) return;
+      var d = e.data; if (!d || typeof d !== 'object' || typeof d.t !== 'string') return;
+      if (d.t === 'err') {
+        if (errs.length < 50) errs.push((d.l ? T('qator ', 'строка ') + d.l + ': ' : '') + String(d.m || '').slice(0, 300));
+        cnt.textContent = String(errs.length); errBox.style.display = o.test ? 'block' : 'none'; errBox.textContent = errs.slice(-4).join('\n');
+      } else if (d.t === 'toast') { if (Date.now() - lastToast > 1000) { lastToast = Date.now(); toast(String(d.m || '').slice(0, 200)); } }
+      else if (d.t === 'close') { if (!o.test) closeRun(); }
+      else if (d.t === 'sg' || d.t === 'ss' || d.t === 'sd') {
+        var k = String(d.k || '').slice(0, 64); if (!k) { reply(d.id, null); return; }
+        if (o.test || !o.fid) {
+          if (d.t === 'sg') reply(d.id, Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null);
+          else if (d.t === 'ss') { mem[k] = String(d.v || '').slice(0, 100000); reply(d.id, true); } else { delete mem[k]; reply(d.id, true); }
+        } else {
+          var key = sp(o.fid) + k;
+          try {
+            if (d.t === 'sg') reply(d.id, localStorage.getItem(key));
+            else if (d.t === 'ss') { var v = String(d.v == null ? '' : d.v); var old = (localStorage.getItem(key) || '').length; if (v.length > 200000 || used() - old + v.length > QUOTA) reply(d.id, false); else { localStorage.setItem(key, v); reply(d.id, true); } }
+            else { localStorage.removeItem(key); reply(d.id, true); }
+          } catch (_) { reply(d.id, false); }
+        }
+      }
+    };
+    r.onVis = function () { if (document.hidden) setFlag(false); else setFlag(true, o); };
+    window.addEventListener('message', r.onMsg); document.addEventListener('visibilitychange', r.onVis);
+    run = r; setFlag(true, o);
+  }
+  // Ilova qotib qolgan bo'lsa (cheksiz sikl): keyingi ochilishda funksiya avtomatik to'xtatiladi
+  function checkCrash() {
+    var f; try { f = JSON.parse(localStorage.getItem(crashFlag) || 'null'); } catch (_) { f = null; }
+    if (!f) return; try { localStorage.removeItem(crashFlag); } catch (_) {}
+    if (f.uid && f.uid !== uid()) return;
+    if (f.fid) {
+      var m = loadInst(); if (m[f.fid]) { m[f.fid].enabled = false; m[f.fid].crash = true; saveInst(m); }
+      toast(T('Funksiya ilovani qotirgan bo\u2018lishi mumkin: avtomatik to\u2018xtatildi', 'Функция могла зависнуть приложение: она остановлена'), 5000);
+    } else if (f.test) toast(T('Sinov paytida ilova qotib qoldi: kodda cheksiz sikl bo\u2018lishi mumkin', 'Приложение зависло во время теста: возможен бесконечный цикл'), 5000);
+  }
+
+  // ---------- o'rnatish / yangilash / o'chirish ----------
+  async function doInstall(id) {
+    var j = await api('/install', { method: 'POST', body: { id: id } });
+    var c = await api('/fn/' + id + '/code?ver=' + encodeURIComponent(j.ver), { timeout: 120000 });
+    var cached = setCache(id, c.ver, c.code);
+    var m = loadInst(), old = m[id];
+    m[id] = { id: id, name: j.name, icon: j.icon, team: j.team, author: j.author, place: j.place, code30: j.code30, ver: c.ver, enabled: old ? (old.enabled !== false && !old.crash) : true, at: Date.now(), cached: cached };
+    saveInst(m); renderQuick(); refreshBadge();
+    return m[id];
+  }
+  async function doUninstall(id) {
+    try { await api('/uninstall', { method: 'POST', body: { id: id } }); } catch (e) { if (e.code === 'net') { toast(errMsg(e)); return false; } }
+    var m = loadInst(); delete m[id]; saveInst(m);
+    try { localStorage.removeItem(ck(id)); } catch (_) {} wipeStore(id);
+    renderQuick(); refreshBadge(); return true;
+  }
+  async function launch(id) {
+    var rec = loadInst()[id]; if (!rec) return;
+    if (rec.enabled === false) { toast(T('Funksiya to\u2018xtatilgan. Avval yoqing', 'Функция остановлена. Сначала включите')); return; }
+    var c = getCache(id), code = c && c.ver === rec.ver ? c.code : null;
+    if (!code) {
+      try { var j = await api('/fn/' + id + '/code?ver=' + encodeURIComponent(rec.ver), { timeout: 120000 }); code = j.code; setCache(id, j.ver, j.code); }
+      catch (e) { if (c) code = c.code; else { toast(errMsg(e)); return; } }
+    }
+    runSandbox({ title: rec.name, code: code, fid: id });
+  }
+  async function syncInstalled() {
+    if (!me()) return;
+    try {
+      var j = await api('/installed'); var m = loadInst(), seen = {};
+      (j.funcs || []).forEach(function (f) {
+        seen[f.id] = 1; var r = m[f.id];
+        if (!r) { r = m[f.id] = { id: f.id, enabled: true, cached: false, at: Date.now(), ver: f.ver }; }
+        r.name = f.name; r.icon = f.icon; r.team = f.team; r.author = f.author; r.place = f.place; r.code30 = f.code30;
+        r.update = !!f.update; r.latest = f.latest; r.changes = f.changes || ''; r.gone = !!f.gone;
+      });
+      Object.keys(m).forEach(function (k) { if (!seen[k]) delete m[k]; });
+      saveInst(m); renderQuick(); refreshBadge();
+    } catch (_) {}
+  }
+  var pendingDecided = 0;
+  async function syncMine() {
+    if (!me()) return;
+    try {
+      var j = await api('/mine'), seen = loadSeen(), n = 0;
+      (j.funcs || []).forEach(function (f) { (f.versions || []).forEach(function (v) { if (v.status !== 'pending' && seen[f.id + ':' + v.ver] !== v.status + ':' + v.decided) n++; }); });
+      pendingDecided = n; refreshBadge();
+    } catch (_) {}
+  }
+  function markSeen(list) {
+    var seen = loadSeen(); (list || []).forEach(function (f) { (f.versions || []).forEach(function (v) { if (v.status !== 'pending') seen[f.id + ':' + v.ver] = v.status + ':' + v.decided; }); });
+    try { localStorage.setItem(seenKey(), JSON.stringify(seen)); } catch (_) {} pendingDecided = 0; refreshBadge();
+  }
+  function refreshBadge() {
+    var m = loadInst(), n = pendingDecided; Object.keys(m).forEach(function (k) { if (m[k].update) n++; });
+    var lb = document.getElementById('pldnFuncsLabel'); if (!lb) return;
+    lb.textContent = T('Foydalanuvchi funksiyalari', 'Функции пользователей');
+    var old = lb.parentNode.querySelector('.pfn-dot'); if (old) old.remove();
+    if (n > 0) lb.parentNode.insertBefore(h('span', { cls: 'pfn-dot', text: String(n) }), lb.nextSibling);
+  }
+  function renderQuick() {
+    var box = document.getElementById('pldnFnQuick'); if (!box) return; box.innerHTML = '';
+    var m = loadInst();
+    Object.keys(m).forEach(function (id) {
+      var r = m[id]; if (r.place !== 'settings' || r.enabled === false) return;
+      var g = h('div', { cls: 'settings-group' }, h('div', { cls: 'settings-item', onclick: function () { launch(id); } },
+        h('span', { cls: 'settings-icon', text: r.icon || '\uD83E\uDDE9' }), h('span', { cls: 'settings-label', text: r.name }), h('span', { cls: 'settings-arrow', text: '\u203A' })));
+      box.appendChild(g);
+    });
+  }
+
+  // ---------- sahifalar tizimi ----------
+  var root = null, stack = [];
+  function ensureRoot() { if (root) return; root = h('div', { id: 'pfnRoot' }); document.body.appendChild(root); }
+  function openRoot() { if (!me()) { toast(errMsg({ code: 'auth' })); return; } ensureRoot(); root.style.display = 'flex'; if (!stack.length) push(homePage()); }
+  function closeRoot() { if (!root) return; root.style.display = 'none'; stack.forEach(function (p) { p.el.remove(); }); stack = []; refreshBadge(); }
+  function push(p) { root.appendChild(p.el); stack.push(p); }
+  function pop() { var p = stack.pop(); if (p) p.el.remove(); if (!stack.length) closeRoot(); else if (stack[stack.length - 1].refresh) stack[stack.length - 1].refresh(); }
+  function shell(title, right) {
+    var body = h('div', { cls: 'pfn-body' });
+    var el = h('div', { cls: 'pfn-page' }, h('div', { cls: 'pfn-head' }, h('button', { cls: 'pfn-ib', text: '\u2039', onclick: pop }), h('div', { cls: 't', text: title }), right || null), body);
+    return { el: el, body: body };
+  }
+  var STAT = { pending: ['\u23F3 ' + 'Tekshiruvda', '\u23F3 На проверке', 'warn'], approved: ['\u2705 Tasdiqlangan', '\u2705 Одобрено', 'ok'], rejected: ['\u274C Rad etilgan', '\u274C Отклонено', 'err'], returned: ['\u21A9\uFE0F Tuzatishga qaytarilgan', '\u21A9\uFE0F Возвращено на доработку', 'warn'] };
+  function statBadge(s) { var x = STAT[s] || [s, s, '']; return h('span', { cls: 'pfn-badge ' + x[2], text: T(x[0], x[1]) }); }
+  var PERM = { camera_mic: ['\uD83D\uDCF7 Kamera/mikrofon', 'Камера/микрофон'], location: ['\uD83D\uDCCD Joylashuv', 'Геолокация'], notifications: ['\uD83D\uDD14 Bildirishnomalar', 'Уведомления'], clipboard: ['\uD83D\uDCCB Bufer', 'Буфер обмена'], storage: ['\uD83D\uDCBE Brauzer xotirasi', 'Хранилище браузера'] };
+  function permText(list) { return (list || []).map(function (p) { var x = PERM[p]; return x ? T(x[0], x[1]) : p; }).join(', '); }
+
+  // ---------- bosh sahifa ----------
+  function homePage() {
+    var tab = 'inst', isAdm = false;
+    var sh = shell(T('Foydalanuvchi funksiyalari', 'Функции пользователей'), h('button', { cls: 'pfn-ib', text: '\u2715', onclick: closeRoot }));
+    var tabs = h('div', { cls: 'pfn-tabs' }); sh.el.insertBefore(tabs, sh.body);
+    function drawTabs() {
+      tabs.innerHTML = '';
+      var defs = [['inst', T('Mening funksiyalarim', 'Мои функции')], ['lib', T('Kutubxona', 'Библиотека функций')], ['mk', T('Yaratish', 'Создать')]];
+      if (isAdm) defs.push(['rev', T('Tekshiruv', 'Проверка функций')]);
+      defs.forEach(function (d) {
+        var b = h('button', { cls: 'pfn-tab' + (tab === d[0] ? ' on' : ''), text: d[1], onclick: function () { tab = d[0]; drawTabs(); render(); } });
+        if (d[0] === 'inst') { var m = loadInst(), n = Object.keys(m).filter(function (k) { return m[k].update; }).length; if (n) b.appendChild(h('span', { cls: 'pfn-dot', text: String(n) })); }
+        if (d[0] === 'mk' && pendingDecided) b.appendChild(h('span', { cls: 'pfn-dot', text: String(pendingDecided) }));
+        tabs.appendChild(b);
+      });
+    }
+    function render() { sh.body.innerHTML = ''; if (tab === 'inst') tInst(sh.body); else if (tab === 'lib') tLib(sh.body); else if (tab === 'mk') tMake(sh.body); else tReview(sh.body); }
+    drawTabs(); render();
+    api('/me').then(function (j) { if (j.admin && !isAdm) { isAdm = true; drawTabs(); } }).catch(function () {});
+    syncInstalled().then(function () { if (tab === 'inst' && stack[stack.length - 1] && stack[stack.length - 1].el === sh.el) { drawTabs(); render(); } });
+    return { el: sh.el, refresh: function () { drawTabs(); render(); } };
+  }
+
+  // --- Mening funksiyalarim (o'rnatilgan)
+  function tInst(body) {
+    var m = loadInst(), ids = Object.keys(m);
+    if (!ids.length) { body.appendChild(h('div', { cls: 'pfn-sub', css: 'text-align:center;padding:40px 10px', text: T('Hali funksiya o\u2018rnatilmagan. Kutubxonadan tanlang yoki sozlamalarda kod kiriting.', 'Функции ещё не установлены. Выберите в библиотеке или введите код в настройках.') })); return; }
+    ids.forEach(function (id) {
+      var r = m[id];
+      var sw = h('label', { cls: 'pfn-sw' }, h('input', { type: 'checkbox', onchange: function (e) {
+        var mm = loadInst(); if (!mm[id]) return; mm[id].enabled = e.target.checked; if (e.target.checked) mm[id].crash = false; saveInst(mm); renderQuick(); body.innerHTML = ''; tInst(body);
+      } }), h('i'));
+      sw.firstChild.checked = r.enabled !== false;
+      var badges = h('div', {});
+      if (r.update) badges.appendChild(h('span', { cls: 'pfn-badge warn', text: '\uD83D\uDD04 ' + T('Yangi versiya: ', 'Новая версия: ') + r.latest }));
+      if (r.enabled === false) badges.appendChild(h('span', { cls: 'pfn-badge', text: '\u23F8 ' + T('To\u2018xtatilgan', 'Остановлена') }));
+      if (r.crash) badges.appendChild(h('span', { cls: 'pfn-badge err', text: '\u26A0\uFE0F ' + T('Qotgan', 'Зависала') }));
+      if (r.gone) badges.appendChild(h('span', { cls: 'pfn-badge err', text: T('Kutubxonadan olib tashlangan', 'Удалена из библиотеки') }));
+      body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-row' },
+        h('div', { cls: 'pfn-ic', text: r.icon || '\uD83E\uDDE9', onclick: function () { launch(id); } }),
+        h('div', { cls: 'pfn-grow', onclick: function () { launch(id); } }, h('div', { cls: 'pfn-nm', text: r.name }), h('div', { cls: 'pfn-sub', text: 'v' + r.ver + ' \u00B7 ' + r.team }), badges),
+        sw, h('button', { cls: 'pfn-ib', text: '\u22EE', onclick: function () { instSheet(id); } }))));
+    });
+  }
+  function instSheet(id) {
+    var r = loadInst()[id]; if (!r) return;
+    var items = [{ label: '\u25B6 ' + T('Ochish', 'Открыть'), cls: '', fn: function () { launch(id); } }, { label: '\u2139\uFE0F ' + T('Ma\u2019lumot', 'Информация'), fn: function () { push(detailPage(id)); } }];
+    if (r.update) items.push({ label: '\uD83D\uDD04 ' + T('Yangilash', 'Обновить'), fn: function () { updateFlow(id); } });
+    items.push({ label: '\uD83D\uDDD1 ' + T('Butunlay o\u2018chirish', 'Удалить полностью'), cls: 'red', fn: function () {
+      confirmBox(T('«' + r.name + '» o\u2018chirilsinmi?', 'Удалить «' + r.name + '»?'), T('Funksiya va uning barcha saqlangan ma\u2019lumotlari telefondan o\u2018chadi. Vaqtincha to\u2018xtatish uchun yoqish tugmasidan foydalaning.', 'Функция и все её данные будут удалены с телефона. Для временной остановки используйте переключатель.'), T('O\u2018chirish', 'Удалить'), 'red').then(function (ok) {
+        if (ok) doUninstall(id).then(function (d) { if (d) { toast(T('O\u2018chirildi', 'Удалено')); var t = stack[stack.length - 1]; if (t && t.refresh) t.refresh(); } });
+      });
+    } });
+    sheet(r.name, items);
+  }
+  function updateFlow(id) {
+    var r = loadInst()[id]; if (!r) return;
+    confirmBox(T('Yangilash: v', 'Обновление: v') + r.ver + ' \u2192 v' + r.latest, (r.changes || T('Yangi versiya haqida ma\u2019lumot yo\u2018q', 'Нет описания изменений')).slice(0, 3000), T('Yangilash', 'Обновить')).then(function (ok) {
+      if (!ok) return;
+      toast(T('Yangilanmoqda...', 'Обновление...'));
+      doInstall(id).then(function () { toast(T('Yangilandi', 'Обновлено')); var t = stack[stack.length - 1]; if (t && t.refresh) t.refresh(); }).catch(function (e) { toast(errMsg(e)); });
+    });
+  }
+
+  // --- Kutubxona
+  function tLib(body) {
+    var q = h('input', { cls: 'pfn-inp', placeholder: '\uD83D\uDD0D ' + T('Qidirish (nom yoki jamoa)', 'Поиск (название или команда)'), maxlength: '40' });
+    var list = h('div', { css: 'margin-top:10px' }); body.appendChild(q); body.appendChild(list);
+    var tm = null;
+    function load() {
+      list.innerHTML = ''; list.appendChild(h('div', { cls: 'pfn-sub', text: T('Yuklanmoqda...', 'Загрузка...') }));
+      api('/lib?q=' + encodeURIComponent(q.value.trim())).then(function (j) {
+        list.innerHTML = ''; var m = loadInst();
+        if (!(j.funcs || []).length) { list.appendChild(h('div', { cls: 'pfn-sub', css: 'text-align:center;padding:30px', text: T('Hozircha tasdiqlangan ommaviy funksiya yo\u2018q', 'Пока нет одобренных публичных функций') })); return; }
+        j.funcs.forEach(function (f) {
+          var inst = m[f.id]; var lab = !inst ? T('O\u2018rnatish', 'Установить') : (inst.ver !== f.ver ? T('Yangilash', 'Обновить') : '\u2713 ' + T('O\u2018rnatilgan', 'Установлено'));
+          list.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-row' },
+            h('div', { cls: 'pfn-ic', text: f.icon || '\uD83E\uDDE9' }),
+            h('div', { cls: 'pfn-grow', onclick: function () { push(detailPage(f.id)); } }, h('div', { cls: 'pfn-nm', text: f.name + ' \u00B7 v' + f.ver }), h('div', { cls: 'pfn-sub', text: f.team + ' \u00B7 ' + (f.author || '') }), h('div', { cls: 'pfn-sub', text: f.desc })),
+            h('button', { cls: 'pfn-btn' + (inst && inst.ver === f.ver ? ' sec' : ''), text: lab, onclick: function () { push(detailPage(f.id)); } }))));
+        });
+      }).catch(function (e) { list.innerHTML = ''; list.appendChild(h('div', { cls: 'pfn-sub', text: errMsg(e) })); });
+    }
+    q.addEventListener('input', function () { clearTimeout(tm); tm = setTimeout(load, 400); });
+    load();
+  }
+
+  // --- Funksiya haqida (kutubxona / o'rnatilgan)
+  function detailPage(id) {
+    var sh = shell(T('Funksiya', 'Функция')); var body = sh.body;
+    function draw() {
+      body.innerHTML = ''; body.appendChild(h('div', { cls: 'pfn-sub', text: T('Yuklanmoqda...', 'Загрузка...') }));
+      api('/fn/' + id).then(function (f) {
+        body.innerHTML = ''; var inst = loadInst()[id];
+        body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-row' }, h('div', { cls: 'pfn-ic', text: f.icon || '\uD83E\uDDE9' }),
+          h('div', { cls: 'pfn-grow' }, h('div', { cls: 'pfn-nm', text: f.name }), h('div', { cls: 'pfn-sub', text: T('Muallif: ', 'Автор: ') + (f.author || '') + ' \u00B7 ' + f.team }), h('div', { cls: 'pfn-sub', text: T('Versiya: ', 'Версия: ') + (f.ver || '\u2014') + ' \u00B7 ' + fmtSize(f.size) })))));
+        body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Tavsif', 'Описание') }), h('div', { cls: 'pfn-pre', text: f.desc || '\u2014' })));
+        body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Kod belgisi', 'Код функции') }), codeNode(f.code30)));
+        body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Kod ishlatishga urinadigan ruxsatlar', 'Разрешения, которые пытается использовать код') }),
+          h('div', { cls: 'pfn-pre', text: (f.perms && f.perms.length) ? permText(f.perms) + '\n' + T('PLDN hozircha bu ruxsatlarni funksiyaga bermaydi.', 'PLDN пока не предоставляет эти разрешения функциям.') : T('Maxsus ruxsat talab qilmaydi (faqat PLDN.toast va PLDN.store).', 'Особых разрешений не требует (только PLDN.toast и PLDN.store).') })));
+        var vl = (f.versions || []).filter(function (v) { return v.status === 'approved'; });
+        if (vl.length) body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Versiyalar tarixi', 'История версий') }), vl.map(function (v) { return h('div', { css: 'margin-top:6px' }, h('b', { text: 'v' + v.ver + ' ' }), h('span', { cls: 'pfn-sub', text: fmtDate(v.decided) }), h('div', { cls: 'pfn-pre', css: 'font-size:13px', text: String(v.desc || '').slice(0, 300) })); })));
+        var acts = h('div', { css: 'display:flex;flex-direction:column;gap:8px' });
+        if (!inst) acts.appendChild(h('button', { cls: 'pfn-btn', text: T('O\u2018rnatish', 'Установить'), onclick: function () { installFlow(f, draw); } }));
+        else {
+          acts.appendChild(h('button', { cls: 'pfn-btn grn', text: '\u25B6 ' + T('Ochish', 'Открыть'), onclick: function () { launch(id); } }));
+          if (inst.ver !== f.ver) acts.appendChild(h('button', { cls: 'pfn-btn', text: '\uD83D\uDD04 ' + T('Yangilash: v', 'Обновить: v') + f.ver, onclick: function () { installFlow(f, draw, inst); } }));
+          acts.appendChild(h('button', { cls: 'pfn-btn red', text: T('Butunlay o\u2018chirish', 'Удалить полностью'), onclick: function () { instSheet(id); } }));
+        }
+        body.appendChild(acts);
+      }).catch(function (e) { body.innerHTML = ''; body.appendChild(h('div', { cls: 'pfn-sub', text: errMsg(e) })); });
+    }
+    draw(); return { el: sh.el, refresh: draw };
+  }
+  function installFlow(f, done, old) {
+    var txt = T('Muallif: ', 'Автор: ') + (f.author || '') + '\n' + T('Versiya: ', 'Версия: ') + f.ver + '\n' + T('Ruxsatlar: ', 'Разрешения: ') + ((f.perms && f.perms.length) ? permText(f.perms) + T(' (PLDN bermaydi)', ' (PLDN не даёт)') : T('maxsus ruxsat yo\u2018q', 'особых нет')) +
+      (old ? '\n\n' + T('O\u2018zgarishlar:\n', 'Изменения:\n') + String(f.desc || '').slice(0, 1500) : '') + '\n\n' + T('Funksiya alohida himoyalangan muhitda ishlaydi va asosiy ilova ma\u2019lumotlariga kira olmaydi.', 'Функция работает в изолированной среде и не имеет доступа к данным приложения.');
+    confirmBox((old ? T('Yangilash: ', 'Обновить: ') : T('O\u2018rnatish: ', 'Установить: ')) + f.name, txt, old ? T('Yangilash', 'Обновить') : T('O\u2018rnatish', 'Установить')).then(function (ok) {
+      if (!ok) return; toast(T('Yuklanmoqda...', 'Загрузка...'));
+      doInstall(f.id).then(function () { toast(T('Tayyor: «Mening funksiyalarim» bo\u2018limida', 'Готово: раздел «Мои функции»')); done && done(); }).catch(function (e) { toast(errMsg(e)); });
+    });
+  }
+
+  // --- Yaratish bo'limi
+  function tMake(body) {
+    body.appendChild(h('button', { cls: 'pfn-btn', css: 'width:100%;margin-bottom:12px', text: '\uFF0B ' + T('Yangi funksiya yaratish', 'Создать новую функцию'), onclick: function () { push(editorPage({})); } }));
+    var list = h('div', {}); body.appendChild(list); list.appendChild(h('div', { cls: 'pfn-sub', text: T('Yuklanmoqda...', 'Загрузка...') }));
+    api('/mine').then(function (j) {
+      list.innerHTML = ''; markSeen(j.funcs);
+      if (!(j.funcs || []).length) { list.appendChild(h('div', { cls: 'pfn-sub', css: 'text-align:center;padding:30px', text: T('Siz hali funksiya yaratmagansiz', 'Вы ещё не создавали функции') })); return; }
+      j.funcs.forEach(function (f) {
+        var last = f.versions[0];
+        list.appendChild(h('div', { cls: 'pfn-card', onclick: function () { push(managePage(f.id)); } }, h('div', { cls: 'pfn-row' }, h('div', { cls: 'pfn-ic', text: f.icon }),
+          h('div', { cls: 'pfn-grow' }, h('div', { cls: 'pfn-nm', text: f.name }), h('div', { cls: 'pfn-sub', text: f.team + ' \u00B7 ' + (f.vis === 'public' ? T('Ommaviy', 'Публичная') : T('Shaxsiy', 'Личная')) }),
+            last ? h('div', {}, h('span', { cls: 'pfn-sub', text: 'v' + last.ver + ' ' }), statBadge(last.status)) : null))));
+      });
+    }).catch(function (e) { list.innerHTML = ''; list.appendChild(h('div', { cls: 'pfn-sub', text: errMsg(e) })); });
+  }
+  function managePage(id) {
+    var sh = shell(T('Mening funksiyam', 'Моя функция')); var body = sh.body;
+    function draw() {
+      body.innerHTML = ''; body.appendChild(h('div', { cls: 'pfn-sub', text: T('Yuklanmoqda...', 'Загрузка...') }));
+      api('/mine').then(function (j) {
+        var f = (j.funcs || []).filter(function (x) { return x.id === id; })[0]; body.innerHTML = '';
+        if (!f) { body.appendChild(h('div', { cls: 'pfn-sub', text: T('Topilmadi', 'Не найдено') })); return; }
+        body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-row' }, h('div', { cls: 'pfn-ic', text: f.icon }), h('div', { cls: 'pfn-grow' }, h('div', { cls: 'pfn-nm', text: f.name }), h('div', { cls: 'pfn-sub', text: f.team + ' \u00B7 ' + (f.vis === 'public' ? T('Ommaviy', 'Публичная') : T('Shaxsiy', 'Личная')) }))), h('div', { css: 'margin-top:8px' }, codeNode(f.code30))));
+        body.appendChild(h('button', { cls: 'pfn-btn', css: 'width:100%;margin-bottom:10px', text: '\uFF0B ' + T('Yangi versiya', 'Новая версия'), onclick: function () { openEditorFor(f, null); } }));
+        f.versions.forEach(function (v) {
+          var c = h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-row' }, h('div', { cls: 'pfn-grow' }, h('b', { text: 'v' + v.ver + ' ' }), statBadge(v.status), h('div', { cls: 'pfn-sub', text: fmtDate(v.submitted) + ' \u00B7 ' + fmtSize(v.size) + ' \u00B7 ' + v.lines + ' ' + T('qator', 'строк') }))));
+          if (v.reason) c.appendChild(h('div', { cls: 'pfn-pre', css: 'margin-top:6px;color:#e53935', text: T('Sabab: ', 'Причина: ') + v.reason }));
+          var row = h('div', { css: 'display:flex;gap:8px;margin-top:8px;flex-wrap:wrap' });
+          if (v.status === 'returned' || v.status === 'rejected') row.appendChild(h('button', { cls: 'pfn-btn', text: '\u270F\uFE0F ' + T('Tuzatish', 'Исправить'), onclick: function () { openEditorFor(f, v.ver); } }));
+          if (v.status !== 'approved') row.appendChild(h('button', { cls: 'pfn-btn sec', text: T('Qaytarib olish', 'Отозвать'), onclick: function () { confirmBox(T('Versiya o\u2018chirilsinmi?', 'Удалить версию?'), 'v' + v.ver, T('O\u2018chirish', 'Удалить'), 'red').then(function (ok) { if (ok) api('/withdraw', { method: 'POST', body: { fid: f.id, ver: v.ver } }).then(draw).catch(function (e) { toast(errMsg(e)); }); }); } }));
+          if (row.childNodes.length) c.appendChild(row); body.appendChild(c);
+        });
+        body.appendChild(h('button', { cls: 'pfn-btn red', css: 'width:100%;margin-top:6px', text: '\uD83D\uDDD1 ' + T('Funksiyani kutubxonadan olib tashlash', 'Убрать функцию из библиотеки'), onclick: function () {
+          confirmBox(T('Olib tashlansinmi?', 'Убрать?'), T('Yangi o\u2018rnatishlar to\u2018xtaydi. Allaqachon o\u2018rnatganlarda funksiya yangilanishsiz qoladi.', 'Новые установки прекратятся. У установивших функция останется без обновлений.'), T('Olib tashlash', 'Убрать'), 'red').then(function (ok) { if (ok) api('/remove', { method: 'POST', body: { fid: f.id } }).then(function () { pop(); }).catch(function (e) { toast(errMsg(e)); }); });
+        } }));
+      }).catch(function (e) { body.innerHTML = ''; body.appendChild(h('div', { cls: 'pfn-sub', text: errMsg(e) })); });
+    }
+    draw(); return { el: sh.el, refresh: draw };
+  }
+  async function openEditorFor(f, ver) {
+    try {
+      var d = await api('/fn/' + f.id), vs = d.versions || [];
+      var use = ver ? vs.filter(function (v) { return v.ver === ver; })[0] : (vs.filter(function (v) { return v.status === 'approved'; })[0] || vs[0]);
+      var cd = use ? await api('/fn/' + f.id + '/code?ver=' + encodeURIComponent(use.ver), { timeout: 120000 }) : { code: '' };
+      push(editorPage({ fid: f.id, team: f.team, name: f.name, icon: f.icon, vis: f.vis, place: f.place, code30: f.code30, ver: ver || '', desc: use ? use.desc : '', code: cd.code || '' }));
+    } catch (e) { toast(errMsg(e)); }
+  }
+
+  // ---------- muharrir (rasmdagi shakl) ----------
+  function connector(wt, wb, hg) {
+    var a = 50 - wt / 2, b = 50 + wt / 2, c = 50 - wb / 2, d = 50 + wb / 2;
+    return h('div', { html: '<svg viewBox="0 0 100 ' + hg + '" preserveAspectRatio="none" style="width:100%;height:' + hg + 'px;display:block"><line x1="' + a + '" y1="0" x2="' + c + '" y2="' + hg + '" stroke="#4a4a4a" stroke-width="2" vector-effect="non-scaling-stroke"/><line x1="' + b + '" y1="0" x2="' + d + '" y2="' + hg + '" stroke="#4a4a4a" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>' });
+  }
+  function editorPage(init) {
+    var locked = !!init.fid;
+    var F = { fid: init.fid || 0, team: init.team || '', name: init.name || '', ver: init.ver || '', desc: init.desc || '', code: init.code || '', icon: init.icon || '\uD83E\uDDE9', vis: init.vis || 'private', place: init.place || 'funcs', test: null };
+    if (!locked || !init.code) { var dr = loadDraft(F.fid); if (dr && (dr.code || dr.team || dr.name)) { ['team', 'name', 'ver', 'desc', 'code', 'icon', 'vis', 'place'].forEach(function (k) { if (dr[k] != null && !(locked && (k === 'team' || k === 'name'))) F[k] = dr[k]; }); setTimeout(function () { toast(T('Qoralama tiklandi', 'Черновик восстановлен')); }, 300); } }
+    var sh = shell(locked ? T('Yangi versiya', 'Новая версия') : T('Yangi funksiya', 'Новая функция')); var body = sh.body;
+    var timer = null; function dirty() { F.test = null; setTestInfo(); clearTimeout(timer); timer = setTimeout(function () { saveDraft(F); }, 800); }
+
+    var iTeam = h('input', { placeholder: T('Jamoa nomi (5–21: harf, son, _ -)', 'Название команды (5–21: буквы, цифры, _ -)'), maxlength: '21', value: F.team, autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' });
+    var iName = h('input', { placeholder: T('Funksiya nomi', 'Название функции'), maxlength: '40', value: F.name });
+    var iVer = h('input', { placeholder: T('Versiya', 'Версия'), maxlength: '12', value: F.ver, autocapitalize: 'off' });
+    var tDesc = h('textarea', { rows: '5', maxlength: '20000', placeholder: T('Funksiya haqida qisqa tavsif (20000 belgigacha). Yangilanishda bu matn «nima o\u2018zgardi» sifatida ko\u2018rsatiladi.', 'Краткое описание (до 20000 символов). При обновлении показывается как «что изменилось».') }); tDesc.value = F.desc;
+    var tCode = h('textarea', { cls: 'code', placeholder: T('Kodni shu yerga yozing yoki joylang (HTML, CSS, JavaScript)', 'Напишите или вставьте код (HTML, CSS, JavaScript)'), spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off', wrap: 'off' }); tCode.value = F.code;
+    if (locked) { iTeam.readOnly = true; iName.readOnly = true; }
+    var cDesc = h('div', { cls: 'pfn-cnt' }), cCode = h('div', { cls: 'pfn-cnt' });
+    function counts() { cDesc.textContent = F.desc.length + ' / 20000'; cCode.textContent = F.code.length.toLocaleString() + ' ' + T('belgi', 'симв.') + ' \u00B7 ' + (F.code ? F.code.split('\n').length : 0) + ' ' + T('qator', 'строк') + ' \u00B7 ' + fmtSize(new Blob([F.code]).size); }
+    function chk() { iTeam.className = (F.team && !/^[A-Za-z0-9_-]{5,21}$/.test(F.team)) ? 'bad' : ''; iVer.className = (F.ver && !/^[A-Za-z0-9]{1,12}$/.test(F.ver)) ? 'bad' : ''; iName.className = (F.name && !/^[\p{L}\p{N}][\p{L}\p{N} ]{1,39}$/u.test(F.name.trim())) ? 'bad' : ''; }
+    iTeam.addEventListener('input', function () { F.team = iTeam.value; chk(); dirty(); });
+    iName.addEventListener('input', function () { F.name = iName.value; chk(); dirty(); });
+    iVer.addEventListener('input', function () { F.ver = iVer.value; chk(); dirty(); });
+    tDesc.addEventListener('input', function () { F.desc = tDesc.value; counts(); dirty(); });
+    var ct = null; tCode.addEventListener('input', function () { F.code = tCode.value; clearTimeout(ct); ct = setTimeout(counts, 300); dirty(); });
+    // rasmdagi 5 ta blok
+    body.appendChild(h('div', { cls: 'pfn-blk', css: 'width:100%;min-height:64px' }, h('label', { text: T('1 · Jamoa nomi', '1 · Название команды') }), iTeam));
+    body.appendChild(connector(100, 88, 18));
+    body.appendChild(h('div', { cls: 'pfn-blk', css: 'width:88%' }, h('label', { text: T('2 · Funksiya kodi (30 belgi) — serverdan', '2 · Код функции (30 фигур) — от сервера') }), codeNode(init.code30)));
+    body.appendChild(connector(88, 67, 20));
+    body.appendChild(h('div', { cls: 'pfn-blk', css: 'width:67%' }, h('label', { text: T('3 · Nomi va versiya', '3 · Название и версия') }), h('div', { css: 'display:flex;gap:6px' }, h('div', { css: 'flex:2;min-width:0' }, iName), h('div', { css: 'flex:1;min-width:0' }, iVer))));
+    body.appendChild(connector(67, 99, 18));
+    body.appendChild(h('div', { cls: 'pfn-blk', css: 'width:99%' }, h('label', { text: T('4 · Qisqa tavsif', '4 · Краткое описание') }), tDesc, cDesc));
+    body.appendChild(h('div', { css: 'height:12px' }));
+    var fontPx = 13;
+    function fs(d) { fontPx = Math.max(10, Math.min(22, fontPx + d)); tCode.style.fontSize = fontPx + 'px'; }
+    var fileIn = h('input', { type: 'file', accept: '.html,.htm,.js,.css,.txt,text/*', css: 'display:none', onchange: function () {
+      var f = fileIn.files && fileIn.files[0]; fileIn.value = ''; if (!f) return;
+      var rd = new FileReader(); rd.onload = function () { tCode.value = F.code = String(rd.result || ''); counts(); dirty(); toast(T('Fayl yuklandi: ', 'Файл загружен: ') + f.name); }; rd.onerror = function () { toast(T('Faylni o\u2018qib bo\u2018lmadi', 'Не удалось прочитать файл')); }; rd.readAsText(f);
+    } });
+    body.appendChild(h('div', { cls: 'pfn-blk', css: 'width:98%' }, h('label', { text: T('5 · Kod (cheklovsiz)', '5 · Код (без ограничений)') }),
+      h('div', { css: 'display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap' },
+        h('button', { cls: 'pfn-btn sec', css: 'padding:6px 10px;font-size:13px;color:#fff;border-color:#fff', text: '\uD83D\uDCC2 ' + T('Fayl', 'Файл'), onclick: function () { fileIn.click(); } }),
+        h('button', { cls: 'pfn-btn sec', css: 'padding:6px 10px;font-size:13px;color:#fff;border-color:#fff', text: '\uD83D\uDCCB ' + T('Joylash', 'Вставить'), onclick: function () {
+          if (navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(function (t) { if (t) { tCode.value = F.code = t; counts(); dirty(); } }).catch(function () { toast(T('Maydonni bosib, qo\u2018lda joylang', 'Вставьте вручную, нажав на поле')); });
+          else toast(T('Maydonni bosib, qo\u2018lda joylang', 'Вставьте вручную, нажав на поле')); } }),
+        h('button', { cls: 'pfn-btn sec', css: 'padding:6px 10px;font-size:13px;color:#fff;border-color:#fff', text: 'A\u2212', onclick: function () { fs(-1); } }),
+        h('button', { cls: 'pfn-btn sec', css: 'padding:6px 10px;font-size:13px;color:#fff;border-color:#fff', text: 'A+', onclick: function () { fs(1); } }),
+        h('button', { cls: 'pfn-btn sec', css: 'padding:6px 10px;font-size:13px;color:#fff;border-color:#fff', text: '\u2715', onclick: function () { confirmBox(T('Kod tozalansinmi?', 'Очистить код?'), '', T('Tozalash', 'Очистить'), 'red').then(function (ok) { if (ok) { tCode.value = F.code = ''; counts(); dirty(); } }); } })),
+      tCode, cCode, fileIn));
+    // qo'shimcha sozlamalar
+    var iIcon = h('input', { cls: 'pfn-inp', maxlength: '4', value: F.icon, css: 'width:70px;text-align:center;font-size:22px', oninput: function () { F.icon = iIcon.value || '\uD83E\uDDE9'; dirty(); } });
+    function chipRow(opts, key) {
+      var row = h('div', {}); function paint() { row.innerHTML = ''; opts.forEach(function (o) { row.appendChild(h('span', { cls: 'pfn-chip' + (F[key] === o[0] ? ' on' : ''), text: o[1], onclick: function () { F[key] = o[0]; paint(); dirty(); } })); }); } paint(); return row;
+    }
+    body.appendChild(h('div', { cls: 'pfn-card', css: 'margin-top:14px' },
+      h('div', { cls: 'pfn-sub', text: T('Belgi (emoji)', 'Значок (эмодзи)') }), iIcon,
+      h('div', { cls: 'pfn-sub', css: 'margin-top:10px', text: T('Foydalanish huquqi (administrator ham tekshiradi)', 'Доступ (администратор тоже проверяет)') }), chipRow([['private', T('Shaxsiy', 'Личная')], ['public', T('Ommaviy', 'Публичная')]], 'vis'),
+      h('div', { cls: 'pfn-sub', css: 'margin-top:6px', text: T('Joylashuv', 'Расположение') }), chipRow([['funcs', T('Funksiyalar bo\u2018limi', 'Раздел функций')], ['settings', T('Sozlamalar', 'Настройки')]], 'place')));
+    var info = h('div', { cls: 'pfn-sub', css: 'margin:4px 2px 8px' });
+    function setTestInfo() { info.textContent = F.test ? '\u2705 ' + T('Sinov o\u2018tdi (', 'Тест пройден (') + (F.test.ms / 1000).toFixed(1) + T(' s, xato yo\u2018q)', ' с, без ошибок)') : '\u26A0\uFE0F ' + T('Yuborishdan oldin Test Mode\u2019da sinash kerak', 'Перед отправкой нужно проверить в Test Mode'); }
+    var bTest = h('button', { cls: 'pfn-btn grn', text: '\u25B6 ' + T('Test Mode', 'Test Mode'), onclick: function () {
+      if (!F.code.trim()) { toast(T('Avval kod kiriting', 'Сначала введите код')); return; }
+      runSandbox({ title: F.name || T('Funksiya', 'Функция'), code: F.code, test: true, onEnd: function (r) {
+        if (r.ok && r.hash) { F.test = { ok: true, ms: r.ms, errors: 0, hash: r.hash }; toast(T('Sinov muvaffaqiyatli', 'Тест успешен')); }
+        else { F.test = null; toast(r.errors ? T('Sinovda xatolar: ' + r.errors + ' ta', 'Ошибки в тесте: ' + r.errors) : T('Sinov yetarli emas (kamida 3 soniya)', 'Тест слишком короткий (минимум 3 секунды)')); }
+        setTestInfo();
+      } });
+    } });
+    var bSend = h('button', { cls: 'pfn-btn', text: '\uD83D\uDCE4 ' + T('Adminga yuborish', 'Отправить администратору'), onclick: submit });
+    var busy = false;
+    async function submit() {
+      if (busy) return;
+      var nm = F.name.replace(/\s+/g, ' ').trim();
+      if (!/^[A-Za-z0-9_-]{5,21}$/.test(F.team)) return toast(errMsg({ code: 'bad_team' }));
+      if (!/^[\p{L}\p{N}][\p{L}\p{N} ]{1,39}$/u.test(nm)) return toast(errMsg({ code: 'bad_name' }));
+      if (!/^[A-Za-z0-9]{1,12}$/.test(F.ver)) return toast(errMsg({ code: 'bad_ver' }));
+      if (!F.desc.trim()) return toast(errMsg({ code: 'bad_desc' }));
+      if (!F.code.trim()) return toast(errMsg({ code: 'no_code' }));
+      if (!F.test) return toast(errMsg({ code: 'test_required' }));
+      var hs; try { hs = await sha256hex(F.code); } catch (_) { return toast(T('Brauzer SHA-256 ni qo\u2018llamaydi', 'Браузер не поддерживает SHA-256')); }
+      if (hs !== F.test.hash) { F.test = null; setTestInfo(); return toast(errMsg({ code: 'test_required' })); }
+      var ok = await confirmBox(T('Adminga yuborilsinmi?', 'Отправить администратору?'), (F.vis === 'public' ? T('Ommaviy funksiya tasdiqlangach kutubxonada paydo bo\u2018ladi.', 'Публичная функция появится в библиотеке после одобрения.') : T('Shaxsiy funksiya faqat o\u2018zingizda ishlaydi.', 'Личная функция будет доступна только вам.')) + '\n' + T('Tasdiqlanmaguncha ishlatib bo\u2018lmaydi.', 'До одобрения использовать нельзя.'), T('Yuborish', 'Отправить'));
+      if (!ok) return;
+      busy = true; bSend.disabled = true; bSend.textContent = T('Yuborilmoqda...', 'Отправка...');
+      try {
+        var res = await api('/submit', { method: 'POST', timeout: 180000, body: { fid: F.fid || undefined, team: F.team, name: nm, ver: F.ver, desc: F.desc, code: F.code, icon: F.icon, vis: F.vis, place: F.place, test: { ok: true, ms: F.test.ms, errors: 0, hash: hs } } });
+        clearDraft(F.fid); toast(T('Yuborildi: administrator tekshiradi', 'Отправлено: администратор проверит')); pop();
+      } catch (e) {
+        if (e.code === 'scan_block' && e.data && e.data.findings) modal(T('Avtomatik tekshiruv rad etdi', 'Автопроверка отклонила'), e.data.findings.map(function (f) { return T('Qator ', 'Строка ') + f.line + ': ' + f.msg; }).join('\n'), [{ label: 'OK' }]);
+        else toast(errMsg(e));
+        busy = false; bSend.disabled = false; bSend.textContent = '\uD83D\uDCE4 ' + T('Adminga yuborish', 'Отправить администратору');
+      }
+    }
+    body.appendChild(info); body.appendChild(h('div', { css: 'display:flex;flex-direction:column;gap:8px' }, bTest, bSend));
+    body.appendChild(h('div', { cls: 'pfn-sub', css: 'margin-top:12px', text: T('Qoralama avtomatik saqlanadi. Funksiya PLDN.toast(matn) va PLDN.store.get/set/del(kalit) dan foydalanishi mumkin; tarmoq, kamera, mikrofon va joylashuv hozircha yo\u2018q.', 'Черновик сохраняется автоматически. Доступны PLDN.toast(текст) и PLDN.store.get/set/del(ключ); сеть, камера, микрофон и геолокация пока недоступны.') }));
+    counts(); chk(); setTestInfo();
+    return { el: sh.el };
+  }
+
+  // ---------- administrator: tekshiruv ----------
+  function tReview(body) {
+    var list = h('div', {}); body.appendChild(list); list.appendChild(h('div', { cls: 'pfn-sub', text: T('Yuklanmoqda...', 'Загрузка...') }));
+    api('/admin/pending').then(function (j) {
+      list.innerHTML = '';
+      if (!(j.items || []).length) { list.appendChild(h('div', { cls: 'pfn-sub', css: 'text-align:center;padding:30px', text: T('Tekshiruvga funksiya yo\u2018q', 'Нет функций на проверке') })); return; }
+      j.items.forEach(function (it) {
+        var hard = (it.scan.findings || []).filter(function (f) { return !f.hard; }).length;
+        list.appendChild(h('div', { cls: 'pfn-card', onclick: function () { push(reviewPage(it)); } }, h('div', { cls: 'pfn-row' }, h('div', { cls: 'pfn-ic', text: it.icon }),
+          h('div', { cls: 'pfn-grow' }, h('div', { cls: 'pfn-nm', text: it.name + ' \u00B7 v' + it.ver }), h('div', { cls: 'pfn-sub', text: it.team + ' \u00B7 ' + (it.author || '') + ' \u00B7 ' + fmtDate(it.submitted) }),
+            h('div', {}, h('span', { cls: 'pfn-badge', text: fmtSize(it.size) }), hard ? h('span', { cls: 'pfn-badge warn', text: '\u26A0\uFE0F ' + hard }) : h('span', { cls: 'pfn-badge ok', text: T('Toza', 'Чисто') }), h('span', { cls: 'pfn-badge', text: it.vis === 'public' ? T('Ommaviy', 'Публичная') : T('Shaxsiy', 'Личная') }))))));
+      });
+    }).catch(function (e) { list.innerHTML = ''; list.appendChild(h('div', { cls: 'pfn-sub', text: errMsg(e) })); });
+  }
+  function reviewPage(it) {
+    var sh = shell(T('Funksiyani tekshirish', 'Проверка функции')); var body = sh.body; var vis = it.vis;
+    body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-row' }, h('div', { cls: 'pfn-ic', text: it.icon }), h('div', { cls: 'pfn-grow' }, h('div', { cls: 'pfn-nm', text: it.name + ' \u00B7 v' + it.ver }),
+      h('div', { cls: 'pfn-sub', text: T('Muallif: ', 'Автор: ') + (it.author || '') + ' \u00B7 ' + it.team }), h('div', { cls: 'pfn-sub', text: T('Yaratilgan: ', 'Создано: ') + fmtDate(it.submitted) + ' \u00B7 ' + fmtSize(it.size) + ' \u00B7 ' + it.lines + ' ' + T('qator', 'строк') })))));
+    body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Tavsif', 'Описание') }), h('div', { cls: 'pfn-pre', text: it.desc || '' })));
+    body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Sinov natijasi (muallif telefonidan, ishonchli emas)', 'Результат теста (с телефона автора, не доверенный)') }), h('div', { cls: 'pfn-pre', text: it.test && it.test.ok ? '\u2705 ' + (it.test.ms / 1000).toFixed(1) + ' s, ' + T('xato yo\u2018q', 'без ошибок') : '\u2014' })));
+    var fl = it.scan.findings || [];
+    body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Avtomatik tekshiruv', 'Автопроверка') }),
+      h('div', { cls: 'pfn-pre', text: fl.length ? fl.map(function (f) { return '\u26A0\uFE0F ' + T('qator ', 'строка ') + f.line + ': ' + f.msg; }).join('\n') : '\u2705 ' + T('Shubhali naqsh topilmadi', 'Подозрительных шаблонов нет') }),
+      h('div', { cls: 'pfn-sub', css: 'margin-top:8px', text: T('Talab qiladigan ruxsatlar: ', 'Запрашиваемые разрешения: ') + ((it.scan.perms || []).length ? permText(it.scan.perms) : T('yo\u2018q', 'нет')) })));
+    var vbox = h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Foydalanish huquqi (siz o\u2018zgartira olasiz)', 'Доступ (вы можете изменить)') }));
+    var vrow = h('div', {}); function pv() { vrow.innerHTML = ''; [['private', T('Shaxsiy', 'Личная')], ['public', T('Ommaviy', 'Публичная')]].forEach(function (o) { vrow.appendChild(h('span', { cls: 'pfn-chip' + (vis === o[0] ? ' on' : ''), text: o[1], onclick: function () { vis = o[0]; pv(); } })); }); } pv(); vbox.appendChild(vrow); body.appendChild(vbox);
+    var codeCard = h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Kod', 'Код') })); var pre = h('div', { cls: 'pfn-mono', css: 'max-height:380px' }); var more = h('button', { cls: 'pfn-btn sec', css: 'margin-top:8px', text: T('Yana yuklash', 'Загрузить ещё') });
+    var pos = 0, total = 0;
+    function loadCode() { more.disabled = true; api('/admin/code?fid=' + it.id + '&ver=' + encodeURIComponent(it.ver) + '&from=' + pos).then(function (j) { pre.textContent += j.code; pos += j.code.length; total = j.total; more.disabled = false; more.style.display = pos < total ? '' : 'none'; more.textContent = T('Yana yuklash', 'Загрузить ещё') + ' (' + pos + '/' + total + ')'; }).catch(function (e) { toast(errMsg(e)); more.disabled = false; }); }
+    more.addEventListener('click', loadCode); codeCard.appendChild(pre); codeCard.appendChild(more); body.appendChild(codeCard); loadCode();
+    function decide(decision) {
+      var go = function (reason) { api('/admin/decide', { method: 'POST', body: { fid: it.id, ver: it.ver, decision: decision, reason: reason, vis: vis } }).then(function (j) {
+        toast(decision === 'approve' ? T('Tasdiqlandi. Kod berildi', 'Одобрено. Код выдан') : T('Qaror yuborildi', 'Решение отправлено')); pop();
+        var t = stack[stack.length - 1]; if (t && t.refresh) t.refresh();
+      }).catch(function (e) { toast(errMsg(e)); }); };
+      if (decision === 'approve') confirmBox(T('Tasdiqlansinmi?', 'Одобрить?'), T('Server 30 shaklli noyob kod beradi. Huquq: ', 'Сервер выдаст уникальный код из 30 фигур. Доступ: ') + (vis === 'public' ? T('Ommaviy', 'Публичная') : T('Shaxsiy', 'Личная')), T('Tasdiqlash', 'Одобрить'), 'grn').then(function (ok) { if (ok) go(''); });
+      else askText(decision === 'reject' ? T('Rad etish sababi', 'Причина отказа') : T('Nimani tuzatish kerak?', 'Что исправить?'), '').then(function (t) { if (t != null) go(t); });
+    }
+    body.appendChild(h('div', { css: 'display:flex;flex-direction:column;gap:8px;margin-top:6px' },
+      h('button', { cls: 'pfn-btn sec', text: '\u25B6 ' + T('Sandboxda sinab ko\u2018rish', 'Запустить в песочнице'), onclick: function () {
+        api('/fn/' + it.id + '/code?ver=' + encodeURIComponent(it.ver), { timeout: 120000 }).then(function (c) { runSandbox({ title: it.name, code: c.code, test: true, onEnd: function () {} }); }).catch(function (e) { toast(errMsg(e)); }); } }),
+      h('button', { cls: 'pfn-btn grn', text: '\u2705 ' + T('TASDIQLASH', 'ОДОБРИТЬ'), onclick: function () { decide('approve'); } }),
+      h('button', { cls: 'pfn-btn red', text: '\u274C ' + T('RAD ETISH', 'ОТКЛОНИТЬ'), onclick: function () { decide('reject'); } }),
+      h('button', { cls: 'pfn-btn', css: 'background:#f9a825', text: '\u21A9\uFE0F ' + T('TUZATISHGA QAYTARISH', 'ВЕРНУТЬ НА ДОРАБОТКУ'), onclick: function () { decide('return'); } })));
+    return { el: sh.el };
+  }
+
+  // ---------- Android "orqaga" ----------
+  var prevBack = window.pldnBack;
+  window.pldnBack = function () {
+    if (modals.length) { modals[modals.length - 1].close(); return true; }
+    if (run) { closeRun(); return true; }
+    if (root && root.style.display !== 'none') { pop(); return true; }
+    return prevBack ? prevBack.apply(this, arguments) : false;
+  };
+
+  // ---------- kod orqali (30 shakl) qo'shish uchun ----------
+  window.PLDNFuncs = {
+    version: 'userfuncs-1.0',
+    open: openRoot,
+    launch: launch,
+    byCode: async function (key) {
+      var j;
+      try { j = await api('/bycode/' + key); } catch (e) { if (e.code === 'not_found' || e.code === 'http') return null; if (e.code === 'net') e.message = 'offline'; throw e; }
+      var rec = await doInstall(j.id); return { name: rec.name };
+    }
+  };
+
+  // ---------- ishga tushirish ----------
+  function init() {
+    var row = document.getElementById('pldnFuncsRow');
+    if (row) row.addEventListener('click', openRoot);
+    refreshBadge();
+    var tries = 0, iv = setInterval(function () {
+      tries++; var a = null; try { a = firebase.auth(); } catch (_) {}
+      if (a) {
+        clearInterval(iv);
+        a.onAuthStateChanged(function (u) { if (u) { checkCrash(); renderQuick(); refreshBadge(); setTimeout(function () { syncInstalled(); syncMine(); }, 4000); } else { closeRun(); closeRoot(); renderQuick(); } });
+      } else if (tries > 100) clearInterval(iv);
+    }, 300);
+    setInterval(function () { if (me() && !document.hidden) { syncInstalled(); syncMine(); } }, 300000);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
 </script>
 </body>
