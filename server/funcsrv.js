@@ -1,4 +1,4 @@
-// PLDN-FAYL: funcsrv.js | versiya: funcs-1.0 | satr: 350 | 8-noy-2026
+// PLDN-FAYL: funcsrv.js | versiya: funcs-1.1 | satr: 350 | 8-noy-2026
 // PLDN×RSLT — foydalanuvchi funksiyalari xizmati (port 3011, pm2 nomi: funcs)
 // Foydalanuvchi kodi serverda HECH QACHON bajarilmaydi: faqat saqlanadi, tahlil qilinadi va telefonga beriladi.
 'use strict';
@@ -7,7 +7,7 @@ const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
 const Database = require('better-sqlite3');
-const admin = require('firebase-admin');
+const admin = (function () { const A = require('firebase-admin/app'), F = require('firebase-admin/firestore'), U = require('firebase-admin/auth'); return { initializeApp: A.initializeApp, credential: { cert: A.cert }, firestore: F.getFirestore, auth: U.getAuth }; })();
 
 const PORT = Number(process.env.FUNCS_PORT || 3011);
 const DATA = path.join(__dirname, 'data');
