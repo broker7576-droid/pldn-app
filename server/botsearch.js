@@ -1,4 +1,4 @@
-// VERSION: search-v4 (v3 + /chat: Qwen LLM suhbati, /ai buyrug'i) | satr: 374
+// VERSION: search-v5 (v4 + /chat/stream: LLM javobi oqim bilan, so'z chegarasi kengaytirildi) | satr: 421
 process.umask(0o077);
 const express=require('express');
 const fs=require('fs');
@@ -241,7 +241,8 @@ catch(e){res.status(401).json({error:'Kirish tasdiqlanmadi'});}
 
 // ---------- LLM (llama.cpp) — faqat shu serverning ichida, tashqariga ochilmaydi ----------
 const LLM_URL=process.env.LLM_URL||'http://127.0.0.1:8080';
-const SYS_UZ="Sen PLDN robotisan. Do'stona, samimiy va qisqa (1-2 gap) gapir. Faqat oddiy o'zbek tilida javob ber, murakkab so'z ishlatma. Ba'zan yengil hazil qil. Bilmasang, o'ylab topma: \"Bilmayman\" de.";
+const MAXTOK=parseInt(process.env.LLM_MAXTOK,10)||250; // bir javobning yuqori chegarasi (token); ~100 so'z
+const SYS_UZ="Sen PLDN robotisan. Do'stona va samimiy gapir. Odatda qisqa (1-2 gap) javob ber, lekin foydalanuvchi batafsil so'rasa, to'liq tushuntir. Faqat oddiy o'zbek tilida javob ber, murakkab so'z ishlatma. Ba'zan yengil hazil qil. Bilmasang, o'ylab topma: \"Bilmayman\" de.";
 const FEW=[
 {role:'user',content:'Salom'},{role:'assistant',content:'Salom! Qalaysan, bugun nima yangilik?'},
 {role:'user',content:"Kayfiyatim yo'q"},{role:'assistant',content:"Voy, nima bo'ldi? Xohlasang gaplashib ber, yoki yoqimli narsa haqida gaplashamiz."},
@@ -280,7 +281,7 @@ async function callLLM(messages){
 const ctl=new AbortController();
 const tm=setTimeout(()=>ctl.abort(),150000);
 try{
-const r=await fetch(LLM_URL+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},signal:ctl.signal,body:JSON.stringify({messages,max_tokens:90,temperature:0.5,top_p:0.9,repeat_penalty:1.1,chat_template_kwargs:{enable_thinking:false}})});
+const r=await fetch(LLM_URL+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},signal:ctl.signal,body:JSON.stringify({messages,max_tokens:MAXTOK,temperature:0.5,top_p:0.9,repeat_penalty:1.1,chat_template_kwargs:{enable_thinking:false}})});
 if(!r.ok)throw new Error('llm http '+r.status);
 const j=await r.json();
 const c=j.choices&&j.choices[0];
@@ -289,12 +290,32 @@ return tidy(c&&c.message&&c.message.content,c&&c.finish_reason);
 }
 // protsessor kam: so'rovlar navbat bilan bajariladi, 3 tadan ortig'i "band" deb qaytariladi
 let llmChain=Promise.resolve(),llmWait=0;
-function askLLM(messages){
+function llmQueue(fn){
 if(llmWait>=3){const e=new Error('band');e.busy=true;return Promise.reject(e);}
 llmWait++;
-const p=llmChain.then(()=>callLLM(messages)).finally(()=>{llmWait--;});
+const p=llmChain.then(fn).finally(()=>{llmWait--;});
 llmChain=p.catch(()=>{});
 return p;
+}
+function askLLM(messages){return llmQueue(()=>callLLM(messages));}
+// oqim: llama.cpp'dan kelgan har bir bo'lakni onDelta ga beradi, tugagach finish_reason qaytaradi
+async function streamLLM(messages,onDelta,signal){
+const r=await fetch(LLM_URL+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},signal,body:JSON.stringify({messages,max_tokens:MAXTOK,temperature:0.5,top_p:0.9,repeat_penalty:1.1,stream:true,chat_template_kwargs:{enable_thinking:false}})});
+if(!r.ok)throw new Error('llm http '+r.status);
+const dec=new TextDecoder();
+let buf='',fin='';
+for await(const chunk of r.body){
+buf+=dec.decode(chunk,{stream:true});
+let i;
+while((i=buf.indexOf('\n'))>=0){
+const line=buf.slice(0,i).trim();buf=buf.slice(i+1);
+if(line.indexOf('data:')!==0)continue;
+const d=line.slice(5).trim();
+if(d==='[DONE]')return fin;
+try{const j=JSON.parse(d);const c=j.choices&&j.choices[0];if(c&&c.delta&&c.delta.content)onDelta(c.delta.content);if(c&&c.finish_reason)fin=c.finish_reason;}catch(e){}
+}
+}
+return fin;
 }
 
 // ---------- HTTP ----------
@@ -355,6 +376,32 @@ res.status(503).json({error:'Robot hozir javob bera olmadi. Keyinroq urinib ko�
 }
 });
 
+app.post('/chat/stream',auth,async(req,res)=>{
+if(limited(req.uid,'ai',8,600000))return res.status(429).json({error:'Robot bilan juda tez-tez gaplashyapsiz. Biroz kuting.'});
+const text=clean((req.body||{}).text,500);
+if(!text)return res.status(400).json({error:'Matn bo‘sh'});
+if(llmWait>=3)return res.status(503).json({error:'Robot hozir band, biroz keyin yozing.'});
+res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});
+const send=o=>{try{res.write('data: '+JSON.stringify(o)+'\n\n');}catch(e){}};
+const ctl=new AbortController();
+res.on('close',()=>ctl.abort());
+const tmo=setTimeout(()=>ctl.abort(),240000);
+let full='',fin='';
+try{
+const messages=await buildMessages(req.uid,text);
+await llmQueue(async()=>{
+if(ctl.signal.aborted)return;
+fin=await streamLLM(messages,d=>{full+=d;send({d});},ctl.signal);
+});
+if(full)send({done:true,text:tidy(full,fin)});
+else send({error:'Robot hozir javob bera olmadi. Keyinroq urinib ko‘ring.'});
+}catch(e){
+console.error('chat/stream',e.message);
+if(full)send({done:true,text:tidy(full,'length')});
+else send({error:e.busy?'Robot hozir band, biroz keyin yozing.':'Robot hozir javob bera olmadi. Keyinroq urinib ko‘ring.'});
+}finally{clearTimeout(tmo);try{res.end();}catch(e){}}
+});
+
 app.get('/hist',auth,(req,res)=>{
 const limit=Math.min(Math.max(parseInt(req.query.limit,10)||40,1),100);
 const before=parseInt(req.query.before,10)||0;
@@ -369,6 +416,6 @@ try{for(const it of items)addMsg(req.uid,it&&it.who,it&&it.t);res.json({ok:true}
 catch(e){console.error('hist yozish',e.message);res.status(500).json({error:'Server xatosi'});}
 });
 
-app.listen(3001,'127.0.0.1',()=>console.log('3001-portda qidiruv (v4, LLM: '+LLM_URL+')'));
+app.listen(3001,'127.0.0.1',()=>console.log('3001-portda qidiruv (v5, LLM: '+LLM_URL+')'));
 // END
                                                                                                                   
