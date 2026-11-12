@@ -1,5 +1,5 @@
-<!-- VERSION: 256 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: userfuncs-1.0 | satr: 23432 | 8-noy-2026 -->
+<!-- VERSION: 255 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: bot-llm-1.0 | satr: 23454 | 12-noy-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -17382,7 +17382,7 @@ async function fbOpenChat(info, ensure) {
 })();
 </script>
 <script>
-// ===== PLDN BOT — 2-BOSQICH ===== VERSION: bot-v4 (serverda shifrlangan tarix, xotira, eslatmalar)
+// ===== PLDN BOT — 2-BOSQICH ===== VERSION: bot-v5 (serverda shifrlangan tarix, xotira, eslatmalar + Qwen LLM suhbati: /chat, /ai)
 // Bilimlar bazasi asosidagi bot (tashqi AI yo'q). Bot kodi ma'lumotni FAQAT BotStore orqali oladi:
 // keyinroq boshqa bulutli xotiraga o'tish uchun faqat BotStore ichini almashtirish kifoya.
 (function () {
@@ -17404,7 +17404,7 @@ async function fbOpenChat(info, ensure) {
         if (!u) throw new Error('Kirish kerak');
         var tk = await u.getIdToken();
         var ctl = new AbortController();
-        var tm = setTimeout(function () { ctl.abort(); }, 8000);
+        var tm = setTimeout(function () { ctl.abort(); }, (opt && opt.timeout) || 8000);
         try {
           opt = opt || {};
           var h = { Authorization: 'Bearer ' + tk };
@@ -17417,6 +17417,7 @@ async function fbOpenChat(info, ensure) {
       },
       search: function (q) { return this.call('/search?q=' + encodeURIComponent(q)); },
       cmd: function (text) { return this.call('/cmd', { method: 'POST', body: JSON.stringify({ text: text, lang: lang(), tz: -new Date().getTimezoneOffset() }) }); },
+      chat: function (text) { return this.call('/chat', { method: 'POST', body: JSON.stringify({ text: text, lang: lang() }), timeout: 160000 }); },
       hist: function (limit) { return this.call('/hist?limit=' + (limit || 40)); },
       saveHist: function (items) { return this.call('/hist', { method: 'POST', body: JSON.stringify({ items: items }) }); },
       teach: function (q, t, lg) { return this.call('/teach', { method: 'POST', body: JSON.stringify({ q: q, t: t, lang: lg }) }); },
@@ -17498,11 +17499,31 @@ async function fbOpenChat(info, ensure) {
       return T('Rahmat! Javobingiz adminga yuborildi. Tasdiqlansa, bot shuni o‘rganadi.', 'Спасибо! Ваш ответ отправлен админу. Если одобрит, бот его выучит.');
     } catch (e) { return T('Yuborib bo‘lmadi: ', 'Не удалось отправить: ') + (e.message || ''); }
   }
+  // ---- Qwen LLM bilan suhbat (VPS ichidagi llama.cpp, /chat orqali) ----
+  var typingEl = null;
+  function showTyping() {
+    hideTyping();
+    typingEl = document.createElement('div'); typingEl.className = 'message-bubble incoming';
+    var tt = document.createElement('span'); tt.className = 'msg-text'; tt.textContent = T('yozmoqda…', 'печатает…');
+    typingEl.appendChild(tt); area.appendChild(typingEl); area.scrollTop = area.scrollHeight;
+  }
+  function hideTyping() { if (typingEl && typingEl.parentNode) typingEl.parentNode.removeChild(typingEl); typingEl = null; }
+  async function llmReply(text, soft) {
+    if (!text) return T('Savolni ham yozing: /ai salom', 'Напишите и вопрос: /ai привет');
+    showTyping();
+    try { var j = await BotStore.chat(text); return (j && j.reply) || null; }
+    catch (e) {
+      if (soft && e.status !== 429) return null;
+      return e.status ? e.message : T('Robot bilan aloqa yo‘q. Keyinroq urinib ko‘ring.', 'Нет связи с роботом. Попробуйте позже.');
+    }
+    finally { hideTyping(); }
+  }
   async function reply(text) {
     var cmd = text.trim().match(/^\/(\S+)\s*([\s\S]*)$/);
     if (cmd) {
       pending = null;
       if (cmd[1].toLowerCase() === 'oyrat') return teachCmd(cmd[2].trim());
+      if (cmd[1].toLowerCase() === 'ai') return llmReply(cmd[2].trim(), false);
       try {
         var cr = await BotStore.cmd(text.trim());
         if (cr.clear) { skipHist = true; area.textContent = ''; cacheSet([]); }
@@ -17538,7 +17559,8 @@ async function fbOpenChat(info, ensure) {
       return T('Shuni nazarda tutdingizmi: «', 'Вы имели в виду: «') + r.q + T('»? (ha / yo‘q)', '»? (да / нет)');
     }
     lastUnknown = text.trim().slice(0, 300);
-    return none(true);
+    var lr = await llmReply(text, true);
+    return lr || none(true);
   }
 
   // ---------- 3) EKRAN ----------
