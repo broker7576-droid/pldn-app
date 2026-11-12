@@ -1,4 +1,4 @@
-// VERSION: search-v3 (token, javobsiz savollar, /teach + shifrlangan tarix, xotira, eslatmalar)
+// VERSION: search-v4 (v3 + /chat: Qwen LLM suhbati, /ai buyrug'i) | satr: 374
 process.umask(0o077);
 const express=require('express');
 const fs=require('fs');
@@ -131,8 +131,8 @@ return {due,rest:m[3]};
 return null;
 }
 
-const HELP_UZ='Buyruqlar:\n/esla kalit = qiymat — eslab qolaman\n/xotira — saqlanganlar ro‘yxati\n/unut 2 yoki /unut hammasi\n/eslat 21:30 matn\n/eslat 25.10 09:00 matn\n/eslat 2 soat matn (yoki daqiqa, kun)\n/royxat — eslatmalar ro‘yxati\n/ochir 2 — eslatmani bekor qilish\n/tozala — suhbat tarixini o‘chirish\n/oyrat javob — bot bilmagan savolga javob o‘rgatish';
-const HELP_RU='Команды:\n/esla ключ = значение — запомню\n/xotira — список сохранённого\n/unut 2 или /unut hammasi\n/eslat 21:30 текст\n/eslat 25.10 09:00 текст\n/eslat 2 soat текст (или daqiqa, kun)\n/royxat — список напоминаний\n/ochir 2 — отменить напоминание\n/tozala — очистить историю чата\n/oyrat ответ — научить бота ответу на неизвестный вопрос';
+const HELP_UZ='Buyruqlar:\n/esla kalit = qiymat — eslab qolaman\n/xotira — saqlanganlar ro‘yxati\n/unut 2 yoki /unut hammasi\n/eslat 21:30 matn\n/eslat 25.10 09:00 matn\n/eslat 2 soat matn (yoki daqiqa, kun)\n/royxat — eslatmalar ro‘yxati\n/ochir 2 — eslatmani bekor qilish\n/tozala — suhbat tarixini o‘chirish\n/oyrat javob — bot bilmagan savolga javob o‘rgatish\n/ai savol — robot bilan erkin suhbat (sinov)';
+const HELP_RU='Команды:\n/esla ключ = значение — запомню\n/xotira — список сохранённого\n/unut 2 или /unut hammasi\n/eslat 21:30 текст\n/eslat 25.10 09:00 текст\n/eslat 2 soat текст (или daqiqa, kun)\n/royxat — список напоминаний\n/ochir 2 — отменить напоминание\n/tozala — очистить историю чата\n/oyrat ответ — научить бота ответу на неизвестный вопрос\n/ai вопрос — свободный разговор с роботом (тест)';
 function runCmd(uid,text,lang,tz){
 const T=(u,r)=>lang==='ru'?r:u;
 const m=text.trim().match(/^\/(\S+)\s*([\s\S]*)$/);
@@ -239,6 +239,64 @@ try{req.uid=(await getAuth().verifyIdToken(m[1])).uid;next();}
 catch(e){res.status(401).json({error:'Kirish tasdiqlanmadi'});}
 }
 
+// ---------- LLM (llama.cpp) — faqat shu serverning ichida, tashqariga ochilmaydi ----------
+const LLM_URL=process.env.LLM_URL||'http://127.0.0.1:8080';
+const SYS_UZ="Sen PLDN robotisan. Do'stona, samimiy va qisqa (1-2 gap) gapir. Faqat oddiy o'zbek tilida javob ber, murakkab so'z ishlatma. Ba'zan yengil hazil qil. Bilmasang, o'ylab topma: \"Bilmayman\" de.";
+const FEW=[
+{role:'user',content:'Salom'},{role:'assistant',content:'Salom! Qalaysan, bugun nima yangilik?'},
+{role:'user',content:"Kayfiyatim yo'q"},{role:'assistant',content:"Voy, nima bo'ldi? Xohlasang gaplashib ber, yoki yoqimli narsa haqida gaplashamiz."},
+{role:'user',content:'Ob-havo yomon'},{role:'assistant',content:'Ha, bunday kunda uyda issiq choy ichib, film ko\'rish yaxshi. Sen nima qilmoqchisan?'}
+];
+const nameCache=new Map();
+async function userName(uid){
+const c=nameCache.get(uid);
+if(c&&Date.now()-c.t<600000)return c.n;
+let n='';
+try{const d=await db.collection('users').doc(uid).get();n=d.exists?clean(d.data().firstName,30):'';}catch(e){}
+if(nameCache.size>500)nameCache.clear();
+nameCache.set(uid,{t:Date.now(),n});
+return n;
+}
+function histForLLM(uid){
+const h=getMsgs(uid,0,10).filter(m=>m.t&&m.t[0]!=='/'&&m.t.indexOf('✓')<0&&m.t.indexOf('⏰')<0&&!/o‘rganilmagan|не выучен|Shuni nazarda tutdingizmi/.test(m.t));
+return h.slice(-6).map(m=>({role:m.who==='u'?'user':'assistant',content:String(m.t).slice(0,300)}));
+}
+async function buildMessages(uid,text){
+let sys=SYS_UZ;
+try{
+const nm=await userName(uid);
+const facts=memAll(uid).slice(-8).map(x=>clean(x.k,40)+': '+clean(x.v,80)).join('; ');
+if(nm)sys+=' Foydalanuvchining ismi: '+nm+'.';
+if(facts)sys+=' U haqida bilganlaring: '+facts+'.';
+}catch(e){console.error('prompt',e.message);}
+return [{role:'system',content:sys}].concat(FEW,histForLLM(uid),[{role:'user',content:text}]);
+}
+function tidy(s,fin){
+s=String(s||'').replace(/<think>[\s\S]*?<\/think>/g,'').replace(/^\s*(Robot|PLDN)\s*:\s*/i,'').trim();
+if(fin==='length'){const i=Math.max(s.lastIndexOf('.'),s.lastIndexOf('!'),s.lastIndexOf('?'));if(i>=15)s=s.slice(0,i+1);}
+return s.slice(0,600);
+}
+async function callLLM(messages){
+const ctl=new AbortController();
+const tm=setTimeout(()=>ctl.abort(),150000);
+try{
+const r=await fetch(LLM_URL+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},signal:ctl.signal,body:JSON.stringify({messages,max_tokens:90,temperature:0.5,top_p:0.9,repeat_penalty:1.1,chat_template_kwargs:{enable_thinking:false}})});
+if(!r.ok)throw new Error('llm http '+r.status);
+const j=await r.json();
+const c=j.choices&&j.choices[0];
+return tidy(c&&c.message&&c.message.content,c&&c.finish_reason);
+}finally{clearTimeout(tm);}
+}
+// protsessor kam: so'rovlar navbat bilan bajariladi, 3 tadan ortig'i "band" deb qaytariladi
+let llmChain=Promise.resolve(),llmWait=0;
+function askLLM(messages){
+if(llmWait>=3){const e=new Error('band');e.busy=true;return Promise.reject(e);}
+llmWait++;
+const p=llmChain.then(()=>callLLM(messages)).finally(()=>{llmWait--;});
+llmChain=p.catch(()=>{});
+return p;
+}
+
 // ---------- HTTP ----------
 const app=express();
 app.use(express.json({limit:'16kb'}));
@@ -282,6 +340,21 @@ try{res.json(runCmd(req.uid,String(b.text||'').slice(0,2000),b.lang==='ru'?'ru':
 catch(e){console.error('cmd',e.message);res.status(500).json({error:'Server xatosi'});}
 });
 
+app.post('/chat',auth,async(req,res)=>{
+if(limited(req.uid,'ai',8,600000))return res.status(429).json({error:'Robot bilan juda tez-tez gaplashyapsiz. Biroz kuting.'});
+const text=clean((req.body||{}).text,500);
+if(!text)return res.status(400).json({error:'Matn bo‘sh'});
+try{
+const reply=await askLLM(await buildMessages(req.uid,text));
+if(!reply)throw new Error('bo‘sh javob');
+res.json({reply});
+}catch(e){
+console.error('chat',e.message);
+if(e.busy)return res.status(503).json({error:'Robot hozir band, biroz keyin yozing.'});
+res.status(503).json({error:'Robot hozir javob bera olmadi. Keyinroq urinib ko‘ring.'});
+}
+});
+
 app.get('/hist',auth,(req,res)=>{
 const limit=Math.min(Math.max(parseInt(req.query.limit,10)||40,1),100);
 const before=parseInt(req.query.before,10)||0;
@@ -296,6 +369,6 @@ try{for(const it of items)addMsg(req.uid,it&&it.who,it&&it.t);res.json({ok:true}
 catch(e){console.error('hist yozish',e.message);res.status(500).json({error:'Server xatosi'});}
 });
 
-app.listen(3001,'127.0.0.1',()=>console.log('3001-portda qidiruv (v3)'));
+app.listen(3001,'127.0.0.1',()=>console.log('3001-portda qidiruv (v4, LLM: '+LLM_URL+')'));
 // END
                                                                                                                   
