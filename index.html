@@ -1,5 +1,5 @@
-<!-- VERSION: 258 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: bot-llm-1.0 | satr: 23454 | 12-noy-2026 -->
+<!-- VERSION: 256 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: bot-stream-1.0 | satr: 23489 | 12-noy-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -17382,7 +17382,7 @@ async function fbOpenChat(info, ensure) {
 })();
 </script>
 <script>
-// ===== PLDN BOT — 2-BOSQICH ===== VERSION: bot-v5 (serverda shifrlangan tarix, xotira, eslatmalar + Qwen LLM suhbati: /chat, /ai)
+// ===== PLDN BOT — 2-BOSQICH ===== VERSION: bot-v6 (serverda shifrlangan tarix, xotira, eslatmalar + Qwen LLM suhbati: /chat, /ai, oqim bilan: /chat/stream)
 // Bilimlar bazasi asosidagi bot (tashqi AI yo'q). Bot kodi ma'lumotni FAQAT BotStore orqali oladi:
 // keyinroq boshqa bulutli xotiraga o'tish uchun faqat BotStore ichini almashtirish kifoya.
 (function () {
@@ -17418,6 +17418,41 @@ async function fbOpenChat(info, ensure) {
       search: function (q) { return this.call('/search?q=' + encodeURIComponent(q)); },
       cmd: function (text) { return this.call('/cmd', { method: 'POST', body: JSON.stringify({ text: text, lang: lang(), tz: -new Date().getTimezoneOffset() }) }); },
       chat: function (text) { return this.call('/chat', { method: 'POST', body: JSON.stringify({ text: text, lang: lang() }), timeout: 160000 }); },
+      // LLM javobi oqim bilan (SSE): har bir bo'lakda onDelta(hozirgiMatn) chaqiriladi, oxirida yakuniy matn qaytadi
+      chatStream: async function (text, onDelta) {
+        if (!window.ReadableStream) { var jj = await this.chat(text); return (jj && jj.reply) || ''; }
+        var u = me();
+        if (!u) throw new Error('Kirish kerak');
+        var tk = await u.getIdToken();
+        var ctl = new AbortController();
+        var tm = setTimeout(function () { ctl.abort(); }, 300000);
+        try {
+          var r = await fetch(BOT_API + '/chat/stream', { method: 'POST', headers: { Authorization: 'Bearer ' + tk, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text, lang: lang() }), signal: ctl.signal });
+          if (!r.ok) { var j = await r.json().catch(function () { return {}; }); var er = new Error(j.error || ('http ' + r.status)); er.status = r.status; throw er; }
+          if (!r.body || !r.body.getReader) { var j2 = await r.text(); return j2; }
+          var rd = r.body.getReader(), dec = new TextDecoder(), buf = '', full = '', fin = null, failed = '';
+          while (true) {
+            var x = await rd.read();
+            if (x.done) break;
+            buf += dec.decode(x.value, { stream: true });
+            var i;
+            while ((i = buf.indexOf('\n\n')) >= 0) {
+              var ev = buf.slice(0, i); buf = buf.slice(i + 2);
+              var lines = ev.split('\n');
+              for (var k = 0; k < lines.length; k++) {
+                if (lines[k].indexOf('data:') !== 0) continue;
+                var o = null;
+                try { o = JSON.parse(lines[k].slice(5)); } catch (_) { continue; }
+                if (o.d) { full += o.d; onDelta(full); }
+                else if (typeof o.text === 'string' && o.done) fin = o.text;
+                else if (o.error) failed = o.error;
+              }
+            }
+          }
+          if (failed && !full) { var e2 = new Error(failed); e2.status = 503; throw e2; }
+          return fin !== null ? fin : full;
+        } finally { clearTimeout(tm); }
+      },
       hist: function (limit) { return this.call('/hist?limit=' + (limit || 40)); },
       saveHist: function (items) { return this.call('/hist', { method: 'POST', body: JSON.stringify({ items: items }) }); },
       teach: function (q, t, lg) { return this.call('/teach', { method: 'POST', body: JSON.stringify({ q: q, t: t, lang: lg }) }); },
@@ -17500,23 +17535,22 @@ async function fbOpenChat(info, ensure) {
     } catch (e) { return T('Yuborib bo‘lmadi: ', 'Не удалось отправить: ') + (e.message || ''); }
   }
   // ---- Qwen LLM bilan suhbat (VPS ichidagi llama.cpp, /chat orqali) ----
-  var typingEl = null;
-  function showTyping() {
-    hideTyping();
-    typingEl = document.createElement('div'); typingEl.className = 'message-bubble incoming';
-    var tt = document.createElement('span'); tt.className = 'msg-text'; tt.textContent = T('yozmoqda…', 'печатает…');
-    typingEl.appendChild(tt); area.appendChild(typingEl); area.scrollTop = area.scrollHeight;
-  }
-  function hideTyping() { if (typingEl && typingEl.parentNode) typingEl.parentNode.removeChild(typingEl); typingEl = null; }
+  // ---- Qwen LLM bilan suhbat (VPS ichidagi llama.cpp, /chat/stream orqali, javob so'zma-so'z chiqadi) ----
   async function llmReply(text, soft) {
     if (!text) return T('Savolni ham yozing: /ai salom', 'Напишите и вопрос: /ai привет');
-    showTyping();
-    try { var j = await BotStore.chat(text); return (j && j.reply) || null; }
-    catch (e) {
+    var tx = bubble('…', 'incoming'), bub = tx.parentNode, last = '';
+    try {
+      var out = await BotStore.chatStream(text, function (st) { last = st; tx.textContent = st; area.scrollTop = area.scrollHeight; });
+      out = String(out || '').trim();
+      if (!out) throw new Error('bo‘sh javob');
+      tx.textContent = out;
+      return { streamed: true, t: out };
+    } catch (e) {
+      if (last.length > 10) { tx.textContent = last; return { streamed: true, t: last }; }
+      if (bub.parentNode) bub.parentNode.removeChild(bub);
       if (soft && e.status !== 429) return null;
       return e.status ? e.message : T('Robot bilan aloqa yo‘q. Keyinroq urinib ko‘ring.', 'Нет связи с роботом. Попробуйте позже.');
     }
-    finally { hideTyping(); }
   }
   async function reply(text) {
     var cmd = text.trim().match(/^\/(\S+)\s*([\s\S]*)$/);
@@ -17605,6 +17639,7 @@ async function fbOpenChat(info, ensure) {
     var d = ts ? new Date(ts) : new Date(); tm.textContent = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
     b.appendChild(t); b.appendChild(tm); area.appendChild(b);
     area.scrollTop = area.scrollHeight;
+    return t;
   }
   // Tarix serverda shifrlangan saqlanadi; telefonda faqat oxirgi 40 ta nusxa (tez ochilishi uchun)
   function ckey() { var u = me(); return 'pldn_bot_h_' + (u ? u.uid : ''); }
@@ -17640,7 +17675,7 @@ async function fbOpenChat(info, ensure) {
     histSeq++;
     bubble(text, 'outgoing');
     var r = await reply(text);
-    bubble(r, 'incoming');
+    if (r && typeof r === 'object' && r.streamed) r = r.t; else bubble(r, 'incoming');
     if (skipHist) skipHist = false;
     else persist([{ who: 'u', t: text }, { who: 'b', t: r }]);
     busy = false;
