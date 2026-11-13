@@ -1,5 +1,5 @@
-<!-- VERSION: 261 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: bot-stream-1.0 | satr: 23489 | 12-noy-2026 -->
+<!-- VERSION: 260 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: bot-stream-1.0 | satr: 23714 | 13-noy-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -22775,7 +22775,7 @@ var PLDNBattModel = (function () {
 })();
 </script>
 <script>
-// ===== FOYDALANUVCHI FUNKSIYALARI (Функции пользователей) ===== VERSION: userfuncs-1.0
+// ===== FOYDALANUVCHI FUNKSIYALARI (Функции пользователей) ===== VERSION: userfuncs-1.1
 // Server: https://134-255-228-146.sslip.io/funcs/* (funcsrv.js, port 3011).
 // Foydalanuvchi kodi faqat iframe sandbox ichida ishlaydi (opaque origin + CSP + postMessage ko'prigi).
 (function () {
@@ -22827,9 +22827,11 @@ var PLDNBattModel = (function () {
     ver_exists: ['Bu versiya allaqachon mavjud', 'Такая версия уже существует'], ver_pending: ['Bu versiya tekshiruvda', 'Эта версия уже на проверке'],
     not_found: ['Topilmadi', 'Не найдено'], forbidden: ['Ruxsat yo\u2018q', 'Нет доступа'], reason: ['Sababni yozing (kamida 3 belgi)', 'Укажите причину (минимум 3 символа)'],
     test_required: ['Avval Test Mode\u2019da sinab ko\u2018ring (xatosiz, kamida 2 soniya)', 'Сначала проверьте в Test Mode (без ошибок, минимум 2 секунды)'],
-    server: ['Server xatosi, keyinroq urinib ko\u2018ring', 'Ошибка сервера, попробуйте позже'], cannot: ['Bu amalni bajarib bo\u2018lmaydi', 'Действие недоступно']
+    server: ['Server xatosi, keyinroq urinib ko\u2018ring', 'Ошибка сервера, попробуйте позже'], cannot: ['Bu amalni bajarib bo\u2018lmaydi', 'Действие недоступно'],
+    bad_targets: ['Qismlar ro\u2018yxati noto\u2018g\u2018ri', 'Неверный список частей'], bad_part: ['Bunday ilova qismi yo\u2018q', 'Такой части приложения нет'],
+    part_closed: ['Bu qism yopiq: funksiya unga tegolmaydi', 'Эта часть закрыта: функция не может её менять'], bad_layout: ['Joy/o\u2018lcham noto\u2018g\u2018ri', 'Неверное положение/размер']
   };
-  function errMsg(e) { var m = ERR[e && e.code]; return m ? T(m[0], m[1]) : T('Xatolik', 'Ошибка') + (e && e.code ? ' [' + e.code + ']' : ''); }
+  function errMsg(e) { var m = ERR[e && e.code]; return m ? T(m[0], m[1]) + (e && e.data && e.data.part ? ' (' + e.data.part + ')' : '') : T('Xatolik', 'Ошибка') + (e && e.code ? ' [' + e.code + ']' : ''); }
 
   // ---------- server ----------
   async function api(path, o) {
@@ -22908,7 +22910,12 @@ var PLDNBattModel = (function () {
     '#pfnRun{position:fixed;inset:0;z-index:100030;background:var(--bg-page,#fff);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}',
     '#pfnRun .bar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(128,128,128,.3);color:var(--text-primary,#000);flex:none}',
     '#pfnRun .bar.test{background:#fff3cd;color:#5c4400}',
-    '#pfnRun .errs{background:#fdecea;color:#b71c1c;font-size:12px;padding:6px 10px;max-height:90px;overflow:auto;white-space:pre-wrap;flex:none}'
+    '#pfnRun .errs{background:#fdecea;color:#b71c1c;font-size:12px;padding:6px 10px;max-height:90px;overflow:auto;white-space:pre-wrap;flex:none}',
+    '#pfnRun.win{inset:auto;padding-top:0;border-radius:14px;box-shadow:0 8px 34px rgba(0,0,0,.5);overflow:hidden;border:1px solid rgba(128,128,128,.5)}',
+    '#pfnRun .pfn-shield{position:absolute;inset:0;z-index:5;background:rgba(63,161,208,.12);touch-action:none;cursor:move}',
+    '#pfnRun .pfn-handle{position:absolute;width:36px;height:36px;z-index:6;border-radius:50%;background:#3fa1d0;border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.5);touch-action:none}',
+    '#pfnRun .pfn-handle.nw{left:4px;top:4px}#pfnRun .pfn-handle.ne{right:4px;top:4px}#pfnRun .pfn-handle.sw{left:4px;bottom:4px}#pfnRun .pfn-handle.se{right:4px;bottom:4px}',
+    '.pfn-laybar{position:fixed;left:8px;right:8px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:100095;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;background:rgba(28,28,30,.94);border-radius:16px;padding:10px}'
   ].join('\n');
   document.head.appendChild(css);
 
@@ -22948,6 +22955,153 @@ var PLDNBattModel = (function () {
     return box;
   }
 
+  // ---------- ilova qismlari: tanlagichlar va o'zgartirish ko'prigi (userfuncs-1.1) ----------
+  // Funksiya kodi ilova DOM'iga kirmaydi: sandbox faqat buyruq yuboradi, tekshirib qo'llash shu yerda.
+  // Funksiya faqat o'zi e'lon qilgan (admin ko'rgan) qismlarga tegadi. K01-K07 serverda yopiq.
+  var PSEL = {
+    A01: '#screen1', A02: '#uiStyleToggle', A03: '#langBtn', A04: '#screen2', A05: '#screenPass', A06: '#screenLogin', A07: '#mailLoginBox', A08: '#screen3', A09: '#splashScreen',
+    B01: '#screen4', B02: '#chatHeader', B03: '#pldnBellBtn', B04: '#storiesRow', B05: '#chatList', B06: '#chatActionMenu', B07: '#chatSearchInput', B08: '.bottom-nav',
+    B09: '#contactsScreen', B10: '#importPhoneContactsBtn', B11: '#addManualContactBtn', B12: '#findUserBtn,#findUserScreen', B13: '#newGroupMembersScreen,#newGroupInfoScreen', B14: '#newChannelInfoScreen',
+    B15: '#profileScreen', B16: '#settingsScreen', B17: '#settingsLangRow', B18: '#notificationsScreen', B19: '#privacyScreen', B20: '#connectedDevicesScreen', B21: '#storyViewerScreen', B22: '#logoutBtn',
+    C01: '#pldnSettingsScreen', C02: '#robotToggleInput', C03: '#pldnWallpapersRow', C04: '#createGroupRow', C05: '#createChannelRow', C06: '#pldnSavedVideosRow', C07: '#pldnShapeDisplay', C08: '#pldnCodeMenu', C09: '#pldnCodeFunctionsScreen', C10: '#pldnFuncsRow', C11: '#pldnTermRow', C12: '#pldnMailRow', C15: '#pldnProtRow', C16: '#notificationsScreen',
+    D01: '#chatDetailScreen', D02: '#chatDetailScreen .chat-detail-header', D03: '#callAudioBtn', D04: '#callVideoBtn', D05: '#emoBtn', D06: '#messagesArea', D07: '#messagesArea', D10: '#msgActionMenu', D11: '#reactionPicker', D13: '.chat-input-bar', D14: '#attachImageBtn', D15: '#sendMsgBtn', D16: '#replyBar', D17: '#voiceRecordingIndicator',
+    I01: ':root', I03: 'body', I05: '.bottom-nav'
+  };
+  // yangi tugma qo'yiladigan joylar (P-kodlar)
+  var PLK = { P01: 'icon', P04: 'row', P05: 'row', P08: 'hdr', P10: 'att', P11: 'att' };
+  var PLC = {
+    P01: function (el) { var c = document.querySelector('#chatHeaderNormal .header-icons'); if (c) c.appendChild(el); return !!c; },
+    P04: function (el) { var c = document.querySelector('#settingsScreen .settings-body'); if (c) c.appendChild(el); return !!c; },
+    P05: function (el) { var c = document.getElementById('pldnFnQuick'); if (c && c.parentNode) c.parentNode.insertBefore(el, c.nextSibling); return !!c; },
+    P08: function (el) { var c = document.querySelector('#chatDetailScreen .chat-detail-header'); if (c) c.appendChild(el); return !!c; },
+    P10: function (el) { var c = document.getElementById('messageInput'); if (c && c.parentNode) c.parentNode.insertBefore(el, c); return !!c; },
+    P11: function (el) { var c = document.getElementById('sendMsgBtn'); if (c && c.parentNode) c.parentNode.insertBefore(el, c); return !!c; }
+  };
+  function detectTargets(code) {
+    var re = /PLDN\s*\.\s*ui\s*\.\s*(?:css|text|hide|button)\s*\(\s*['"`]([A-Za-z]\d{2})['"`]/g, m, out = [];
+    while ((m = re.exec(String(code || '')))) { var id = m[1].toUpperCase(); if (out.indexOf(id) < 0) out.push(id); }
+    return out;
+  }
+  function catMap() { try { return (JSON.parse(localStorage.getItem('pfn_parts') || 'null') || {}).m || {}; } catch (_) { return {}; } }
+  function partNames(list) { var m = catMap(); return (list || []).map(function (id) { return id + (m[id] ? ' \u2014 ' + m[id] : ''); }).join('\n'); }
+  async function loadCatalog() {
+    try { var j = await api('/parts'), m = {}; (j.parts || []).forEach(function (x) { m[x.id] = x.name; }); localStorage.setItem('pfn_parts', JSON.stringify({ rev: j.rev, m: m })); } catch (_) {}
+  }
+  function pk(fid) { return 'pfn_patch_' + (me() || '') + '_' + fid; }
+  function loadPatch(fid) { try { var j = JSON.parse(localStorage.getItem(pk(fid)) || 'null'); return j && j.ops ? j : { ops: {} }; } catch (_) { return { ops: {} }; } }
+  function savePatch(fid, pt) { try { if (Object.keys(pt.ops).length) localStorage.setItem(pk(fid), JSON.stringify(pt)); else localStorage.removeItem(pk(fid)); } catch (_) {} }
+  function mergeOps(a, b) { var o = {}, k; for (k in a) o[k] = a[k]; for (k in b) { if (b[k].op === 'noop') delete o[k]; else o[k] = b[k]; } return o; }
+  var CSS_BAD = /[{}<>\\@]|url\s*\(|expression|javascript:|behavior|binding/i;
+  function cleanCss(v, part) {
+    v = String(v == null ? '' : v).slice(0, 2000);
+    if (CSS_BAD.test(v)) return null;
+    var out = [];
+    v.split(';').forEach(function (d) {
+      var i = d.indexOf(':'); if (i < 1) return;
+      var k = d.slice(0, i).trim().toLowerCase(), val = d.slice(i + 1).replace(/!important/ig, '').trim();
+      if (!val || !/^(--[a-z0-9_-]+|[a-z][a-z0-9-]*)$/.test(k)) return;
+      if ((part === 'I01' || part === 'I03') && /^(display|visibility|opacity|pointer-events|position|transform|filter)$/.test(k)) return; // ilovani o'zini bekitib qo'ymaslik
+      out.push(k + ':' + val + ' !important');
+    });
+    return out.join(';');
+  }
+  function leafOf(el) {
+    if (!el) return null; if (!el.children.length) return el;
+    var all = el.querySelectorAll('*');
+    for (var i = 0; i < all.length; i++) if (!all[i].children.length && all[i].textContent.trim()) return all[i];
+    return null;
+  }
+  function mkBtn(fid, op) {
+    var v = op.v || {}, ic = v.icon || '\uD83E\uDDE9', tx = v.text || '', kind = PLK[op.p], el;
+    var go = function (ev) { if (ev) { ev.preventDefault(); ev.stopPropagation(); } if (fid !== 'test') launch(fid, v.id || 'main'); };
+    if (kind === 'row') el = h('div', { cls: 'settings-group' }, h('div', { cls: 'settings-item', onclick: go }, h('span', { cls: 'settings-icon', text: ic }), h('span', { cls: 'settings-label', text: tx }), h('span', { cls: 'settings-arrow', text: '\u203A' })));
+    else el = h('button', { cls: kind === 'icon' ? 'header-bell' : (kind === 'hdr' ? 'call-hdr-btn' : 'attach-btn'), text: ic, 'aria-label': tx, onclick: go });
+    el.setAttribute('data-pfn-b', fid);
+    return el;
+  }
+  function renderPatch(fid, ops) {
+    var css = [], k, op, el, leaf;
+    document.querySelectorAll('[data-pfn-t="' + fid + '"]').forEach(function (e) { e.textContent = e.getAttribute('data-pfn-o'); e.removeAttribute('data-pfn-o'); e.removeAttribute('data-pfn-t'); });
+    document.querySelectorAll('[data-pfn-b="' + fid + '"]').forEach(function (e) { e.remove(); });
+    for (k in ops) {
+      op = ops[k];
+      if (op.op === 'css' || op.op === 'hide') { if (PSEL[op.p]) css.push(PSEL[op.p] + '{' + (op.op === 'hide' ? 'display:none !important' : op.v) + '}'); }
+      else if (op.op === 'text' && PSEL[op.p]) { el = document.querySelector(PSEL[op.p].split(',')[0]); leaf = leafOf(el); if (leaf) { if (!leaf.hasAttribute('data-pfn-o')) leaf.setAttribute('data-pfn-o', leaf.textContent); leaf.setAttribute('data-pfn-t', fid); leaf.textContent = op.v; } }
+      else if (op.op === 'button' && PLC[op.p]) PLC[op.p](mkBtn(fid, op));
+    }
+    var st = document.getElementById('pfn-st-' + fid);
+    if (css.length) { if (!st) { st = document.createElement('style'); st.id = 'pfn-st-' + fid; document.head.appendChild(st); } st.textContent = css.join('\n'); }
+    else if (st) st.remove();
+  }
+  function applyAllPatches() {
+    var m = me() ? loadInst() : {}, want = {};
+    Object.keys(m).forEach(function (id) { if (m[id].enabled !== false) { want[id] = 1; renderPatch(id, loadPatch(id).ops); } });
+    var gone = {};
+    document.querySelectorAll('style[id^="pfn-st-"]').forEach(function (e) { gone[e.id.slice(7)] = 1; });
+    document.querySelectorAll('[data-pfn-b]').forEach(function (e) { gone[e.getAttribute('data-pfn-b')] = 1; });
+    document.querySelectorAll('[data-pfn-t]').forEach(function (e) { gone[e.getAttribute('data-pfn-t')] = 1; });
+    Object.keys(gone).forEach(function (id) { if (id !== 'test' && !want[id]) renderPatch(id, {}); });
+  }
+  function uiOp(r, d) {
+    var op = String(d.op || ''), p = String(d.p || '').toUpperCase(), fid = r.o.test ? 'test' : r.o.fid;
+    if (op === 'parts') return Object.keys(PSEL).concat(Object.keys(PLC));
+    if (!fid) return false;
+    if (++r.nops > 300) return 'rate';
+    if (op === 'reset') { r.ui = {}; if (!r.o.test) savePatch(fid, { ops: {} }); renderPatch(fid, {}); return true; }
+    if (!r.tset[p]) { r.addErr('PLDN.ui: ' + p + ' ' + T('e\u2019lon qilinmagan (kodda PLDN.ui.xxx(\'' + p + '\', ...) ko\u2018rinishida yozing)', 'не объявлено')); return 'not_declared'; }
+    var key, val;
+    if (op === 'css') {
+      if (!PSEL[p]) return 'unsupported'; val = cleanCss(d.v, p); if (val === null) return 'bad_css';
+      key = 'css:' + p; r.ui[key] = val ? { op: 'css', p: p, v: val } : { op: 'noop' };
+    } else if (op === 'hide') {
+      if (!PSEL[p]) return 'unsupported'; key = 'hide:' + p; r.ui[key] = d.v === false ? { op: 'noop' } : { op: 'hide', p: p };
+    } else if (op === 'text') {
+      if (!PSEL[p]) return 'unsupported'; key = 'text:' + p; r.ui[key] = { op: 'text', p: p, v: String(d.v == null ? '' : d.v).slice(0, 200) };
+    } else if (op === 'button') {
+      if (!PLC[p]) return 'unsupported'; var b = d.v || {}, bid = /^[A-Za-z0-9_-]{1,16}$/.test(String(b.id || '')) ? String(b.id) : 'main';
+      key = 'btn:' + p + ':' + bid; r.ui[key] = { op: 'button', p: p, v: { id: bid, text: String(b.text || '').slice(0, 24), icon: String(b.icon || '').slice(0, 8) } };
+    } else return 'bad_op';
+    if (Object.keys(r.ui).length > 60) { delete r.ui[key]; return 'too_many'; }
+    renderPatch(fid, r.o.test ? r.ui : mergeOps(loadPatch(fid).ops, r.ui));
+    return true;
+  }
+  // Funksiya yopilgach: o'zgarishlarni tasdiqlash (10 soniya ichida javob bo'lmasa avtomatik qaytariladi)
+  function finishUi(r) {
+    if (r.layBar) { r.layBar.remove(); r.layBar = null; }
+    var n = r.ui ? Object.keys(r.ui).length : 0; if (!n) return;
+    if (r.o.test) { renderPatch('test', {}); return; }
+    confirmPatch(r.o.fid, r.ui);
+  }
+  function confirmPatch(fid, ops) {
+    var old = document.getElementById('pfnCfm'); if (old) old.remove();
+    var n = Object.keys(ops).length, left = 10, done = false, tm;
+    var tx = h('div', { css: 'flex:1;line-height:1.3' });
+    function draw() { tx.textContent = T(n + ' ta o\u2018zgarish qo\u2018llandi. Qoldirasizmi? (' + left + ' s)', 'Применено изменений: ' + n + '. Оставить? (' + left + ' с)'); }
+    function end(keep) {
+      if (done) return; done = true; clearInterval(tm); bar.remove();
+      var pt = loadPatch(fid); if (keep) { pt.ops = mergeOps(pt.ops, ops); savePatch(fid, pt); }
+      renderPatch(fid, pt.ops); toast(keep ? T('Saqlandi', 'Сохранено') : T('Qaytarildi', 'Возвращено'));
+    }
+    var bar = h('div', { id: 'pfnCfm', css: 'position:fixed;left:8px;right:8px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:100090;background:#1c1c1e;color:#fff;border-radius:14px;padding:12px;display:flex;align-items:center;gap:10px;box-shadow:0 4px 24px rgba(0,0,0,.5);font-size:14px' },
+      tx, h('button', { cls: 'pfn-btn grn', text: '\u2713', onclick: function () { end(true); } }), h('button', { cls: 'pfn-btn red', text: '\u21A9', onclick: function () { end(false); } }));
+    document.body.appendChild(bar); draw();
+    tm = setInterval(function () { left--; if (left <= 0) end(false); else draw(); }, 1000);
+  }
+
+  // ---------- funksiya oynasining joyi va o'lchami ----------
+  function isFull(l) { return !l || !(l.w < 99.5 || l.h < 99.5 || l.x > 0.5 || l.y > 0.5); }
+  function applyLay(el, l) {
+    if (isFull(l)) { el.classList.remove('win'); el.style.left = el.style.top = el.style.width = el.style.height = ''; return; }
+    el.classList.add('win'); el.style.left = l.x + '%'; el.style.top = l.y + '%'; el.style.width = l.w + '%'; el.style.height = l.h + '%';
+  }
+  function saveLayout(fid, lay, quiet) {
+    var full = isFull(lay), m = loadInst();
+    if (m[fid] && !quiet) { m[fid].layout = full ? null : lay; m[fid].layDirty = true; saveInst(m); }
+    api('/layout', { method: 'POST', body: full ? { id: Number(fid), reset: true } : { id: Number(fid), layout: lay } }).then(function () {
+      var m2 = loadInst(); if (m2[fid]) { delete m2[fid].layDirty; saveInst(m2); }
+    }).catch(function () { if (!quiet) toast(T('Telefonda saqlandi, serverga keyin yuboriladi', 'Сохранено на телефоне, на сервер отправится позже')); });
+  }
+
   // ---------- sandbox ----------
   var BRIDGE = '(function(){var P=window.parent,pend={},n=0;function send(m){try{P.postMessage(m,"*")}catch(e){}}' +
     'function call(t,a){return new Promise(function(res){var id=++n;pend[id]=res;a=a||{};a.t=t;a.id=id;send(a);setTimeout(function(){if(pend[id]){delete pend[id];res(null)}},8000)})}' +
@@ -22956,15 +23110,17 @@ var PLDNBattModel = (function () {
     'window.addEventListener("error",function(e){err(e.message,e.lineno)});' +
     'window.addEventListener("unhandledrejection",function(e){err("Promise: "+(e.reason&&e.reason.message||e.reason))});' +
     'var ce=console.error;console.error=function(){err([].join.call(arguments," "));try{ce.apply(console,arguments)}catch(_){}};' +
-    'window.PLDN=Object.freeze({version:1,dark:__DARK__,toast:function(m){send({t:"toast",m:String(m).slice(0,200)})},close:function(){send({t:"close"})},' +
-    'store:{get:function(k){return call("sg",{k:String(k)})},set:function(k,v){return call("ss",{k:String(k),v:String(v)})},del:function(k){return call("sd",{k:String(k)})}}});' +
+    'window.PLDN=Object.freeze({version:2,dark:__DARK__,launch:__BTN__,toast:function(m){send({t:"toast",m:String(m).slice(0,200)})},close:function(){send({t:"close"})},' +
+    'store:{get:function(k){return call("sg",{k:String(k)})},set:function(k,v){return call("ss",{k:String(k),v:String(v)})},del:function(k){return call("sd",{k:String(k)})}},' +
+    'ui:Object.freeze({css:function(p,v){return call("ui",{op:"css",p:String(p),v:String(v)})},text:function(p,v){return call("ui",{op:"text",p:String(p),v:String(v)})},hide:function(p,b){return call("ui",{op:"hide",p:String(p),v:b!==false})},' +
+    'button:function(p,o){o=o||{};return call("ui",{op:"button",p:String(p),v:{id:String(o.id||"main"),text:String(o.text||""),icon:String(o.icon||"")}})},reset:function(){return call("ui",{op:"reset"})},parts:function(){return call("ui",{op:"parts"})}})});' +
     'send({t:"ready"});})();';
   var CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; worker-src blob:; base-uri 'none'; form-action 'none'";
-  function buildDoc(code, dark) {
+  function buildDoc(code, dark, btn) {
     var isHtml = /<\s*(?:!doctype|html|head|body|div|span|p|h[1-6]|button|canvas|svg|style|script|input|form|ul|ol|table|a|img|section|main|label|textarea|select)\b/i.test(code);
     var pre = '<meta http-equiv="Content-Security-Policy" content="' + CSP + '"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">' +
       '<style>:root{--pldn-bg:' + (dark ? '#1c1c1e' : '#ffffff') + ';--pldn-text:' + (dark ? '#f2f2f7' : '#000000') + ';--pldn-accent:#3fa1d0;color-scheme:' + (dark ? 'dark' : 'light') + '}html,body{margin:0}body{background:var(--pldn-bg);color:var(--pldn-text);font-family:-apple-system,Roboto,sans-serif}</style>' +
-      '<script>' + BRIDGE.replace('__DARK__', dark ? 'true' : 'false') + '<\/script>';
+      '<script>' + BRIDGE.replace('__DARK__', dark ? 'true' : 'false').replace('__BTN__', JSON.stringify(String(btn || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 16))) + '<\/script>';
     var body = isHtml ? code : '<script>' + code + '<\/script>';
     var m = body.match(/^\s*<!doctype[^>]*>/i);
     return m ? m[0] + pre + body.slice(m[0].length) : pre + body;
@@ -22975,7 +23131,7 @@ var PLDNBattModel = (function () {
   function closeRun() {
     if (!run) return; var r = run; run = null;
     window.removeEventListener('message', r.onMsg); document.removeEventListener('visibilitychange', r.onVis);
-    r.el.remove(); setFlag(false);
+    r.el.remove(); setFlag(false); finishUi(r);
     if (r.o.test && r.o.onEnd) {
       var ms = Date.now() - r.t0;
       sha256hex(r.o.code).then(function (hash) { r.o.onEnd({ ok: r.errs.length === 0 && ms >= 2000, ms: ms, errors: r.errs.length, list: r.errs, hash: hash }); }).catch(function () { r.o.onEnd({ ok: false, ms: ms, errors: r.errs.length, list: r.errs, hash: '' }); });
@@ -22985,9 +23141,11 @@ var PLDNBattModel = (function () {
   function runSandbox(o) {
     closeRun();
     var dark = document.body.classList.contains('pldn-dark');
-    var errs = [], mem = {}, lastToast = 0;
+    var errs = [], mem = {}, lastToast = 0, tset = {};
+    (o.test ? detectTargets(o.code) : (o.targets || [])).forEach(function (x) { tset[String(x).toUpperCase()] = 1; });
+    function addErr(msg) { if (errs.length < 50) errs.push(String(msg).slice(0, 300)); cnt.textContent = String(errs.length); errBox.style.display = o.test ? 'block' : 'none'; errBox.textContent = errs.slice(-4).join('\n'); }
     var fr = h('iframe', { sandbox: 'allow-scripts', referrerpolicy: 'no-referrer', css: 'flex:1;border:0;width:100%;background:#fff' });
-    fr.srcdoc = buildDoc(o.code, dark);
+    fr.srcdoc = buildDoc(o.code, dark, o.btn);
     var errBox = h('div', { cls: 'errs', css: 'display:none' });
     var cnt = h('span', { text: '0', css: 'font-weight:700' });
     var bar = h('div', { cls: 'bar' + (o.test ? ' test' : '') },
@@ -22996,10 +23154,11 @@ var PLDNBattModel = (function () {
         closeRun();
       } }),
       h('div', { css: 'flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap', text: (o.test ? '\uD83E\uDDEA ' + T('SINOV: ', 'ТЕСТ: ') : '') + (o.title || '') }),
+      o.fid && !o.test ? h('button', { cls: 'pfn-ib', text: '\u2922', title: T('Joy va o\u2018lcham', 'Положение и размер'), css: 'color:inherit', onclick: function () { editLayout(); } }) : null,
       o.test ? h('span', {}, T('Xatolar: ', 'Ошибки: '), cnt) : null);
     var el = h('div', { id: 'pfnRun' }, bar, errBox, fr);
-    document.body.appendChild(el);
-    var r = { el: el, o: o, errs: errs, t0: Date.now() };
+    document.body.appendChild(el); applyLay(el, o.layout);
+    var r = { el: el, o: o, errs: errs, t0: Date.now(), ui: {}, tset: tset, addErr: addErr, nops: 0, edit: false, layBar: null };
     function reply(id, v) { try { fr.contentWindow.postMessage({ t: 'res', id: id, v: v }, '*'); } catch (_) {} }
     function used() { var p = sp(o.fid), tot = 0; for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf(p) === 0) tot += (localStorage.getItem(k) || '').length; } return tot; }
     r.onMsg = function (e) {
@@ -23010,6 +23169,7 @@ var PLDNBattModel = (function () {
         cnt.textContent = String(errs.length); errBox.style.display = o.test ? 'block' : 'none'; errBox.textContent = errs.slice(-4).join('\n');
       } else if (d.t === 'toast') { if (Date.now() - lastToast > 1000) { lastToast = Date.now(); toast(String(d.m || '').slice(0, 200)); } }
       else if (d.t === 'close') { if (!o.test) closeRun(); }
+      else if (d.t === 'ui') { reply(d.id, uiOp(r, d)); }
       else if (d.t === 'sg' || d.t === 'ss' || d.t === 'sd') {
         var k = String(d.k || '').slice(0, 64); if (!k) { reply(d.id, null); return; }
         if (o.test || !o.fid) {
@@ -23025,6 +23185,65 @@ var PLDNBattModel = (function () {
         }
       }
     };
+        // --- joy/o'lcham tahrirlash rejimi (surish, burchaklardan cho'zish, ikki barmoq bilan)
+    function editLayout() {
+      if (r.edit || !o.fid) return;
+      r.edit = true;
+      var orig = o.layout && !isFull(o.layout) ? o.layout : null;
+      var lay = orig ? { x: orig.x, y: orig.y, w: orig.w, h: orig.h } : { x: 0, y: 0, w: 100, h: 100 };
+      var lock = !(orig && orig.lock === false);
+      var VW = function () { return window.innerWidth || 360; }, VH = function () { return window.innerHeight || 640; };
+      var shield = h('div', { cls: 'pfn-shield' }), handles = [], ptrs = {}, drag = null;
+      el.appendChild(shield);
+      function snap() { return { x: lay.x, y: lay.y, w: lay.w, h: lay.h }; }
+      function upd() {
+        lay.w = Math.min(100, Math.max(20, lay.w)); lay.h = Math.min(100, Math.max(20, lay.h));
+        lay.x = Math.min(100 - lay.w, Math.max(0, lay.x)); lay.y = Math.min(100 - lay.h, Math.max(0, lay.y));
+        ['x', 'y', 'w', 'h'].forEach(function (k) { lay[k] = Math.round(lay[k] * 100) / 100; });
+        applyLay(el, lay);
+      }
+      function pdist() { var k = Object.keys(ptrs); if (k.length < 2) return 1; var a = ptrs[k[0]], b = ptrs[k[1]]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; }
+      shield.onpointerdown = function (e) {
+        try { shield.setPointerCapture(e.pointerId); } catch (_) {}
+        ptrs[e.pointerId] = { x: e.clientX, y: e.clientY };
+        drag = { k: Object.keys(ptrs).length > 1 ? 'pinch' : 'move', s: snap(), d0: pdist(), px: e.clientX, py: e.clientY }; e.preventDefault();
+      };
+      shield.onpointermove = function (e) {
+        if (!ptrs[e.pointerId] || !drag) return; ptrs[e.pointerId] = { x: e.clientX, y: e.clientY };
+        if (drag.k === 'pinch' && Object.keys(ptrs).length > 1) {
+          var sc = pdist() / drag.d0, cw = drag.s.w * sc, ch = drag.s.h * sc;
+          lay.x = drag.s.x + (drag.s.w - cw) / 2; lay.y = drag.s.y + (drag.s.h - ch) / 2; lay.w = cw; lay.h = ch; upd();
+        } else if (drag.k === 'move') { lay.x = drag.s.x + (e.clientX - drag.px) / VW() * 100; lay.y = drag.s.y + (e.clientY - drag.py) / VH() * 100; upd(); }
+      };
+      shield.onpointerup = shield.onpointercancel = function (e) { delete ptrs[e.pointerId]; drag = null; };
+      ['nw', 'ne', 'sw', 'se'].forEach(function (c) {
+        var hd = h('div', { cls: 'pfn-handle ' + c }), st = null;
+        hd.onpointerdown = function (e) { try { hd.setPointerCapture(e.pointerId); } catch (_) {} st = { s: snap(), px: e.clientX, py: e.clientY }; e.preventDefault(); e.stopPropagation(); };
+        hd.onpointermove = function (e) {
+          if (!st) return; var s = st.s, dx = (e.clientX - st.px) / VW() * 100, dy = (e.clientY - st.py) / VH() * 100;
+          var west = c.charAt(1) === 'w', north = c.charAt(0) === 'n';
+          var w = s.w + (west ? -dx : dx), hh = s.h + (north ? -dy : dy);
+          if (lock) hh = w * VW() / ((s.w * VW()) / (s.h * VH())) / VH();
+          w = Math.min(100, Math.max(20, w)); hh = Math.min(100, Math.max(20, hh));
+          lay.w = w; lay.h = hh; lay.x = west ? s.x + s.w - w : s.x; lay.y = north ? s.y + s.h - hh : s.y; upd();
+        };
+        hd.onpointerup = hd.onpointercancel = function () { st = null; };
+        el.appendChild(hd); handles.push(hd);
+      });
+      function lockTxt() { return (lock ? '\uD83D\uDD12 ' : '\uD83D\uDD13 ') + T('Nisbat', 'Пропорция'); }
+      var bLock = h('button', { cls: 'pfn-btn sec', text: lockTxt(), onclick: function () { lock = !lock; bLock.textContent = lockTxt(); } });
+      function finish(ok) {
+        shield.remove(); handles.forEach(function (x) { x.remove(); }); if (r.layBar) { r.layBar.remove(); r.layBar = null; } r.edit = false;
+        if (ok) { var res = isFull(lay) ? null : { x: lay.x, y: lay.y, w: lay.w, h: lay.h, lock: lock }; o.layout = res; applyLay(el, res); saveLayout(o.fid, res); toast(T('Saqlandi', 'Сохранено')); }
+        else applyLay(el, orig);
+      }
+      r.layBar = h('div', { cls: 'pfn-laybar' },
+        h('button', { cls: 'pfn-btn grn', text: '\u2713 ' + T('Tasdiqlash', 'Подтвердить'), onclick: function () { finish(true); } }),
+        h('button', { cls: 'pfn-btn red', text: '\u2715 ' + T('Bekor qilish', 'Отмена'), onclick: function () { finish(false); } }),
+        h('button', { cls: 'pfn-btn sec', text: '\u21BA ' + T('Asl holat', 'Сброс'), onclick: function () { lay = { x: 0, y: 0, w: 100, h: 100 }; upd(); } }), bLock);
+      document.body.appendChild(r.layBar);
+    }
+
     r.onVis = function () { if (document.hidden) setFlag(false); else setFlag(true, o); };
     window.addEventListener('message', r.onMsg); document.addEventListener('visibilitychange', r.onVis);
     run = r; setFlag(true, o);
@@ -23046,17 +23265,17 @@ var PLDNBattModel = (function () {
     var c = await api('/fn/' + id + '/code?ver=' + encodeURIComponent(j.ver), { timeout: 120000 });
     var cached = setCache(id, c.ver, c.code);
     var m = loadInst(), old = m[id];
-    m[id] = { id: id, name: j.name, icon: j.icon, team: j.team, author: j.author, place: j.place, code30: j.code30, ver: c.ver, enabled: old ? (old.enabled !== false && !old.crash) : true, at: Date.now(), cached: cached };
+    m[id] = { id: id, name: j.name, icon: j.icon, team: j.team, author: j.author, place: j.place, code30: j.code30, ver: c.ver, enabled: old ? (old.enabled !== false && !old.crash) : true, at: Date.now(), cached: cached, targets: j.targets || [], layout: old ? (old.layout || null) : null };
     saveInst(m); renderQuick(); refreshBadge();
     return m[id];
   }
   async function doUninstall(id) {
     try { await api('/uninstall', { method: 'POST', body: { id: id } }); } catch (e) { if (e.code === 'net') { toast(errMsg(e)); return false; } }
     var m = loadInst(); delete m[id]; saveInst(m);
-    try { localStorage.removeItem(ck(id)); } catch (_) {} wipeStore(id);
+    try { localStorage.removeItem(ck(id)); localStorage.removeItem(pk(id)); } catch (_) {} wipeStore(id);
     renderQuick(); refreshBadge(); return true;
   }
-  async function launch(id) {
+  async function launch(id, btn) {
     var rec = loadInst()[id]; if (!rec) return;
     if (rec.enabled === false) { toast(T('Funksiya to\u2018xtatilgan. Avval yoqing', 'Функция остановлена. Сначала включите')); return; }
     var c = getCache(id), code = c && c.ver === rec.ver ? c.code : null;
@@ -23064,7 +23283,7 @@ var PLDNBattModel = (function () {
       try { var j = await api('/fn/' + id + '/code?ver=' + encodeURIComponent(rec.ver), { timeout: 120000 }); code = j.code; setCache(id, j.ver, j.code); }
       catch (e) { if (c) code = c.code; else { toast(errMsg(e)); return; } }
     }
-    runSandbox({ title: rec.name, code: code, fid: id });
+    runSandbox({ title: rec.name, code: code, fid: id, layout: rec.layout || null, targets: rec.targets || [], btn: typeof btn === 'string' ? btn : '' });
   }
   async function syncInstalled() {
     if (!me()) return;
@@ -23075,6 +23294,8 @@ var PLDNBattModel = (function () {
         if (!r) { r = m[f.id] = { id: f.id, enabled: true, cached: false, at: Date.now(), ver: f.ver }; }
         r.name = f.name; r.icon = f.icon; r.team = f.team; r.author = f.author; r.place = f.place; r.code30 = f.code30;
         r.update = !!f.update; r.latest = f.latest; r.changes = f.changes || ''; r.gone = !!f.gone;
+        r.targets = f.targets || []; if (f.layout) { r.layout = f.layout; delete r.layDirty; } else if (!r.layDirty) r.layout = null;
+        if (r.layDirty) saveLayout(r.id, r.layout, true);
       });
       Object.keys(m).forEach(function (k) { if (!seen[k]) delete m[k]; });
       saveInst(m); renderQuick(); refreshBadge();
@@ -23109,6 +23330,7 @@ var PLDNBattModel = (function () {
         h('span', { cls: 'settings-icon', text: r.icon || '\uD83E\uDDE9' }), h('span', { cls: 'settings-label', text: r.name }), h('span', { cls: 'settings-arrow', text: '\u203A' })));
       box.appendChild(g);
     });
+    applyAllPatches();
   }
 
   // ---------- sahifalar tizimi ----------
@@ -23226,6 +23448,7 @@ var PLDNBattModel = (function () {
           h('div', { cls: 'pfn-grow' }, h('div', { cls: 'pfn-nm', text: f.name }), h('div', { cls: 'pfn-sub', text: T('Muallif: ', 'Автор: ') + (f.author || '') + ' \u00B7 ' + f.team }), h('div', { cls: 'pfn-sub', text: T('Versiya: ', 'Версия: ') + (f.ver || '\u2014') + ' \u00B7 ' + fmtSize(f.size) })))));
         body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Tavsif', 'Описание') }), h('div', { cls: 'pfn-pre', text: f.desc || '\u2014' })));
         body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Kod belgisi', 'Код функции') }), codeNode(f.code30)));
+        if (f.targets && f.targets.length) body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Ilovaning o\u2018zgartiradigan qismlari', 'Части приложения, которые меняет функция') }), h('div', { cls: 'pfn-pre', text: partNames(f.targets) })));
         body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Kod ishlatishga urinadigan ruxsatlar', 'Разрешения, которые пытается использовать код') }),
           h('div', { cls: 'pfn-pre', text: (f.perms && f.perms.length) ? permText(f.perms) + '\n' + T('PLDN hozircha bu ruxsatlarni funksiyaga bermaydi.', 'PLDN пока не предоставляет эти разрешения функциям.') : T('Maxsus ruxsat talab qilmaydi (faqat PLDN.toast va PLDN.store).', 'Особых разрешений не требует (только PLDN.toast и PLDN.store).') })));
         var vl = (f.versions || []).filter(function (v) { return v.status === 'approved'; });
@@ -23244,7 +23467,7 @@ var PLDNBattModel = (function () {
   }
   function installFlow(f, done, old) {
     var txt = T('Muallif: ', 'Автор: ') + (f.author || '') + '\n' + T('Versiya: ', 'Версия: ') + f.ver + '\n' + T('Ruxsatlar: ', 'Разрешения: ') + ((f.perms && f.perms.length) ? permText(f.perms) + T(' (PLDN bermaydi)', ' (PLDN не даёт)') : T('maxsus ruxsat yo\u2018q', 'особых нет')) +
-      (old ? '\n\n' + T('O\u2018zgarishlar:\n', 'Изменения:\n') + String(f.desc || '').slice(0, 1500) : '') + '\n\n' + T('Funksiya alohida himoyalangan muhitda ishlaydi va asosiy ilova ma\u2019lumotlariga kira olmaydi.', 'Функция работает в изолированной среде и не имеет доступа к данным приложения.');
+      ((f.targets && f.targets.length) ? '\n' + T('O\u2018zgartiradigan qismlar: ', 'Меняет части: ') + partNames(f.targets) : '') + (old ? '\n\n' + T('O\u2018zgarishlar:\n', 'Изменения:\n') + String(f.desc || '').slice(0, 1500) : '') + '\n\n' + T('Funksiya alohida himoyalangan muhitda ishlaydi va asosiy ilova ma\u2019lumotlariga kira olmaydi.', 'Функция работает в изолированной среде и не имеет доступа к данным приложения.');
     confirmBox((old ? T('Yangilash: ', 'Обновить: ') : T('O\u2018rnatish: ', 'Установить: ')) + f.name, txt, old ? T('Yangilash', 'Обновить') : T('O\u2018rnatish', 'Установить')).then(function (ok) {
       if (!ok) return; toast(T('Yuklanmoqda...', 'Загрузка...'));
       doInstall(f.id).then(function () { toast(T('Tayyor: «Mening funksiyalarim» bo\u2018limida', 'Готово: раздел «Мои функции»')); done && done(); }).catch(function (e) { toast(errMsg(e)); });
@@ -23386,7 +23609,7 @@ var PLDNBattModel = (function () {
       if (!ok) return;
       busy = true; bSend.disabled = true; bSend.textContent = T('Yuborilmoqda...', 'Отправка...');
       try {
-        var res = await api('/submit', { method: 'POST', timeout: 180000, body: { fid: F.fid || undefined, team: F.team, name: nm, ver: F.ver, desc: F.desc, code: F.code, icon: F.icon, vis: F.vis, place: F.place, test: { ok: true, ms: F.test.ms, errors: 0, hash: hs } } });
+        var res = await api('/submit', { method: 'POST', timeout: 180000, body: { fid: F.fid || undefined, team: F.team, name: nm, ver: F.ver, desc: F.desc, code: F.code, icon: F.icon, vis: F.vis, place: F.place, targets: detectTargets(F.code), test: { ok: true, ms: F.test.ms, errors: 0, hash: hs } } });
         clearDraft(F.fid); toast(T('Yuborildi: administrator tekshiradi', 'Отправлено: администратор проверит')); pop();
       } catch (e) {
         if (e.code === 'scan_block' && e.data && e.data.findings) modal(T('Avtomatik tekshiruv rad etdi', 'Автопроверка отклонила'), e.data.findings.map(function (f) { return T('Qator ', 'Строка ') + f.line + ': ' + f.msg; }).join('\n'), [{ label: 'OK' }]);
@@ -23396,6 +23619,7 @@ var PLDNBattModel = (function () {
     }
     body.appendChild(info); body.appendChild(h('div', { css: 'display:flex;flex-direction:column;gap:8px' }, bTest, bSend));
     body.appendChild(h('div', { cls: 'pfn-sub', css: 'margin-top:12px', text: T('Qoralama avtomatik saqlanadi. Funksiya PLDN.toast(matn) va PLDN.store.get/set/del(kalit) dan foydalanishi mumkin; tarmoq, kamera, mikrofon va joylashuv hozircha yo\u2018q.', 'Черновик сохраняется автоматически. Доступны PLDN.toast(текст) и PLDN.store.get/set/del(ключ); сеть, камера, микрофон и геолокация пока недоступны.') }));
+    body.appendChild(h('div', { cls: 'pfn-sub', css: 'margin-top:10px', text: T('Ilova qismlari: PLDN.ui.css(\'B05\',\'background:#fee\'), PLDN.ui.text(\'B16\',\'Matn\'), PLDN.ui.hide(\'C04\'), PLDN.ui.button(\'P04\',{text:\'Tugma\',icon:\'\u2B50\'}); PLDN.launch \u2014 tugma id si. Qism kodlari qismlar ro\u2018yxatidan; kodda ko\u2018rsatilgan qismlar adminga avtomatik yuboriladi. O\u2018zgarish yopilgandan keyin «Qoldirasizmi?» deb so\u2018raladi. Funksiya ochilganda \u2922 tugmasi joy va o\u2018lchamni sozlaydi.', 'Части приложения: PLDN.ui.css(\'B05\',\'background:#fee\'), PLDN.ui.text(\'B16\',\'Текст\'), PLDN.ui.hide(\'C04\'), PLDN.ui.button(\'P04\',{text:\'Кнопка\',icon:\'\u2B50\'}); PLDN.launch \u2014 id кнопки. Коды частей из списка частей; указанные в коде части автоматически уходят админу. После закрытия спросит «Оставить?». Кнопка \u2922 в открытой функции меняет положение и размер.') }));
     counts(); chk(); setTestInfo();
     return { el: sh.el };
   }
@@ -23424,6 +23648,7 @@ var PLDNBattModel = (function () {
     body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Avtomatik tekshiruv', 'Автопроверка') }),
       h('div', { cls: 'pfn-pre', text: fl.length ? fl.map(function (f) { return '\u26A0\uFE0F ' + T('qator ', 'строка ') + f.line + ': ' + f.msg; }).join('\n') : '\u2705 ' + T('Shubhali naqsh topilmadi', 'Подозрительных шаблонов нет') }),
       h('div', { cls: 'pfn-sub', css: 'margin-top:8px', text: T('Talab qiladigan ruxsatlar: ', 'Запрашиваемые разрешения: ') + ((it.scan.perms || []).length ? permText(it.scan.perms) : T('yo\u2018q', 'нет')) })));
+    body.appendChild(h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Ilovaning o\u2018zgartiradigan qismlari (tasdiqlashdan oldin ko\u2018ring)', 'Части приложения, которые меняет функция (проверьте перед одобрением)') }), h('div', { cls: 'pfn-pre', text: (it.targets && it.targets.length) ? partNames(it.targets) : T('yo\u2018q', 'нет') })));
     var vbox = h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Foydalanish huquqi (siz o\u2018zgartira olasiz)', 'Доступ (вы можете изменить)') }));
     var vrow = h('div', {}); function pv() { vrow.innerHTML = ''; [['private', T('Shaxsiy', 'Личная')], ['public', T('Ommaviy', 'Публичная')]].forEach(function (o) { vrow.appendChild(h('span', { cls: 'pfn-chip' + (vis === o[0] ? ' on' : ''), text: o[1], onclick: function () { vis = o[0]; pv(); } })); }); } pv(); vbox.appendChild(vrow); body.appendChild(vbox);
     var codeCard = h('div', { cls: 'pfn-card' }, h('div', { cls: 'pfn-sub', text: T('Kod', 'Код') })); var pre = h('div', { cls: 'pfn-mono', css: 'max-height:380px' }); var more = h('button', { cls: 'pfn-btn sec', css: 'margin-top:8px', text: T('Yana yuklash', 'Загрузить ещё') });
@@ -23458,7 +23683,7 @@ var PLDNBattModel = (function () {
 
   // ---------- kod orqali (30 shakl) qo'shish uchun ----------
   window.PLDNFuncs = {
-    version: 'userfuncs-1.0',
+    version: 'userfuncs-1.1',
     open: openRoot,
     launch: launch,
     byCode: async function (key) {
@@ -23477,7 +23702,7 @@ var PLDNBattModel = (function () {
       tries++; var a = null; try { a = firebase.auth(); } catch (_) {}
       if (a) {
         clearInterval(iv);
-        a.onAuthStateChanged(function (u) { if (u) { checkCrash(); renderQuick(); refreshBadge(); setTimeout(function () { syncInstalled(); syncMine(); }, 4000); } else { closeRun(); closeRoot(); renderQuick(); } });
+        a.onAuthStateChanged(function (u) { if (u) { checkCrash(); renderQuick(); refreshBadge(); loadCatalog(); setTimeout(function () { syncInstalled(); syncMine(); }, 4000); } else { closeRun(); closeRoot(); renderQuick(); } });
       } else if (tries > 100) clearInterval(iv);
     }, 300);
     setInterval(function () { if (me() && !document.hidden) { syncInstalled(); syncMine(); } }, 300000);
