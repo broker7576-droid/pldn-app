@@ -1,5 +1,5 @@
-<!-- VERSION: 262 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: bot-stream-1.0 | satr: 23714 | 13-noy-2026 -->
+<!-- VERSION: 260 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: bot-stream-1.0 | satr: 23905 | 13-noy-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -18891,8 +18891,14 @@ async function fbOpenChat(info, ensure) {
     return out;
   }
   function oneList() {
-    var P = window.PLDNEmotions;
-    return [{ id: 'love1', emo: '❤️', t: ['Sevgi', 'Любовь'], run: function () {
+var P = window.PLDNEmotions;
+var base = oneBase();
+if (P && P.list1) P.list1().forEach(function (e) { base.push({ id: e.id, emo: e.ic, t: [e.nm, e.nm], run: function () { P.sendOne(e.id); } }); });
+return base;
+}
+function oneBase() {
+var P = window.PLDNEmotions;
+return [{ id: 'love1', emo: '❤️', t: ['Sevgi', 'Любовь'], run: function () {
       if (P && P.sendOne) P.sendOne('love1'); else if (window.PLDNLove3D) window.PLDNLove3D.play();
     } }];
   }
@@ -19021,7 +19027,8 @@ async function fbOpenChat(info, ensure) {
   window.PLDNRobotMenu = {
     open: open, close: close, isOpen: isOpen,
     openView: function (v) { open(v); },
-    setAction: function (id, fn) { ITEMS.forEach(function (it) { if (it.id === id && typeof fn === 'function') it.run = fn; }); }
+    setAction: function (id, fn) { ITEMS.forEach(function (it) { if (it.id === id && typeof fn === 'function') it.run = fn; }); },
+getAction: function (id) { var f = null; ITEMS.forEach(function (it) { if (it.id === id) f = it.run; }); return f; }
   };
 
   // Android "orqaga" tugmasi avval menyuni yopadi
@@ -20002,7 +20009,7 @@ var PLDNBattModel = (function () {
     Object.keys(EMO).forEach(function (id) { var E = EMO[id]; if (E.nm) out.push({ id: id, ic: E.ic || '✨', nm: E.nm() }); });
     return out;
   }
-  window.PLDNEmotions = { send: send, sendOne: sendOne, list: listTwo, register1: function (id, def) { EMO1[id] = def; }, register: function (id, def) { EMO[id] = def; }, isBusy: function () { return busy; } };
+  window.PLDNEmotions = { send: send, sendOne: sendOne, list: listTwo, register1: function (id, def) { EMO1[id] = def; }, register: function (id, def) { EMO[id] = def; }, get: function (id) { return EMO[id]; }, get1: function (id) { return EMO1[id]; }, unregister: function (id) { delete EMO[id]; }, unregister1: function (id) { delete EMO1[id]; }, list1: function () { var o = []; Object.keys(EMO1).forEach(function (id) { var E = EMO1[id]; if (E.nm) o.push({ id: id, ic: E.ic || '\u2728', nm: E.nm() }); }); return o; }, isBusy: function () { return busy; } };
 })();
 </script>
 <script>
@@ -22965,6 +22972,7 @@ var PLDNBattModel = (function () {
     B15: '#profileScreen', B16: '#settingsScreen', B17: '#settingsLangRow', B18: '#notificationsScreen', B19: '#privacyScreen', B20: '#connectedDevicesScreen', B21: '#storyViewerScreen', B22: '#logoutBtn',
     C01: '#pldnSettingsScreen', C02: '#robotToggleInput', C03: '#pldnWallpapersRow', C04: '#createGroupRow', C05: '#createChannelRow', C06: '#pldnSavedVideosRow', C07: '#pldnShapeDisplay', C08: '#pldnCodeMenu', C09: '#pldnCodeFunctionsScreen', C10: '#pldnFuncsRow', C11: '#pldnTermRow', C12: '#pldnMailRow', C15: '#pldnProtRow', C16: '#notificationsScreen',
     D01: '#chatDetailScreen', D02: '#chatDetailScreen .chat-detail-header', D03: '#callAudioBtn', D04: '#callVideoBtn', D05: '#emoBtn', D06: '#messagesArea', D07: '#messagesArea', D10: '#msgActionMenu', D11: '#reactionPicker', D13: '.chat-input-bar', D14: '#attachImageBtn', D15: '#sendMsgBtn', D16: '#replyBar', D17: '#voiceRecordingIndicator',
+    G01: '#pldnRobot',
     I01: ':root', I03: 'body', I05: '.bottom-nav'
   };
   // yangi tugma qo'yiladigan joylar (P-kodlar)
@@ -22978,8 +22986,15 @@ var PLDNBattModel = (function () {
     P11: function (el) { var c = document.getElementById('sendMsgBtn'); if (c && c.parentNode) c.parentNode.insertBefore(el, c); return !!c; }
   };
   function detectTargets(code) {
-    var re = /PLDN\s*\.\s*ui\s*\.\s*(?:css|text|hide|button)\s*\(\s*['"`]([A-Za-z]\d{2})['"`]/g, m, out = [];
-    while ((m = re.exec(String(code || '')))) { var id = m[1].toUpperCase(); if (out.indexOf(id) < 0) out.push(id); }
+    var c = String(code || ''), out = [], m;
+    var re = /PLDN\s*\.\s*(?:ui\s*\.\s*(?:css|text|hide|button|image)|robot\s*\.\s*action)\s*\(\s*['"`]([A-Za-z]\d{2})['"`]/g;
+    while ((m = re.exec(c))) { var id = m[1].toUpperCase(); if (out.indexOf(id) < 0) out.push(id); }
+    if (/PLDN\s*\.\s*emotion\s*\.\s*(?:two|one)\s*\(/.test(c) && out.indexOf('G12') < 0) out.push('G12');
+    return out;
+  }
+  function slotsOf(code) {
+    var re = /PLDN\s*\.\s*(?:ui|robot)\s*\.\s*\w+\s*\(\s*['"`]@([A-Za-z][A-Za-z0-9_]{0,15})['"`]/g, m, out = [];
+    while ((m = re.exec(String(code || '')))) { var n = m[1].toLowerCase(); if (out.indexOf(n) < 0) out.push(n); }
     return out;
   }
   function catMap() { try { return (JSON.parse(localStorage.getItem('pfn_parts') || 'null') || {}).m || {}; } catch (_) { return {}; } }
@@ -22989,7 +23004,7 @@ var PLDNBattModel = (function () {
   }
   function pk(fid) { return 'pfn_patch_' + (me() || '') + '_' + fid; }
   function loadPatch(fid) { try { var j = JSON.parse(localStorage.getItem(pk(fid)) || 'null'); return j && j.ops ? j : { ops: {} }; } catch (_) { return { ops: {} }; } }
-  function savePatch(fid, pt) { try { if (Object.keys(pt.ops).length) localStorage.setItem(pk(fid), JSON.stringify(pt)); else localStorage.removeItem(pk(fid)); } catch (_) {} }
+  function savePatch(fid, pt) { try { if (Object.keys(pt.ops).length) localStorage.setItem(pk(fid), JSON.stringify(pt)); else localStorage.removeItem(pk(fid)); } catch (_) { toast(T('Xotira to\u2018ldi: o\u2018zgarish saqlanmadi', 'Память заполнена: изменение не сохранено')); } }
   function mergeOps(a, b) { var o = {}, k; for (k in a) o[k] = a[k]; for (k in b) { if (b[k].op === 'noop') delete o[k]; else o[k] = b[k]; } return o; }
   var CSS_BAD = /[{}<>\\@]|url\s*\(|expression|javascript:|behavior|binding/i;
   function cleanCss(v, part) {
@@ -23011,8 +23026,152 @@ var PLDNBattModel = (function () {
     for (var i = 0; i < all.length; i++) if (!all[i].children.length && all[i].textContent.trim()) return all[i];
     return null;
   }
+  // ---------- ulanish joylari (@nom): foydalanuvchi ilovada elementni o'zi bosib tanlaydi ----------
+  function pickKey(fid) { return 'pfn_pick_' + (me() || '') + '_' + fid; }
+  function loadPicks(fid) { try { return JSON.parse(localStorage.getItem(pickKey(fid)) || '{}') || {}; } catch (_) { return {}; } }
+  function savePicks(fid, o) { try { localStorage.setItem(pickKey(fid), JSON.stringify(o)); } catch (_) {} }
+  function selFor(fid, p) {
+    if (!p) return null;
+    if (p.charAt(0) === '@') { var s = loadPicks(fid)[p.slice(1).toLowerCase()]; return s && s.sel ? s.sel : null; }
+    return PSEL[p] || null;
+  }
+  function qs(sel) { try { return document.querySelector(sel); } catch (_) { return null; } }
+  function cssPath(el) {
+    var parts = [], e = el;
+    while (e && e.nodeType === 1 && e !== document.body) {
+      if (e.id && document.querySelectorAll('#' + CSS.escape(e.id)).length === 1) { parts.unshift('#' + CSS.escape(e.id)); return parts.join(' > '); }
+      var i = 1, sib = e; while ((sib = sib.previousElementSibling)) if (sib.tagName === e.tagName) i++;
+      parts.unshift(e.tagName.toLowerCase() + ':nth-of-type(' + i + ')'); e = e.parentElement;
+    }
+    parts.unshift('body'); return parts.join(' > ');
+  }
+  // Tanlab bo'lmaydigan joylar: parol/himoya/seans ekranlari, funksiyalar oynasi, body
+  function pickBlocked(el) {
+    if (el === document.body || el === document.documentElement) return true;
+    if (el.closest && el.closest('#pfnRoot,#pfnRun,#pfnCfm,#pfnPick,#pfnCap,.pfn-laybar,[type=password],[id*="ass"],[id*="rot"],[id*="arol"],[id*="ession"],[id*="onnectedDevices"]')) return true;
+    return el.matches && el.matches('input[type=password]');
+  }
+  function describeEl(el) {
+    var tx = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 24);
+    return el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (tx ? ' \u00AB' + tx + '\u00BB' : '');
+  }
+  function pickFlow(fid, names, done) {
+    var picks = loadPicks(fid), i = 0, bar = null, cap = null, hl = null;
+    function cleanup() { [bar, cap, hl].forEach(function (x) { if (x) x.remove(); }); bar = cap = hl = null; }
+    function next() {
+      while (i < names.length && picks[names[i]]) i++;
+      if (i >= names.length) { cleanup(); savePicks(fid, picks); done(true); return; }
+      ask(names[i]);
+    }
+    function barUi(text, btns) {
+      if (bar) bar.remove();
+      bar = h('div', { id: 'pfnPick', css: 'position:fixed;left:8px;right:8px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:100092;background:#1c1c1e;color:#fff;border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px;box-shadow:0 4px 24px rgba(0,0,0,.5);font-size:14px;line-height:1.35' },
+        h('div', { text: text }), h('div', { css: 'display:flex;gap:8px;flex-wrap:wrap' }, btns));
+      document.body.appendChild(bar);
+    }
+    function ask(name) {
+      if (hl) { hl.remove(); hl = null; }
+      barUi(T('\u00AB@' + name + '\u00BB ilovaning qayerida ishlasin? Kerakli ekranni oching, keyin \uD83C\uDFAF ni bosib, ekrandagi elementga tegining.', '\u00AB@' + name + '\u00BB: где в приложении это должно работать? Откройте нужный экран, нажмите \uD83C\uDFAF и коснитесь элемента.'), [
+        h('button', { cls: 'pfn-btn grn', text: '\uD83C\uDFAF ' + T('Tanlash', 'Выбрать'), onclick: function () { capture(name); } }),
+        h('button', { cls: 'pfn-btn red', text: '\u2715 ' + T('Bekor qilish', 'Отмена'), onclick: function () { cleanup(); done(false); } })]);
+    }
+    function capture(name) {
+      if (cap) cap.remove();
+      cap = h('div', { id: 'pfnCap', css: 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:100091;background:rgba(63,161,208,.10);touch-action:none' });
+      cap.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation(); cap.style.pointerEvents = 'none';
+        var t = document.elementFromPoint(e.clientX, e.clientY); cap.remove(); cap = null;
+        if (!t || pickBlocked(t)) { toast(T('Bu joyni tanlab bo\u2018lmaydi', 'Это место выбрать нельзя')); ask(name); return; }
+        confirmEl(name, t);
+      }, true);
+      document.body.appendChild(cap);
+    }
+    function confirmEl(name, el) {
+      var r = el.getBoundingClientRect();
+      hl = h('div', { css: 'position:fixed;z-index:100090;pointer-events:none;border:3px solid #3fa1d0;border-radius:6px;background:rgba(63,161,208,.18);left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px' });
+      document.body.appendChild(hl);
+      barUi(T('Tanlandi: ', 'Выбрано: ') + describeEl(el), [
+        h('button', { cls: 'pfn-btn grn', text: '\u2713 ' + T('Shu yerga', 'Сюда'), onclick: function () { picks[name] = { sel: cssPath(el), desc: describeEl(el) }; savePicks(fid, picks); if (hl) { hl.remove(); hl = null; } next(); } }),
+        h('button', { cls: 'pfn-btn sec', text: '\u21BA ' + T('Qayta', 'Заново'), onclick: function () { ask(name); } })]);
+    }
+    next();
+  }
+  function withSlots(fid, code, go) {
+    var names = slotsOf(code), picks = loadPicks(fid);
+    if (!names.length || names.every(function (n) { return picks[n]; })) return go();
+    var rd = root ? root.style.display : '';
+    if (root) root.style.display = 'none';
+    toast(T('Funksiyani ilovaning qayeriga ulashni tanlang', 'Выберите, куда в приложении подключить функцию'));
+    pickFlow(fid, names, function (ok) { if (root) root.style.display = rd; if (ok) go(); });
+  }
+
+  // ---------- robot menyusi va emotsiyalar ----------
+  var RM = { orig: {}, own: {} }, EM = { own: {} };
+  var RMAP = { G03: 'kb', G04: 'settings', G05: 'charge', G06: 'voice' };
+  var PRESET = {
+    bounce: [{ transform: 'translateY(0)' }, { transform: 'translateY(-30px)' }, { transform: 'translateY(0)' }, { transform: 'translateY(-16px)' }, { transform: 'translateY(0)' }],
+    spin: [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+    shake: [{ transform: 'translateX(0)' }, { transform: 'translateX(-10px)' }, { transform: 'translateX(10px)' }, { transform: 'translateX(-10px)' }, { transform: 'translateX(0)' }],
+    pulse: [{ transform: 'scale(1)' }, { transform: 'scale(1.25)' }, { transform: 'scale(1)' }],
+    flip: [{ transform: 'rotateY(0deg)' }, { transform: 'rotateY(360deg)' }],
+    wave: [{ transform: 'rotate(0deg)' }, { transform: 'rotate(-14deg)' }, { transform: 'rotate(14deg)' }, { transform: 'rotate(-14deg)' }, { transform: 'rotate(0deg)' }]
+  };
+  function curveFn(pts) {
+    pts = (pts || []).map(function (q) { return [+q[0], +q[1]]; }).sort(function (a, b) { return a[0] - b[0]; });
+    return function (t) {
+      if (!pts.length) return 0; if (t <= pts[0][0]) return pts[0][1];
+      for (var i = 1; i < pts.length; i++) if (t <= pts[i][0]) { var a = pts[i - 1], b = pts[i], k = (t - a[0]) / ((b[0] - a[0]) || 1); k = k * k * (3 - 2 * k); return a[1] + (b[1] - a[1]) * k; }
+      return pts[pts.length - 1][1];
+    };
+  }
+  function cleanEmo(op, s) {
+    var v; try { v = JSON.parse(String(s || '{}')); } catch (_) { return null; }
+    if (!v || typeof v !== 'object' || !/^[a-z][a-z0-9_]{1,23}$/.test(String(v.id || ''))) return null;
+    var o = { id: String(v.id), name: String(v.name || v.id).slice(0, 24), icon: String(v.icon || '\u2728').slice(0, 8) }, dur = Number(v.dur);
+    if (op === 'emo2') {
+      o.dur = Math.min(30, Math.max(8, isFinite(dur) && dur ? dur : 12));
+      ['o', 'h', 'hv'].forEach(function (k) {
+        var a = Array.isArray(v[k]) ? v[k].slice(0, 40) : [];
+        o[k] = a.map(function (q) { return [Math.min(o.dur, Math.max(0, Number(q && q[0]) || 0)), Math.min(1, Math.max(0, Number(q && q[1]) || 0))]; });
+      });
+    } else { o.dur = Math.min(10, Math.max(0.5, isFinite(dur) && dur ? dur : 2)); o.anim = PRESET[v.anim] ? String(v.anim) : 'bounce'; }
+    return o;
+  }
+  function restoreHooks(fid) {
+    var M = window.PLDNRobotMenu, P = window.PLDNEmotions;
+    Object.keys(RM.own).forEach(function (id) { if (RM.own[id] === fid) { if (M && M.setAction && RM.orig[id]) M.setAction(id, RM.orig[id]); delete RM.own[id]; } });
+    Object.keys(EM.own).forEach(function (k) {
+      var e = EM.own[k]; if (e.fid !== fid) return;
+      if (P) {
+        if (e.kind === 2) { if (e.orig) P.register(e.id, e.orig); else if (P.unregister) P.unregister(e.id); }
+        else { if (e.orig) P.register1(e.id, e.orig); else if (P.unregister1) P.unregister1(e.id); }
+      }
+      delete EM.own[k];
+    });
+  }
+  function hookRobot(fid, p) {
+    var M = window.PLDNRobotMenu, rid = RMAP[p]; if (!M || !M.setAction || !rid) return;
+    if (!RM.orig[rid] && M.getAction) RM.orig[rid] = M.getAction(rid);
+    RM.own[rid] = fid; M.setAction(rid, function () { if (fid !== 'test') launch(fid, 'robot-' + rid); });
+  }
+  function applyEmo(fid, op) {
+    var P = window.PLDNEmotions, v = op.v; if (!P || !v) return;
+    var two = op.op === 'emo2', orig = two ? (P.get && P.get(v.id)) : (P.get1 && P.get1(v.id));
+    EM.own[op.op + ':' + v.id] = { fid: fid, id: v.id, kind: two ? 2 : 1, orig: orig || null };
+    if (two) {
+      var co = curveFn(v.o), ch = curveFn(v.h), cv = curveFn(v.hv), dur = v.dur;
+      P.register(v.id, { ic: v.icon, nm: function () { return v.name; }, dur: dur, openDur: 3.0, closeAt: dur - 1.4, closeDur: 1.3, tc1: 3.4, tc2: dur - 2.8, heartT: Math.min(6.6, dur / 2), pose: function (t) { return { o: co(t), h: ch(t), hv: cv(t) }; } });
+    } else {
+      var an = PRESET[v.anim] || PRESET.bounce, du = v.dur * 1000;
+      P.register1(v.id, { ic: v.icon, nm: function () { return v.name; }, play: function () {
+        var rb = document.getElementById('pldnRobot'); if (!rb || !rb.animate) return;
+        try { rb.animate(an, { duration: du, easing: 'ease-in-out', composite: 'add' }); } catch (_) { rb.animate(an, { duration: du }); }
+      } });
+    }
+  }
+
   function mkBtn(fid, op) {
-    var v = op.v || {}, ic = v.icon || '\uD83E\uDDE9', tx = v.text || '', kind = PLK[op.p], el;
+    var v = op.v || {}, ic = v.icon || '\uD83E\uDDE9', tx = v.text || '', kind = PLK[op.p] || 'att', el;
     var go = function (ev) { if (ev) { ev.preventDefault(); ev.stopPropagation(); } if (fid !== 'test') launch(fid, v.id || 'main'); };
     if (kind === 'row') el = h('div', { cls: 'settings-group' }, h('div', { cls: 'settings-item', onclick: go }, h('span', { cls: 'settings-icon', text: ic }), h('span', { cls: 'settings-label', text: tx }), h('span', { cls: 'settings-arrow', text: '\u203A' })));
     else el = h('button', { cls: kind === 'icon' ? 'header-bell' : (kind === 'hdr' ? 'call-hdr-btn' : 'attach-btn'), text: ic, 'aria-label': tx, onclick: go });
@@ -23020,14 +23179,26 @@ var PLDNBattModel = (function () {
     return el;
   }
   function renderPatch(fid, ops) {
-    var css = [], k, op, el, leaf;
+    var css = [], k, op, el, leaf, sel, ref, im;
+    restoreHooks(fid);
     document.querySelectorAll('[data-pfn-t="' + fid + '"]').forEach(function (e) { e.textContent = e.getAttribute('data-pfn-o'); e.removeAttribute('data-pfn-o'); e.removeAttribute('data-pfn-t'); });
+    document.querySelectorAll('[data-pfn-i="' + fid + '"]').forEach(function (e) { e.setAttribute('src', e.getAttribute('data-pfn-os') || ''); e.removeAttribute('data-pfn-os'); e.removeAttribute('data-pfn-i'); });
     document.querySelectorAll('[data-pfn-b="' + fid + '"]').forEach(function (e) { e.remove(); });
     for (k in ops) {
-      op = ops[k];
-      if (op.op === 'css' || op.op === 'hide') { if (PSEL[op.p]) css.push(PSEL[op.p] + '{' + (op.op === 'hide' ? 'display:none !important' : op.v) + '}'); }
-      else if (op.op === 'text' && PSEL[op.p]) { el = document.querySelector(PSEL[op.p].split(',')[0]); leaf = leafOf(el); if (leaf) { if (!leaf.hasAttribute('data-pfn-o')) leaf.setAttribute('data-pfn-o', leaf.textContent); leaf.setAttribute('data-pfn-t', fid); leaf.textContent = op.v; } }
-      else if (op.op === 'button' && PLC[op.p]) PLC[op.p](mkBtn(fid, op));
+      op = ops[k]; sel = op.p ? selFor(fid, op.p) : null;
+      if (op.op === 'css' || op.op === 'hide') { if (sel) css.push(sel + '{' + (op.op === 'hide' ? 'display:none !important' : op.v) + '}'); }
+      else if (op.op === 'text' && sel) { el = qs(sel.split(',')[0]); leaf = leafOf(el); if (leaf) { if (!leaf.hasAttribute('data-pfn-o')) leaf.setAttribute('data-pfn-o', leaf.textContent); leaf.setAttribute('data-pfn-t', fid); leaf.textContent = op.v; } }
+      else if (op.op === 'image' && sel) {
+        el = qs(sel.split(',')[0]); im = el ? (el.tagName === 'IMG' ? el : el.querySelector('img')) : null;
+        if (im) { if (!im.hasAttribute('data-pfn-os')) im.setAttribute('data-pfn-os', im.getAttribute('src') || ''); im.setAttribute('data-pfn-i', fid); im.setAttribute('src', op.v); }
+        else css.push(sel + '{background-image:url("' + op.v + '") !important;background-size:cover !important;background-position:center !important}');
+      }
+      else if (op.op === 'button') {
+        if (op.p.charAt(0) === '@') { ref = sel ? qs(sel) : null; if (ref && ref.insertAdjacentElement) ref.insertAdjacentElement('afterend', mkBtn(fid, op)); }
+        else if (PLC[op.p]) PLC[op.p](mkBtn(fid, op));
+      }
+      else if (op.op === 'robotact') hookRobot(fid, op.p);
+      else if (op.op === 'emo2' || op.op === 'emo1') applyEmo(fid, op);
     }
     var st = document.getElementById('pfn-st-' + fid);
     if (css.length) { if (!st) { st = document.createElement('style'); st.id = 'pfn-st-' + fid; document.head.appendChild(st); } st.textContent = css.join('\n'); }
@@ -23042,25 +23213,40 @@ var PLDNBattModel = (function () {
     document.querySelectorAll('[data-pfn-t]').forEach(function (e) { gone[e.getAttribute('data-pfn-t')] = 1; });
     Object.keys(gone).forEach(function (id) { if (id !== 'test' && !want[id]) renderPatch(id, {}); });
   }
+  var IMG_OK = /^data:image\/(png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+\/=]+$/;
   function uiOp(r, d) {
-    var op = String(d.op || ''), p = String(d.p || '').toUpperCase(), fid = r.o.test ? 'test' : r.o.fid;
+    var op = String(d.op || ''), p = String(d.p || ''), fid = r.o.test ? 'test' : r.o.fid;
+    p = p.charAt(0) === '@' ? '@' + p.slice(1).toLowerCase() : p.toUpperCase();
     if (op === 'parts') return Object.keys(PSEL).concat(Object.keys(PLC));
     if (!fid) return false;
     if (++r.nops > 300) return 'rate';
     if (op === 'reset') { r.ui = {}; if (!r.o.test) savePatch(fid, { ops: {} }); renderPatch(fid, {}); return true; }
-    if (!r.tset[p]) { r.addErr('PLDN.ui: ' + p + ' ' + T('e\u2019lon qilinmagan (kodda PLDN.ui.xxx(\'' + p + '\', ...) ko\u2018rinishida yozing)', 'не объявлено')); return 'not_declared'; }
-    var key, val;
-    if (op === 'css') {
-      if (!PSEL[p]) return 'unsupported'; val = cleanCss(d.v, p); if (val === null) return 'bad_css';
-      key = 'css:' + p; r.ui[key] = val ? { op: 'css', p: p, v: val } : { op: 'noop' };
-    } else if (op === 'hide') {
-      if (!PSEL[p]) return 'unsupported'; key = 'hide:' + p; r.ui[key] = d.v === false ? { op: 'noop' } : { op: 'hide', p: p };
-    } else if (op === 'text') {
-      if (!PSEL[p]) return 'unsupported'; key = 'text:' + p; r.ui[key] = { op: 'text', p: p, v: String(d.v == null ? '' : d.v).slice(0, 200) };
-    } else if (op === 'button') {
-      if (!PLC[p]) return 'unsupported'; var b = d.v || {}, bid = /^[A-Za-z0-9_-]{1,16}$/.test(String(b.id || '')) ? String(b.id) : 'main';
-      key = 'btn:' + p + ':' + bid; r.ui[key] = { op: 'button', p: p, v: { id: bid, text: String(b.text || '').slice(0, 24), icon: String(b.icon || '').slice(0, 8) } };
-    } else return 'bad_op';
+    var key, val, isSlot = p.charAt(0) === '@';
+    if (op === 'emo2' || op === 'emo1') {
+      if (!r.tset.G12) { r.addErr('PLDN.emotion: G12 ' + T('e\u2019lon qilinmagan', 'не объявлено')); return 'not_declared'; }
+      var ev = cleanEmo(op, d.v); if (!ev) return 'bad_emotion';
+      key = op + ':' + ev.id; r.ui[key] = { op: op, v: ev };
+    } else {
+      if (isSlot ? !r.slotset[p.slice(1)] : !r.tset[p]) { r.addErr('PLDN: ' + p + ' ' + T('e\u2019lon qilinmagan (kodda aynan shu nom bilan yozing)', 'не объявлено')); return 'not_declared'; }
+      var sel = selFor(fid, p);
+      if (op === 'robotact') { if (!RMAP[p]) return 'unsupported'; key = 'ra:' + p; r.ui[key] = { op: 'robotact', p: p }; }
+      else if (op === 'css') {
+        if (!sel) return isSlot ? 'need_pick' : 'unsupported'; val = cleanCss(d.v, p); if (val === null) return 'bad_css';
+        key = 'css:' + p; r.ui[key] = val ? { op: 'css', p: p, v: val } : { op: 'noop' };
+      } else if (op === 'hide') {
+        if (!sel) return isSlot ? 'need_pick' : 'unsupported'; key = 'hide:' + p; r.ui[key] = d.v === false ? { op: 'noop' } : { op: 'hide', p: p };
+      } else if (op === 'text') {
+        if (!sel) return isSlot ? 'need_pick' : 'unsupported'; key = 'text:' + p; r.ui[key] = { op: 'text', p: p, v: String(d.v == null ? '' : d.v).slice(0, 200) };
+      } else if (op === 'image') {
+        if (!sel) return isSlot ? 'need_pick' : 'unsupported'; val = String(d.v || '');
+        if (val.length > 600000 || !IMG_OK.test(val)) return 'bad_image';
+        key = 'img:' + p; r.ui[key] = { op: 'image', p: p, v: val };
+      } else if (op === 'button') {
+        if (isSlot ? !sel : !PLC[p]) return isSlot ? 'need_pick' : 'unsupported';
+        var b = d.v || {}, bid = /^[A-Za-z0-9_-]{1,16}$/.test(String(b.id || '')) ? String(b.id) : 'main';
+        key = 'btn:' + p + ':' + bid; r.ui[key] = { op: 'button', p: p, v: { id: bid, text: String(b.text || '').slice(0, 24), icon: String(b.icon || '').slice(0, 8) } };
+      } else return 'bad_op';
+    }
     if (Object.keys(r.ui).length > 60) { delete r.ui[key]; return 'too_many'; }
     renderPatch(fid, r.o.test ? r.ui : mergeOps(loadPatch(fid).ops, r.ui));
     return true;
@@ -23113,7 +23299,9 @@ var PLDNBattModel = (function () {
     'window.PLDN=Object.freeze({version:2,dark:__DARK__,launch:__BTN__,toast:function(m){send({t:"toast",m:String(m).slice(0,200)})},close:function(){send({t:"close"})},' +
     'store:{get:function(k){return call("sg",{k:String(k)})},set:function(k,v){return call("ss",{k:String(k),v:String(v)})},del:function(k){return call("sd",{k:String(k)})}},' +
     'ui:Object.freeze({css:function(p,v){return call("ui",{op:"css",p:String(p),v:String(v)})},text:function(p,v){return call("ui",{op:"text",p:String(p),v:String(v)})},hide:function(p,b){return call("ui",{op:"hide",p:String(p),v:b!==false})},' +
-    'button:function(p,o){o=o||{};return call("ui",{op:"button",p:String(p),v:{id:String(o.id||"main"),text:String(o.text||""),icon:String(o.icon||"")}})},reset:function(){return call("ui",{op:"reset"})},parts:function(){return call("ui",{op:"parts"})}})});' +
+    'button:function(p,o){o=o||{};return call("ui",{op:"button",p:String(p),v:{id:String(o.id||"main"),text:String(o.text||""),icon:String(o.icon||"")}})},reset:function(){return call("ui",{op:"reset"})},parts:function(){return call("ui",{op:"parts"})},image:function(p,v){return call("ui",{op:"image",p:String(p),v:String(v)})}}),' +
+    'robot:Object.freeze({action:function(p){return call("ui",{op:"robotact",p:String(p)})}}),' +
+    'emotion:Object.freeze({two:function(d){return call("ui",{op:"emo2",v:JSON.stringify(d||{})})},one:function(d){return call("ui",{op:"emo1",v:JSON.stringify(d||{})})}})});' +
     'send({t:"ready"});})();';
   var CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; worker-src blob:; base-uri 'none'; form-action 'none'";
   function buildDoc(code, dark, btn) {
@@ -23141,7 +23329,8 @@ var PLDNBattModel = (function () {
   function runSandbox(o) {
     closeRun();
     var dark = document.body.classList.contains('pldn-dark');
-    var errs = [], mem = {}, lastToast = 0, tset = {};
+    var errs = [], mem = {}, lastToast = 0, tset = {}, slotset = {};
+    slotsOf(o.code).forEach(function (x) { slotset[x] = 1; });
     (o.test ? detectTargets(o.code) : (o.targets || [])).forEach(function (x) { tset[String(x).toUpperCase()] = 1; });
     function addErr(msg) { if (errs.length < 50) errs.push(String(msg).slice(0, 300)); cnt.textContent = String(errs.length); errBox.style.display = o.test ? 'block' : 'none'; errBox.textContent = errs.slice(-4).join('\n'); }
     var fr = h('iframe', { sandbox: 'allow-scripts', referrerpolicy: 'no-referrer', css: 'flex:1;border:0;width:100%;background:#fff' });
@@ -23154,11 +23343,12 @@ var PLDNBattModel = (function () {
         closeRun();
       } }),
       h('div', { css: 'flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap', text: (o.test ? '\uD83E\uDDEA ' + T('SINOV: ', 'ТЕСТ: ') : '') + (o.title || '') }),
+      slotsOf(o.code).length ? h('button', { cls: 'pfn-ib', text: '\uD83C\uDFAF', title: T('Ulanishni qayta tanlash', 'Выбрать подключение заново'), css: 'color:inherit', onclick: function () { savePicks(o.test ? 'test' : o.fid, {}); var fid0 = o.fid, tst = o.test; closeRun(); if (!tst) launch(fid0); else toast(T('Test Mode ni qayta bosing', 'Нажмите Test Mode снова')); } }) : null,
       o.fid && !o.test ? h('button', { cls: 'pfn-ib', text: '\u2922', title: T('Joy va o\u2018lcham', 'Положение и размер'), css: 'color:inherit', onclick: function () { editLayout(); } }) : null,
       o.test ? h('span', {}, T('Xatolar: ', 'Ошибки: '), cnt) : null);
     var el = h('div', { id: 'pfnRun' }, bar, errBox, fr);
     document.body.appendChild(el); applyLay(el, o.layout);
-    var r = { el: el, o: o, errs: errs, t0: Date.now(), ui: {}, tset: tset, addErr: addErr, nops: 0, edit: false, layBar: null };
+    var r = { el: el, o: o, errs: errs, t0: Date.now(), ui: {}, tset: tset, slotset: slotset, addErr: addErr, nops: 0, edit: false, layBar: null };
     function reply(id, v) { try { fr.contentWindow.postMessage({ t: 'res', id: id, v: v }, '*'); } catch (_) {} }
     function used() { var p = sp(o.fid), tot = 0; for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf(p) === 0) tot += (localStorage.getItem(k) || '').length; } return tot; }
     r.onMsg = function (e) {
@@ -23272,7 +23462,7 @@ var PLDNBattModel = (function () {
   async function doUninstall(id) {
     try { await api('/uninstall', { method: 'POST', body: { id: id } }); } catch (e) { if (e.code === 'net') { toast(errMsg(e)); return false; } }
     var m = loadInst(); delete m[id]; saveInst(m);
-    try { localStorage.removeItem(ck(id)); localStorage.removeItem(pk(id)); } catch (_) {} wipeStore(id);
+    try { localStorage.removeItem(ck(id)); localStorage.removeItem(pk(id)); localStorage.removeItem(pickKey(id)); } catch (_) {} wipeStore(id);
     renderQuick(); refreshBadge(); return true;
   }
   async function launch(id, btn) {
@@ -23283,7 +23473,7 @@ var PLDNBattModel = (function () {
       try { var j = await api('/fn/' + id + '/code?ver=' + encodeURIComponent(rec.ver), { timeout: 120000 }); code = j.code; setCache(id, j.ver, j.code); }
       catch (e) { if (c) code = c.code; else { toast(errMsg(e)); return; } }
     }
-    runSandbox({ title: rec.name, code: code, fid: id, layout: rec.layout || null, targets: rec.targets || [], btn: typeof btn === 'string' ? btn : '' });
+    withSlots(id, code, function () { runSandbox({ title: rec.name, code: code, fid: id, layout: rec.layout || null, targets: rec.targets || [], btn: typeof btn === 'string' ? btn : '' }); });
   }
   async function syncInstalled() {
     if (!me()) return;
@@ -23586,11 +23776,11 @@ var PLDNBattModel = (function () {
     function setTestInfo() { info.textContent = F.test ? '\u2705 ' + T('Sinov o\u2018tdi (', 'Тест пройден (') + (F.test.ms / 1000).toFixed(1) + T(' s, xato yo\u2018q)', ' с, без ошибок)') : '\u26A0\uFE0F ' + T('Yuborishdan oldin Test Mode\u2019da sinash kerak', 'Перед отправкой нужно проверить в Test Mode'); }
     var bTest = h('button', { cls: 'pfn-btn grn', text: '\u25B6 ' + T('Test Mode', 'Test Mode'), onclick: function () {
       if (!F.code.trim()) { toast(T('Avval kod kiriting', 'Сначала введите код')); return; }
-      runSandbox({ title: F.name || T('Funksiya', 'Функция'), code: F.code, test: true, onEnd: function (r) {
+      withSlots('test', F.code, function () { runSandbox({ title: F.name || T('Funksiya', 'Функция'), code: F.code, test: true, onEnd: function (r) {
         if (r.ok && r.hash) { F.test = { ok: true, ms: r.ms, errors: 0, hash: r.hash }; toast(T('Sinov muvaffaqiyatli', 'Тест успешен')); }
         else { F.test = null; toast(r.errors ? T('Sinovda xatolar: ' + r.errors + ' ta', 'Ошибки в тесте: ' + r.errors) : T('Sinov yetarli emas (kamida 3 soniya)', 'Тест слишком короткий (минимум 3 секунды)')); }
         setTestInfo();
-      } });
+      } }); });
     } });
     var bSend = h('button', { cls: 'pfn-btn', text: '\uD83D\uDCE4 ' + T('Adminga yuborish', 'Отправить администратору'), onclick: submit });
     var busy = false;
@@ -23620,6 +23810,7 @@ var PLDNBattModel = (function () {
     body.appendChild(info); body.appendChild(h('div', { css: 'display:flex;flex-direction:column;gap:8px' }, bTest, bSend));
     body.appendChild(h('div', { cls: 'pfn-sub', css: 'margin-top:12px', text: T('Qoralama avtomatik saqlanadi. Funksiya PLDN.toast(matn) va PLDN.store.get/set/del(kalit) dan foydalanishi mumkin; tarmoq, kamera, mikrofon va joylashuv hozircha yo\u2018q.', 'Черновик сохраняется автоматически. Доступны PLDN.toast(текст) и PLDN.store.get/set/del(ключ); сеть, камера, микрофон и геолокация пока недоступны.') }));
     body.appendChild(h('div', { cls: 'pfn-sub', css: 'margin-top:10px', text: T('Ilova qismlari: PLDN.ui.css(\'B05\',\'background:#fee\'), PLDN.ui.text(\'B16\',\'Matn\'), PLDN.ui.hide(\'C04\'), PLDN.ui.button(\'P04\',{text:\'Tugma\',icon:\'\u2B50\'}); PLDN.launch \u2014 tugma id si. Qism kodlari qismlar ro\u2018yxatidan; kodda ko\u2018rsatilgan qismlar adminga avtomatik yuboriladi. O\u2018zgarish yopilgandan keyin «Qoldirasizmi?» deb so\u2018raladi. Funksiya ochilganda \u2922 tugmasi joy va o\u2018lchamni sozlaydi.', 'Части приложения: PLDN.ui.css(\'B05\',\'background:#fee\'), PLDN.ui.text(\'B16\',\'Текст\'), PLDN.ui.hide(\'C04\'), PLDN.ui.button(\'P04\',{text:\'Кнопка\',icon:\'\u2B50\'}); PLDN.launch \u2014 id кнопки. Коды частей из списка частей; указанные в коде части автоматически уходят админу. После закрытия спросит «Оставить?». Кнопка \u2922 в открытой функции меняет положение и размер.') }));
+    body.appendChild(h('div', { cls: 'pfn-sub', css: 'margin-top:10px', text: T('Istalgan joyga ulash: PLDN.ui.css(\'@nom\',\'color:red\'), PLDN.ui.text(\'@nom\',\'Matn\'), PLDN.ui.hide(\'@nom\'), PLDN.ui.button(\'@nom\',{text:\'Tugma\',icon:\'\u2B50\'}), PLDN.ui.image(\'@logo\',\'data:image/png;base64,...\'). \u00ABnom\u00BB ilovada foydalanuvchining o\u2018zi bosib tanlanadi (Test Mode da ham). Robot: PLDN.robot.action(\'G05\') \u2014 robot menyusi bandini shu funksiyaga bog\u2018laydi. Emotsiya: PLDN.emotion.two({id:\'mening\',name:\'Nomi\',icon:\'\uD83C\uDF89\',dur:12,o:[[5,0],[6,1],[9,0]],h:[[6,0],[7,1],[9,0]],hv:[[6.6,0],[7.5,1],[9,0]]}); PLDN.emotion.one({id:\'raqs\',name:\'Raqs\',icon:\'\uD83D\uDC83\',anim:\'wave\',dur:2}) (anim: bounce, spin, shake, pulse, flip, wave). \uD83C\uDFAF tugmasi ulanishni qayta tanlaydi. Ilova ikonkasi (APK) funksiyadan o\u2018zgarmaydi, ilova ichidagi logolar o\u2018zgaradi.', 'Подключение куда угодно: PLDN.ui.css(\'@имя\',\'color:red\'), PLDN.ui.text, PLDN.ui.hide, PLDN.ui.button, PLDN.ui.image(\'@logo\',\'data:image/png;base64,...\'). «имя» пользователь выбирает в приложении сам (и в Test Mode). Робот: PLDN.robot.action(\'G05\'). Эмоции: PLDN.emotion.two({...}) и PLDN.emotion.one({...}). Кнопка \uD83C\uDFAF выбирает подключение заново. Иконка приложения (APK) не меняется, логотипы внутри приложения меняются.') }));
     counts(); chk(); setTestInfo();
     return { el: sh.el };
   }
@@ -23665,7 +23856,7 @@ var PLDNBattModel = (function () {
     }
     body.appendChild(h('div', { css: 'display:flex;flex-direction:column;gap:8px;margin-top:6px' },
       h('button', { cls: 'pfn-btn sec', text: '\u25B6 ' + T('Sandboxda sinab ko\u2018rish', 'Запустить в песочнице'), onclick: function () {
-        api('/fn/' + it.id + '/code?ver=' + encodeURIComponent(it.ver), { timeout: 120000 }).then(function (c) { runSandbox({ title: it.name, code: c.code, test: true, onEnd: function () {} }); }).catch(function (e) { toast(errMsg(e)); }); } }),
+        api('/fn/' + it.id + '/code?ver=' + encodeURIComponent(it.ver), { timeout: 120000 }).then(function (c) { withSlots('test', c.code, function () { runSandbox({ title: it.name, code: c.code, test: true, onEnd: function () {} }); }); }).catch(function (e) { toast(errMsg(e)); }); } }),
       h('button', { cls: 'pfn-btn grn', text: '\u2705 ' + T('TASDIQLASH', 'ОДОБРИТЬ'), onclick: function () { decide('approve'); } }),
       h('button', { cls: 'pfn-btn red', text: '\u274C ' + T('RAD ETISH', 'ОТКЛОНИТЬ'), onclick: function () { decide('reject'); } }),
       h('button', { cls: 'pfn-btn', css: 'background:#f9a825', text: '\u21A9\uFE0F ' + T('TUZATISHGA QAYTARISH', 'ВЕРНУТЬ НА ДОРАБОТКУ'), onclick: function () { decide('return'); } })));
