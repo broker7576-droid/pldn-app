@@ -1,4 +1,4 @@
-// PLDN-FAYL: funcsrv.js | versiya: funcs-1.1 | satr: 350 | 8-noy-2026
+// PLDN-FAYL: funcsrv.js | versiya: funcs-1.2 | satr: 426 | 13-noy-2026
 // PLDN×RSLT — foydalanuvchi funksiyalari xizmati (port 3011, pm2 nomi: funcs)
 // Foydalanuvchi kodi serverda HECH QACHON bajarilmaydi: faqat saqlanadi, tahlil qilinadi va telefonga beriladi.
 'use strict';
@@ -42,6 +42,13 @@ CREATE TABLE IF NOT EXISTS installs(uid TEXT NOT NULL, fid INTEGER NOT NULL, ver
 CREATE TABLE IF NOT EXISTS submits(uid TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_ver_status ON versions(status);
 `);
+// funcs-1.2: eski bazaga yangi ustunlar (xavfsiz, qayta ishga tushirganda zarar qilmaydi)
+function addCol(tbl, col, def) {
+  try { if (!db.prepare('PRAGMA table_info(' + tbl + ')').all().some(c => c.name === col)) db.exec('ALTER TABLE ' + tbl + ' ADD COLUMN ' + col + ' ' + def); }
+  catch (e) { console.error('migrate', tbl, col, e.message); }
+}
+addCol('versions', 'targets', 'TEXT');   // funksiya o'zgartiradigan ilova qismlari (["B05","D06"])
+addCol('installs', 'layout', 'TEXT');    // foydalanuvchining joy/o'lcham sozlamasi (JSON)
 
 // ---------------------------------------------------------------- yordamchilar
 const now = () => Date.now();
@@ -50,6 +57,55 @@ const RE_TEAM = /^[A-Za-z0-9_-]{5,21}$/;
 const RE_VER = /^[A-Za-z0-9]{1,12}$/;
 const RE_NAME = /^[\p{L}\p{N}][\p{L}\p{N} ]{1,39}$/u;
 const bad = (res, code, error, extra) => res.status(code).json(Object.assign({ error }, extra || {}));
+
+// ---------------------------------------------------------------- ilova qismlari (qismlar.txt, server papkasida)
+// Kod/cheklov yo'q: YOPIQ (K01-K07) dan boshqa hamma qism ochiq. Fayl o'zgarsa qayta o'qiladi (qayta ishga tushirish shart emas).
+const PARTS_FILE = path.join(__dirname, 'qismlar.txt');
+let parts = { mtime: 0, open: new Map(), closed: new Map(), list: [] };
+function loadParts() {
+  try {
+    const st = fs.statSync(PARTS_FILE);
+    if (st.mtimeMs === parts.mtime) return parts;
+    const open = new Map(), closed = new Map(), list = []; let group = '';
+    for (const raw of fs.readFileSync(PARTS_FILE, 'utf8').split('\n')) {
+      const ln = raw.trim(); if (!ln) continue;
+      if (ln.startsWith('===')) { group = ln.replace(/=/g, '').trim(); continue; }
+      if (ln.startsWith('#')) { if (/2-QISM/.test(ln)) group = 'JOYLAR'; continue; }
+      const f = ln.split(' | ').map(x => x.trim());
+      if (f.length < 3 || !/^[A-Z]\d{2}$/.test(f[0])) continue;
+      if (/^YOPIQ/i.test(f[1])) { closed.set(f[0], f[2]); continue; }
+      const dm = (f[f.length - 1] || '').match(/^eshik:\s*(.*)$/);
+      const it = { id: f[0], kind: f[0][0] === 'P' ? 'place' : 'part', group, name: f[2], where: f[3] || '', what: f.length >= 6 ? f[4] : '', door: dm ? dm[1] : '' };
+      open.set(it.id, it); list.push(it);
+    }
+    parts = { mtime: st.mtimeMs, open, closed, list };
+  } catch (e) { console.error('parts', e.message); }
+  return parts;
+}
+loadParts();
+function checkTargets(raw) {
+  if (raw == null || raw === '') return { ok: true, list: [] };
+  if (!Array.isArray(raw) || raw.length > 80) return { ok: false, code: 'bad_targets' };
+  const p = loadParts(); const out = [];
+  for (const x of raw) {
+    const id = String(x == null ? '' : x).toUpperCase();
+    if (p.closed.has(id)) return { ok: false, code: 'part_closed', part: id };
+    if (!p.open.has(id)) return { ok: false, code: 'bad_part', part: id };
+    if (!out.includes(id)) out.push(id);
+  }
+  return { ok: true, list: out };
+}
+const parseJ = (s, d) => { try { return s ? JSON.parse(s) : d; } catch (_) { return d; } };
+// layout: x,y = joy; w,h = o'lcham; s = masshtab; lock = nisbatni saqlash. Birliklarni ilova (2-3-bosqich) belgilaydi, server faqat chegaralaydi.
+function cleanLayout(b) {
+  const n = (x, lo, hi) => { x = Number(x); return Number.isFinite(x) ? Math.min(hi, Math.max(lo, Math.round(x * 100) / 100)) : null; };
+  const o = {}; const put = (k, v) => { if (v !== null) o[k] = v; };
+  b = b && typeof b === 'object' ? b : {};
+  put('x', n(b.x, -100, 200)); put('y', n(b.y, -100, 200));
+  put('w', n(b.w, 1, 400)); put('h', n(b.h, 1, 400)); put('s', n(b.s, 0.1, 10));
+  if (typeof b.lock === 'boolean') o.lock = b.lock;
+  return o;
+}
 
 function genCode() { let s = ''; const b = crypto.randomBytes(30); for (let i = 0; i < 30; i++) s += ABC[b[i] % 12]; return s; }
 async function uniqueCode() {
@@ -161,6 +217,8 @@ r.post('/submit', auth, wrap(async (req, res) => {
   if (size > MAX_CODE) return bad(res, 413, 'too_large');
   if (db.prepare('SELECT COUNT(*) c FROM submits WHERE uid=? AND at>?').get(uid, now() - 86400000).c >= 40) return bad(res, 429, 'rate_limit');
   if (db.prepare("SELECT COUNT(*) c FROM versions v JOIN funcs f ON f.id=v.fid WHERE f.owner=? AND v.status='pending'").get(uid).c >= 25) return bad(res, 429, 'too_many_pending');
+  const tg = checkTargets(b.targets);
+  if (!tg.ok) return bad(res, 422, tg.code, tg.part ? { part: tg.part } : undefined);
   const sc = scan(code);
   if (sc.block) return bad(res, 422, 'scan_block', { findings: sc.findings.filter(f => f.hard).slice(0, 10) });
   const sha = sha256(code);
@@ -199,8 +257,8 @@ r.post('/submit', auth, wrap(async (req, res) => {
     const ex = db.prepare('SELECT * FROM versions WHERE fid=? AND ver=?').get(f.id, ver);
     if (ex && !['returned', 'rejected'].includes(ex.status)) throw Object.assign(new Error('ver_exists'), { code: ex.status === 'pending' ? 'ver_pending' : 'ver_exists' });
     if (ex) db.prepare('DELETE FROM versions WHERE id=?').run(ex.id);
-    db.prepare('INSERT INTO versions(fid,ver,descr,code,sha,size,lines,status,scan,test,submitted) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
-      .run(f.id, ver, descr, code, sha, size, lines, 'pending', JSON.stringify(sc), JSON.stringify(test), now());
+    db.prepare('INSERT INTO versions(fid,ver,descr,code,sha,size,lines,status,scan,test,submitted,targets) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(f.id, ver, descr, code, sha, size, lines, 'pending', JSON.stringify(sc), JSON.stringify(test), now(), JSON.stringify(tg.list));
     db.prepare('INSERT INTO submits(uid,at) VALUES(?,?)').run(uid, now());
   });
   try { tx(); } catch (e) { if (e.code) return bad(res, 409, e.code); throw e; }
@@ -255,7 +313,7 @@ r.get('/fn/:id', auth, wrap(async (req, res) => {
   if (!v && !priv) return bad(res, 404, 'not_found');
   const vers = db.prepare(priv ? 'SELECT ver,status,decided,descr FROM versions WHERE fid=? ORDER BY id DESC' : "SELECT ver,status,decided,descr FROM versions WHERE fid=? AND status='approved' ORDER BY id DESC").all(f.id);
   const sc = v ? JSON.parse(v.scan || '{}') : {};
-  res.json({ ...pub(f, v), desc: v ? v.descr : '', perms: sc.perms || [], size: v ? v.size : 0, versions: vers.map(x => ({ ver: x.ver, status: x.status, decided: x.decided, desc: priv ? String(x.descr || '') : String(x.descr || '').slice(0, 2000) })), mine: f.owner === req.uid });
+  res.json({ ...pub(f, v), desc: v ? v.descr : '', perms: sc.perms || [], size: v ? v.size : 0, targets: v ? parseJ(v.targets, []) : [], versions: vers.map(x => ({ ver: x.ver, status: x.status, decided: x.decided, desc: priv ? String(x.descr || '') : String(x.descr || '').slice(0, 2000) })), mine: f.owner === req.uid });
 }));
 r.get('/fn/:id/code', auth, wrap(async (req, res) => {
   const f = db.prepare('SELECT * FROM funcs WHERE id=?').get(Number(req.params.id));
@@ -265,7 +323,7 @@ r.get('/fn/:id/code', auth, wrap(async (req, res) => {
   if (req.query.ver) { v = db.prepare('SELECT * FROM versions WHERE fid=? AND ver=?').get(f.id, String(req.query.ver)); if (v && v.status !== 'approved' && !priv) v = null; }
   else v = latestApproved(f.id);
   if (!v) return bad(res, 404, 'not_found');
-  res.json({ ver: v.ver, sha: v.sha, code: v.code });
+  res.json({ ver: v.ver, sha: v.sha, code: v.code, targets: parseJ(v.targets, []) });
 }));
 r.get('/bycode/:code', auth, wrap(async (req, res) => {
   const c = String(req.params.code || '');
@@ -282,26 +340,44 @@ r.post('/install', auth, wrap(async (req, res) => {
   if (!f || f.removed || !(f.vis === 'public' || f.owner === req.uid)) return bad(res, 404, 'not_found');
   const v = latestApproved(f.id); if (!v) return bad(res, 404, 'not_found');
   db.prepare('INSERT INTO installs(uid,fid,ver,at) VALUES(?,?,?,?) ON CONFLICT(uid,fid) DO UPDATE SET ver=excluded.ver, at=excluded.at').run(req.uid, f.id, v.ver, now());
-  res.json({ ...pub(f, v), sha: v.sha });
+  res.json({ ...pub(f, v), sha: v.sha, targets: parseJ(v.targets, []), layout: null });
 }));
 r.post('/uninstall', auth, wrap((req, res) => {
   db.prepare('DELETE FROM installs WHERE uid=? AND fid=?').run(req.uid, Number((req.body || {}).id));
   res.json({ ok: true });
 }));
 r.get('/installed', auth, wrap((req, res) => {
-  const rows = db.prepare('SELECT i.fid, i.ver iver, f.* FROM installs i JOIN funcs f ON f.id=i.fid WHERE i.uid=?').all(req.uid);
+  const rows = db.prepare('SELECT i.fid, i.ver iver, i.layout, f.* FROM installs i JOIN funcs f ON f.id=i.fid WHERE i.uid=?').all(req.uid);
   const out = rows.map(f => {
     const gone = !!f.removed || !(f.vis === 'public' || f.owner === req.uid);
     const v = gone ? null : latestApproved(f.id);
-    return { ...pub(f, null), ver: f.iver, latest: v ? v.ver : null, update: !!(v && v.ver !== f.iver), changes: v && v.ver !== f.iver ? v.descr : '', gone };
+    const iv = db.prepare('SELECT targets FROM versions WHERE fid=? AND ver=?').get(f.id, f.iver);
+    return { ...pub(f, null), ver: f.iver, targets: iv ? parseJ(iv.targets, []) : [], layout: parseJ(f.layout, null), latest: v ? v.ver : null, update: !!(v && v.ver !== f.iver), changes: v && v.ver !== f.iver ? v.descr : '', gone };
   });
   res.json({ funcs: out });
 }));
 
+// --- ilova qismlari katalogi (qismlar.txt)
+r.get('/parts', auth, wrap((req, res) => {
+  const p = loadParts();
+  res.json({ rev: Math.round(p.mtime), parts: p.list, closed: [...p.closed].map(([id, name]) => ({ id, name })) });
+}));
+
+// --- joy/o'lcham sozlamasi (Tasdiqlash bosilganda); reset:true = asl holatga qaytarish
+r.post('/layout', auth, wrap((req, res) => {
+  const b = req.body || {}; const id = Number(b.id);
+  if (!db.prepare('SELECT 1 FROM installs WHERE uid=? AND fid=?').get(req.uid, id)) return bad(res, 404, 'not_found');
+  if (b.reset === true) { db.prepare('UPDATE installs SET layout=NULL WHERE uid=? AND fid=?').run(req.uid, id); return res.json({ ok: true, layout: null }); }
+  const lay = cleanLayout(b.layout);
+  if (!Object.keys(lay).length) return bad(res, 400, 'bad_layout');
+  db.prepare('UPDATE installs SET layout=? WHERE uid=? AND fid=?').run(JSON.stringify(lay), req.uid, id);
+  res.json({ ok: true, layout: lay });
+}));
+
 // --- administrator
 r.get('/admin/pending', auth, adminOnly, wrap((req, res) => {
-  const rows = db.prepare("SELECT v.id vid, v.ver, v.descr, v.size, v.lines, v.scan, v.test, v.submitted, f.* FROM versions v JOIN funcs f ON f.id=v.fid WHERE v.status='pending' AND f.removed=0 ORDER BY v.submitted ASC LIMIT 200").all();
-  res.json({ items: rows.map(x => ({ ...pub(x, { ver: x.ver }), desc: x.descr, size: x.size, lines: x.lines, scan: JSON.parse(x.scan || '{}'), test: JSON.parse(x.test || '{}'), submitted: x.submitted, owner: x.owner })) });
+  const rows = db.prepare("SELECT v.id vid, v.ver, v.descr, v.size, v.lines, v.scan, v.test, v.submitted, v.targets, f.* FROM versions v JOIN funcs f ON f.id=v.fid WHERE v.status='pending' AND f.removed=0 ORDER BY v.submitted ASC LIMIT 200").all();
+  res.json({ items: rows.map(x => ({ ...pub(x, { ver: x.ver }), desc: x.descr, size: x.size, lines: x.lines, scan: JSON.parse(x.scan || '{}'), test: JSON.parse(x.test || '{}'), targets: parseJ(x.targets, []), submitted: x.submitted, owner: x.owner })) });
 }));
 r.get('/admin/code', auth, adminOnly, wrap((req, res) => {
   const v = db.prepare('SELECT code FROM versions WHERE fid=? AND ver=?').get(Number(req.query.fid), String(req.query.ver || ''));
