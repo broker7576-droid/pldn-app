@@ -1,0 +1,191 @@
+# PLDN-FAYL: qismlar.txt | versiya: parts-0.1 | satr: 191 | 9-noy-2026
+# PLDN×RSLT — ilovaning barcha qismlari ro'yxati (index.html VERSION 251 kodidan tuzildi)
+#
+# QANDAY TO'LDIRILADI
+# 1) Har qator boshidagi KOD: ______ o'rniga raqam yozing (masalan KOD: 12335). Har kod yagona bo'lsin.
+# 2) Kod bermaslik = qism hozircha ochilmaydi. 'YOPIQ' bo'limiga umuman kod berilmaydi.
+# 3) Ustunlar: id | kod | nom | joyi (ilovada qayerda) | funksiya nimani o'zgartira/qo'sha oladi | eshik
+# 4) 'eshik' = ilovada shu qismga ulanadigan tayyor joy bormi. 'yo'q' bo'lsa funksiya uni o'zgartira olmaydi:
+#    kod berilgach men har qism uchun eshikni alohida yozaman (APK yangilanishi bilan).
+# 5) Yangi funksiyalarga kodni server beradi (30 shaklli kod, mavjud tizim). Bu yerdagi raqamlar ilova qismlari uchun.
+# 6) 2-QISM — JOYLAR: tugma/band ekranning qayerida paydo bo'lishi. Ekrandagi aniq o'rin (masalan chapdan 85%, tepadan 4%)
+#    formatini kodlar tasdiqlangach birga belgilaymiz.
+# 7) Ro'yxat kod tahlili asosida tuzildi: kichik qism qolib ketgan bo'lishi mumkin. Topsangiz oxiriga yozing.
+
+##### 1-QISM: QISMLAR (nimani o'zgartirish mumkin) #####
+
+=== A. KIRISH VA PROFIL EKRANLARI ===
+A01 | KOD: ______ | Username ekrani | screen1 | sarlavha, matnlar, rang, animatsiya | eshik: yo'q
+A02 | KOD: ______ | Oddiy/Pro dizayn tanlovi (kirish) | screen1 uiStyleToggle | Pro maydoni ko'rinishi, surish tugmasi uslubi | eshik: yo'q
+A03 | KOD: ______ | Til tanlash tugmasi | screen1 langBtn | til ro'yxati, bayroq ko'rinishi | eshik: yo'q
+A04 | KOD: ______ | Ism-familiya ekrani | screen2 | maydonlar tartibi, matnlar, surib tasdiqlash tugmasi | eshik: yo'q
+A05 | KOD: ______ | Parol ekrani (ro'yxatdan o'tish) | screenPass | matnlar, xato xabarlari | eshik: yo'q
+A06 | KOD: ______ | Kirish ekrani (login) | screenLogin | matnlar, tugmalar | eshik: yo'q
+A07 | KOD: ______ | Mail orqali kirish | screenLogin mailLoginBox | tugma, kod kiritish oynasi | eshik: yo'q
+A08 | KOD: ______ | Xush kelibsiz / yuklanish ekrani | screen3 | progress halqa, matn, rang | eshik: yo'q
+A09 | KOD: ______ | Splash (PLDN logosi) | ilova ochilishi | logo, fon, davomiyligi | eshik: yo'q
+
+=== B. ASOSIY EKRANLAR ===
+B01 | KOD: ______ | Chatlar ro'yxati ekrani | screen4 | umumiy ko'rinish, qator dizayni, bo'sh holat matni | eshik: yo'q
+B02 | KOD: ______ | Chatlar ro'yxati sarlavhasi | screen4 chatHeader | sarlavha matni, tugmalar | eshik: yo'q
+B03 | KOD: ______ | 🔔 Bildirishnoma tugmasi | sarlavha o'ng | ikonka, qizil belgi | eshik: yo'q
+B04 | KOD: ______ | Hikoyalar qatori (doiralar) | chatlar tepasi | doira uslubi, tartib | eshik: yo'q
+B05 | KOD: ______ | Chat ro'yxati qatori | chatList | avatar, ism, oxirgi xabar, o'qilmagan soni ko'rinishi | eshik: yo'q
+B06 | KOD: ______ | Chat uzoq bosish menyusi | chatActionMenu | bandlar (o'chirish, tanlash) | eshik: yo'q
+B07 | KOD: ______ | Chatlarni qidirish | chatSearchInput | qidiruv maydoni | eshik: yo'q
+B08 | KOD: ______ | Pastki navigatsiya | barcha asosiy ekranlar | tablar (Chatlar, Kontaktlar, Sozlamalar, Profil), ikonka, rang | eshik: yo'q
+B09 | KOD: ______ | Kontaktlar ekrani | contactsScreen | ro'yxat dizayni | eshik: yo'q
+B10 | KOD: ______ | Kontaktlar: telefon kontaktlarini import | importPhoneContactsBtn | tugma | eshik: yo'q
+B11 | KOD: ______ | Kontaktlar: qo'lda qo'shish | addManualContactBtn | tugma, maydonlar | eshik: yo'q
+B12 | KOD: ______ | Kontaktlar: foydalanuvchi qidirish | findUserBtn, findUserScreen | qidiruv oynasi, natija kartochkasi | eshik: yo'q
+B13 | KOD: ______ | Guruh yaratish ekranlari | newGroupMembersScreen, newGroupInfoScreen | maydonlar, avatar tanlash | eshik: yo'q
+B14 | KOD: ______ | Kanal yaratish ekrani | newChannelInfoScreen | maydonlar | eshik: yo'q
+B15 | KOD: ______ | Profil ekrani | profileScreen | avatar, ism, username, Haqida, tahrirlash tugmasi | eshik: yo'q
+B16 | KOD: ______ | Sozlamalar ekrani | settingsScreen | qatorlar ro'yxati, ikonkalar | eshik: yo'q
+B17 | KOD: ______ | Til qatori | settingsLangRow | til ro'yxati | eshik: yo'q
+B18 | KOD: ______ | Bildirishnomalar sozlamalari | notificationsScreen | xabar, ovoz, vibratsiya, guruh, tinch soatlar | eshik: yo'q
+B19 | KOD: ______ | Maxfiylik va xavfsizlik ekrani | privacyScreen | Oxirgi faollik, Profil rasmi, Telefon raqami qatorlari | eshik: yo'q
+B20 | KOD: ______ | Ulangan qurilmalar / Aktiv seanslar | connectedDevicesScreen | ro'yxat dizayni | eshik: yo'q
+B21 | KOD: ______ | Hikoya ko'ruvchi | storyViewerScreen | progress chiziq, tugmalar, emotsiya paneli | eshik: yo'q
+B22 | KOD: ______ | Hisobdan chiqish oynasi | logoutBtn | matn, tugmalar | eshik: yo'q
+B23 | KOD: ______ | Hisoblar (ko'p hisob, 5 tagacha) | Sozlamalar accountsRow | ro'yxat dizayni | eshik: yo'q
+
+=== C. PLDN SOZLAMALARI VA ULANGAN BO'LIMLAR ===
+C01 | KOD: ______ | PLDN sozlamalari ekrani | pldnSettingsScreen | qatorlar ro'yxati | eshik: qisman (yangi qator qo'shish bor)
+C02 | KOD: ______ | Robotni yoqish/o'chirish tugmasi | robotToggleInput | tugma ko'rinishi | eshik: yo'q
+C03 | KOD: ______ | Fonlar bo'limi | pldnWallpapersRow | ro'yxat, saqlangan fonlar | eshik: yo'q
+C04 | KOD: ______ | Guruh yaratish qatori | createGroupRow | matn, ikonka | eshik: yo'q
+C05 | KOD: ______ | Kanal yaratish qatori | createChannelRow | matn, ikonka | eshik: yo'q
+C06 | KOD: ______ | Videolar / Saqlangan videolar | pldnSavedVideosRow | ro'yxat, kartochka dizayni | eshik: yo'q
+C07 | KOD: ______ | Shakl bilan kod kiritish maydoni | pldnShapeDisplay | shakllar ko'rinishi, tugmalar | eshik: yo'q
+C08 | KOD: ______ | Kod menyusi (⋮) va kodlar tarixi | pldnCodeMenu | bandlar | eshik: yo'q
+C09 | KOD: ______ | Kod orqali funksiyalar bo'limi | pldnCodeFunctionsScreen | ro'yxat, yoqish/o'chirish | eshik: bor (kod modullari)
+C10 | KOD: ______ | Foydalanuvchi funksiyalari bo'limi | pldnFuncsRow | bo'lim ko'rinishi | eshik: yo'q
+C11 | KOD: ______ | Buyruqlar terminali | pldnTermRow | buyruq maydonlari, tugmalar | eshik: yo'q
+C12 | KOD: ______ | PLDN×RSLT Mail bo'limi | pldnMailRow | bo'lim | eshik: yo'q
+C13 | KOD: ______ | Sevgi rejimi qatori | pldnLoveRow | qator | eshik: yo'q
+C14 | KOD: ______ | Kinozona qatori | kinoRow | qator | eshik: yo'q
+C15 | KOD: ______ | Himoya (kodlar) qatori | pldnProtRow | qator | eshik: yo'q
+C16 | KOD: ______ | Bildirishnomalar paneli (🔔) tablari | notificationsScreen | Yangilanish, Takliflar, Xavfsizlik tablari, karta dizayni | eshik: yo'q
+
+=== D. CHAT OYNASI ===
+D01 | KOD: ______ | Chat oynasi umumiy ko'rinishi | chatDetailScreen | fon, tartib | eshik: yo'q
+D02 | KOD: ______ | Chat sarlavhasi (avatar, ism, holat) | chatDetail tepasi | matn, avatar uslubi, bosilganda ochiladigan narsa | eshik: yo'q
+D03 | KOD: ______ | 📞 Audio qo'ng'iroq tugmasi | chat sarlavha | ikonka, harakat | eshik: yo'q
+D04 | KOD: ______ | 🎥 Video qo'ng'iroq tugmasi | chat sarlavha | ikonka, harakat | eshik: yo'q
+D05 | KOD: ______ | ❤️ Emotsiya tugmasi | chat sarlavha emoBtn | ikonka, ro'yxat | eshik: yo'q
+D06 | KOD: ______ | Xabar pufakchasi | messagesArea | rang, shakl, burchak, shrift, o'lcham | eshik: yo'q
+D07 | KOD: ______ | Sana ajratgich | messagesArea | ko'rinish, matn | eshik: yo'q
+D08 | KOD: ______ | Xabar vaqti va holat belgilari | pufakcha ichida | belgilar (yuborilmoqda/yuborildi/o'qildi), rang | eshik: yo'q
+D09 | KOD: ______ | Javob iqtibosi bloki | xabar ichida | ko'rinish | eshik: yo'q
+D10 | KOD: ______ | Xabar menyusi (Tahrirlash/O'chirish) | msgActionMenu | bandlar | eshik: yo'q
+D11 | KOD: ______ | Reaksiya paneli va reaksiyalar | reactionPicker | emoji ro'yxati, ko'rinish | eshik: yo'q
+D12 | KOD: ______ | O'ngga surib javob berish | xabar | harakat uslubi | eshik: yo'q
+D13 | KOD: ______ | Yozish paneli | pastki panel | maydon, tugmalar tartibi, rang | eshik: yo'q
+D14 | KOD: ______ | 📎 Rasm biriktirish tugmasi | yozish paneli attachImageBtn | ikonka, harakat | eshik: yo'q
+D15 | KOD: ______ | Mikrofon/Yuborish tugmasi | yozish paneli sendMsgBtn | ikonka, rang | eshik: yo'q
+D16 | KOD: ______ | Javob paneli (replyBar) | yozish paneli tepasi | ko'rinish | eshik: yo'q
+D17 | KOD: ______ | Ovozli xabar yozish indikatori | voiceRecordingIndicator | ko'rinish, taymer | eshik: yo'q
+D18 | KOD: ______ | 🙂 Stiker paneli | yozish paneli | tablar, qidiruv, papkalar | eshik: yo'q
+D19 | KOD: ______ | Matn ichiga stiker qo'yish rejimi | yozish maydoni | harakat | eshik: yo'q
+D20 | KOD: ______ | Rasm ko'rish oynasi (to'liq ekran) | rasmni bosganda | tugmalar, kattalashtirish | eshik: yo'q
+D21 | KOD: ______ | Chat orqa foni | chat fon | rasm/video fon, xiralik, ulashish | eshik: yo'q
+D22 | KOD: ______ | Qo'ng'iroq kartochkasi (chatda) | xabarlar ichida | ko'rinish | eshik: yo'q
+D23 | KOD: ______ | Video xabar kartochkasi | xabarlar ichida | ko'rinish | eshik: yo'q
+D24 | KOD: ______ | Real foto/video 📸 | chat ⋮ menyusi | ramka rangi, tugmalar | eshik: yo'q
+D25 | KOD: ______ | Profil ⋮ menyusi (shaxsiy chat) | kontakt profili | Hikoya taklif, Bloklash, PDF qilish, Fon joylash, bandlar | eshik: yo'q
+D26 | KOD: ______ | Kontakt profili ekrani | chat sarlavhasini bosganda | ko'rinish, tugmalar | eshik: yo'q
+D27 | KOD: ______ | Bloklash | kontakt profili ⋮ | matnlar, ko'rinish | eshik: yo'q
+D28 | KOD: ______ | PDF eksport | profil ⋮ menyusi | tugma, PDF ko'rinishi | eshik: yo'q
+D29 | KOD: ______ | PDF tahrirlash | kod funksiyasi | tahrirlash vositalari | eshik: yo'q
+
+=== E. GURUH VA KANAL ===
+E01 | KOD: ______ | Guruh/kanal sarlavhasi va menyusi | chat sarlavha | bandlar (a'zo qo'shish, a'zolar qidirish, sozlamalar) | eshik: yo'q
+E02 | KOD: ______ | Guruh/kanal profili | guruh profili ekrani | rasm, nom, tavsif, tugmalar | eshik: yo'q
+E03 | KOD: ______ | A'zolar ro'yxati | guruh ma'lumoti | qator dizayni, Ega/Admin belgisi | eshik: yo'q
+E04 | KOD: ______ | Kanal sozlamalari | kanal egasi | qatorlar, ✓ saqlash tugmasi | eshik: yo'q
+E05 | KOD: ______ | Boshqaruvchilar va imtiyozlar | kanal | katakchalar ro'yxati | eshik: yo'q
+E06 | KOD: ______ | Qidiruv (PLDN/- bo'yicha) | chatlar ⋮ / qidiruv | natija kartochkasi, "Qo'shilish" tugmasi | eshik: yo'q
+E07 | KOD: ______ | PLDN yangilanishlari kanali | chatlar ro'yxati | ko'rinish | eshik: yo'q
+
+=== F. QO'NG'IROQLAR ===
+F01 | KOD: ______ | Qo'ng'iroq oynasi (audio/video) | qo'ng'iroq paytida | ko'rinish, tugmalar | eshik: yo'q
+F02 | KOD: ______ | Qo'ng'iroqda dinamik 🔈/🔊 tugmasi | qo'ng'iroq oynasi | ikonka | eshik: yo'q
+F03 | KOD: ______ | Qo'ng'iroq zapisi (yozib olish) | qo'ng'iroq ⋮ | sifat tanlash, tugma | eshik: yo'q
+F04 | KOD: ______ | Saqlangan videolar (yozuvlar) | PLDN sozlamalari | ro'yxat, kartochka | eshik: yo'q
+
+=== G. ROBOT (PLDN BOT) ===
+G01 | KOD: ______ | Robot (suzuvchi yordamchi) | ilova ustida | ko'rinish: yuz, ko'z, rang, o'lcham, joyi, pirpirash | eshik: yo'q
+G02 | KOD: ______ | Robot aylana menyusi | robotni bosganda | bandlar soni, ranglar, ikonkalar | eshik: qisman (band harakatini almashtirish bor)
+G03 | KOD: ______ | Menyu bandi: Bilimlar bazasi | robot menyusi | harakat, ko'rinish | eshik: yo'q
+G04 | KOD: ______ | Menyu bandi: Sozlamalar | robot menyusi | harakat | eshik: yo'q
+G05 | KOD: ______ | Menyu bandi: Quvvatlash rejimi | robot menyusi | harakat, batareya oynasi | eshik: yo'q
+G06 | KOD: ______ | Menyu bandi: Ovoz bilan boshqarish | robot menyusi | harakat | eshik: yo'q
+G07 | KOD: ______ | Menyu bandi: Yopish | robot menyusi | ko'rinish | eshik: yo'q
+G08 | KOD: ______ | Menyu bandi: Sevgi emotsiyasi | robot menyusi | ichki menyu | eshik: yo'q
+G09 | KOD: ______ | Emotsiya: Sevgi (3D, yurakni quchadi) | robot | animatsiya, ko'rinish | eshik: yo'q
+G10 | KOD: ______ | Emotsiya: 2-tomonli (ikki robot portali) | robot | animatsiya, portal ko'rinishi | eshik: yo'q
+G11 | KOD: ______ | Emotsiya: 1-tomonlama (o'z joyida) | robot | animatsiya | eshik: yo'q
+G12 | KOD: ______ | Emotsiyalar menyusi (12 o'rin) | robot ichki menyu | yangi emotsiya qo'shish (11 bo'sh o'rin) | eshik: yo'q
+G13 | KOD: ______ | Robot gapirishi / xabar chiqarishi | robot | matn, ovoz | eshik: yo'q
+G14 | KOD: ______ | Quvvatlash (batareya) oynasi | robot | ko'rinish | eshik: yo'q
+G15 | KOD: ______ | Bilimlar bazasi (savol-javob, /oyrat) | robot menyusi | savol-javob, buyruqlar | eshik: yo'q
+G16 | KOD: ______ | Bot buyruqlari (/esla /eslat va h.k.) | bot chati | yangi buyruq qo'shish | eshik: yo'q
+
+=== H. OVOZ BILAN BOSHQARISH (PLDN START) ===
+H01 | KOD: ______ | Mikrofon tugmasi (ovozli buyruq) | ilova | ko'rinish, joyi | eshik: yo'q
+H02 | KOD: ______ | Buyruqlar tizimi | PLDNStart.register | yangi ovozli buyruq qo'shish | eshik: bor
+H03 | KOD: ______ | Uyg'otish iborasi (Paladin) | fon xizmati | ibora, sozlamalar | eshik: yo'q
+H04 | KOD: ______ | Cho'ntak rejimi | fon xizmati | yoqish/o'chirish buyruqlari | eshik: yo'q
+H05 | KOD: ______ | Qulflangan ekranda ishlash | fon xizmati | ruxsat etilgan buyruqlar | eshik: yo'q
+
+=== I. DIZAYN (TEMA) ===
+I01 | KOD: ______ | Rang o'zgaruvchilari (fon, kartochka, matn) | :root CSS | ranglar | eshik: yo'q
+I02 | KOD: ______ | Qorong'i rejim | DARK kodi | rang to'plami | eshik: bor (kod modul)
+I03 | KOD: ______ | Shrift va matn o'lchami | butun ilova | shrift turi, o'lcham | eshik: yo'q
+I04 | KOD: ______ | Tugma va kartochka burchaklari | butun ilova | burchak radiusi | eshik: yo'q
+I05 | KOD: ______ | Pastki navigatsiya dizayni | pastki panel | rang, shakl | eshik: yo'q
+
+=== J. BOSHQA MODULLAR ===
+J01 | KOD: ______ | Kinozona (birga kino ko'rish) | Sozlamalar kinoRow | xona dizayni, tugmalar | eshik: yo'q
+J02 | KOD: ______ | Sevgi rejimi ❤️📍 (jonli joylashuv) | Sozlamalar pldnLoveRow | xarita, belgilar, tarix | eshik: yo'q
+J03 | KOD: ______ | Buyruqlar terminali | PLDN sozlamalari | buyruq maydonlari | eshik: yo'q
+J04 | KOD: ______ | PLDN×RSLT Mail ilovasi | alohida ilova | kirish kodlari ko'rinishi | eshik: yo'q
+J05 | KOD: ______ | Ilovani yangilash (🔔 Yangilanish kartalari) | bildirishnomalar paneli | karta dizayni, matnlar | eshik: yo'q
+J06 | KOD: ______ | Stikerlar yaratish va papkalar | stiker paneli | muharrir, papkalar | eshik: yo'q
+J07 | KOD: ______ | Hikoyalar (ulashish, emotsiya, ko'rganlar) | chatlar tepasi, profil ⋮ | ko'rinish, tugmalar | eshik: yo'q
+J08 | KOD: ______ | Foydalanuvchi funksiyalari (kutubxona, yaratish) | PLDN sozlamalari | ro'yxat, forma | eshik: yo'q
+
+=== K. YOPIQ (kod BERILMAYDI, funksiya ko'ra ham o'zgartira ham olmaydi) ===
+K01 | YOPIQ | Parollar va "Parollarim" ma'lumotlari
+K02 | YOPIQ | Himoya kodlari (ilova, chat, guruh, kanal; online/offline)
+K03 | YOPIQ | Firebase tokenlari va server kalitlari
+K04 | YOPIQ | Firestore qoidalari va server fayllari
+K05 | YOPIQ | Boshqa foydalanuvchilarning shaxsiy xabarlari va ma'lumotlari
+K06 | YOPIQ | Seanslar va xavfsizlik xabarlari (yangi qurilma kirishi)
+K07 | YOPIQ | Ilova kodining o'zi (index.html) va APK sozlamalari
+
+##### 2-QISM: JOYLAR (tugma/band ekranning qayerida paydo bo'ladi) #####
+# Format: id | KOD | nom | ekran | o'rin | eshik
+P01 | KOD: ______ | Chatlar sarlavhasi — o'ng tomon | Chatlar ro'yxati | o'rin: tepa-o'ng, 🔔 yonida | eshik: yo'q
+P02 | KOD: ______ | Hikoyalar qatori ostida | Chatlar ro'yxati | o'rin: tepa, hikoyalar tagida | eshik: yo'q
+P03 | KOD: ______ | Pastki navigatsiyada yangi tab | barcha asosiy ekranlar | o'rin: pastki panel, oxirgi o'rin | eshik: yo'q
+P04 | KOD: ______ | Sozlamalar ro'yxati — yangi qator | Sozlamalar | o'rin: ro'yxat oxiri | eshik: yo'q
+P05 | KOD: ______ | PLDN sozlamalari ro'yxati — yangi qator | PLDN sozlamalari | o'rin: ro'yxat, "Foydalanuvchi funksiyalari" yonida | eshik: bor
+P06 | KOD: ______ | Profil ekrani — tahrirlash tugmasi tagi | Profil | o'rin: pastki qism | eshik: yo'q
+P07 | KOD: ______ | Kontaktlar — tugmalar qatori ostida | Kontaktlar | o'rin: tepa | eshik: yo'q
+P08 | KOD: ______ | Chat sarlavhasi — 📞 🎥 ❤️ yonida | Chat oynasi | o'rin: tepa-o'ng | eshik: yo'q
+P09 | KOD: ______ | Chat/profil ⋮ menyusi — yangi band | Chat oynasi | o'rin: menyu ro'yxati | eshik: yo'q
+P10 | KOD: ______ | Yozish paneli — chap (📎 yonida) | Chat oynasi | o'rin: pastki-chap | eshik: yo'q
+P11 | KOD: ______ | Yozish paneli — o'ng (mikrofon yonida) | Chat oynasi | o'rin: pastki-o'ng | eshik: yo'q
+P12 | KOD: ______ | Xabar uzoq bosish menyusi — yangi band | Chat oynasi | o'rin: menyu ro'yxati | eshik: yo'q
+P13 | KOD: ______ | Reaksiya paneli — yangi emoji | Chat oynasi | o'rin: panel | eshik: yo'q
+P14 | KOD: ______ | Robot aylana menyusi — yangi band | Robot | o'rin: asosiy 6 band to'la; yangi band uchun joy ochish kerak | eshik: yo'q
+P15 | KOD: ______ | Robot emotsiya menyusi — bo'sh o'rin | Robot | o'rin: 12 o'rinning 11 tasi bo'sh | eshik: yo'q
+P16 | KOD: ______ | Bildirishnoma paneli — yangi tab | 🔔 panel | o'rin: tab qatori, Xavfsizlik yonida | eshik: yo'q
+P17 | KOD: ______ | Guruh/kanal profili — tugmalar qatori | Guruh/kanal profili | o'rin: tugmalar qatori | eshik: yo'q
+P18 | KOD: ______ | Maxfiylik ekrani — yangi qator | Maxfiylik | o'rin: ro'yxat | eshik: yo'q
+P19 | KOD: ______ | Qo'ng'iroq oynasi — yangi tugma | Qo'ng'iroq | o'rin: pastki tugmalar qatori | eshik: yo'q
+P20 | KOD: ______ | Stiker paneli — yangi tab | Stiker paneli | o'rin: tepa tablar | eshik: yo'q
+P21 | KOD: ______ | Ovozli buyruq — yangi buyruq | PLDN Start | o'rin: regex buyruq | eshik: bor
+P22 | KOD: ______ | Splash/yuklanish ekrani | Ilova ochilishi | o'rin: markaz | eshik: yo'q
