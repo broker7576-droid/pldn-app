@@ -1,5 +1,5 @@
-<!-- VERSION: 263 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: bot-stream-1.0 | satr: 23905 | 13-noy-2026 -->
+<!-- VERSION: 261 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: bot-stream-1.0 | satr: 23935 | 14-noy-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -3649,6 +3649,14 @@
           <span class="settings-label" id="pldnMailLabel">Mail ulash</span>
           <span class="settings-arrow">›</span>
         </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-item" id="pldnBozorRow">
+          <span class="settings-icon">🧩</span>
+          <span class="settings-label" id="pldnBozorLabel">Funksiyalar bozori</span>
+          <span class="settings-arrow">›</span>
+        </div>
+        <div id="pldnBozorMsg" style="display:none;padding:0 16px 12px;font-size:13px;color:#2AABEE;line-height:1.4"></div>
       </div>
 
     </div>
@@ -23506,6 +23514,7 @@ var PLDNBattModel = (function () {
   }
   function refreshBadge() {
     var m = loadInst(), n = pendingDecided; Object.keys(m).forEach(function (k) { if (m[k].update) n++; });
+    var bl = document.getElementById('pldnBozorLabel'); if (bl) bl.textContent = T('Funksiyalar bozori', 'Магазин функций');
     var lb = document.getElementById('pldnFuncsLabel'); if (!lb) return;
     lb.textContent = T('Foydalanuvchi funksiyalari', 'Функции пользователей');
     var old = lb.parentNode.querySelector('.pfn-dot'); if (old) old.remove();
@@ -23885,9 +23894,30 @@ var PLDNBattModel = (function () {
   };
 
   // ---------- ishga tushirish ----------
+  var BOZOR_APK = 'https://github.com/broker7576-droid/pldn-bozor/releases/latest/download/pldn-bozor.apk', bozorBusy = false;
+  function bozorMsg(txt, bad) { var e = document.getElementById('pldnBozorMsg'); if (!e) return; e.style.display = txt ? 'block' : 'none'; e.style.color = bad ? '#FF3B30' : '#2AABEE'; e.textContent = txt || ''; }
+  function downloadBozor() {
+    if (bozorBusy) return;
+    if (!(window.PldnUpd && PldnUpd.download)) { window.location.href = BOZOR_APK; return; }
+    var allowed = true; try { allowed = !!PldnUpd.canInstall(); } catch (_) {}
+    if (!allowed) { bozorMsg(T('Avval PLDN\u2019ga ilova o\u2018rnatishga ruxsat bering, so\u2018ng yana bosing.', 'Сначала разрешите PLDN устанавливать приложения, затем нажмите снова.'), true); try { PldnUpd.openSettings(); } catch (_) {} return; }
+    bozorBusy = true; bozorMsg(T('Yuklanmoqda... 0%', 'Загрузка... 0%'));
+    try { PldnUpd.download(BOZOR_APK); } catch (e) { bozorBusy = false; bozorMsg(String(e), true); return; }
+    var seen = false, t0 = Date.now(), tm = setInterval(function () {
+      var a; try { a = String(PldnUpd.status()).split('|'); } catch (e) { clearInterval(tm); bozorBusy = false; bozorMsg(String(e), true); return; }
+      if (a[0] === 'downloading') { seen = true; bozorMsg(T('Yuklanmoqda... ', 'Загрузка... ') + (parseInt(a[1], 10) || 0) + '%'); }
+      else if (a[0] === 'done' && seen) {
+        clearInterval(tm); bozorBusy = false; bozorMsg(T('O\u2018rnatish oynasi ochilmoqda...', 'Открывается окно установки...'));
+        var r = String(PldnUpd.install()); if (r !== 'ok') bozorMsg(T('O\u2018rnatib bo\u2018lmadi: ', 'Не удалось установить: ') + r, true);
+      } else if (a[0] === 'error') { clearInterval(tm); bozorBusy = false; bozorMsg(T('Yuklab bo\u2018lmadi: ', 'Не удалось скачать: ') + (a.slice(3).join('|') || ''), true); }
+      else if (Date.now() - t0 > 180000) { clearInterval(tm); bozorBusy = false; bozorMsg(T('Vaqt tugadi, qayta urinib ko\u2018ring', 'Время вышло, повторите'), true); }
+    }, 300);
+  }
   function init() {
     var row = document.getElementById('pldnFuncsRow');
     if (row) row.addEventListener('click', openRoot);
+    var brow = document.getElementById('pldnBozorRow');
+    if (brow) brow.addEventListener('click', downloadBozor);
     refreshBadge();
     var tries = 0, iv = setInterval(function () {
       tries++; var a = null; try { a = firebase.auth(); } catch (_) {}
