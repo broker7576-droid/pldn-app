@@ -1,5 +1,5 @@
 <!-- VERSION: 268 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: bot-mem-2.0 | satr: 24100 | 14-noy-2026 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: bot-mem-2.2 | satr: 24123 | 15-noy-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -17434,12 +17434,12 @@ async function fbOpenChat(info, ensure) {
         if (!u) throw new Error('Kirish kerak');
         var tk = await u.getIdToken();
         var ctl = new AbortController();
-        var tm = setTimeout(function () { ctl.abort(); }, 480000);
+        var tm = setTimeout(function () { ctl.abort(); }, 1800000);
         try {
           var r = await fetch(BOT_API + '/chat/stream', { method: 'POST', headers: { Authorization: 'Bearer ' + tk, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text, lang: lang(), deep: !!opt.deep, ctx: opt.ctx || [] }), signal: ctl.signal });
           if (!r.ok) { var j = await r.json().catch(function () { return {}; }); var er = new Error(j.error || ('http ' + r.status)); er.status = r.status; throw er; }
           if (!r.body || !r.body.getReader) { var j2 = await r.text(); return j2; }
-          var rd = r.body.getReader(), dec = new TextDecoder(), buf = '', full = '', fin = null, failed = '';
+          var rd = r.body.getReader(), dec = new TextDecoder(), buf = '', full = '', fin = null, failed = '', cutFlag = false;
           while (true) {
             var x = await rd.read();
             if (x.done) break;
@@ -17454,12 +17454,14 @@ async function fbOpenChat(info, ensure) {
                 try { o = JSON.parse(lines[k].slice(5)); } catch (_) { continue; }
                 if (o.d) { full += o.d; onDelta(full); }
                 else if (o.think) { if (opt.onThink) opt.onThink(); }
-                else if (typeof o.text === 'string' && o.done) fin = o.text;
+                else if (typeof o.text === 'string' && o.done) { fin = o.text; cutFlag = !!o.cut; }
                 else if (o.error) failed = o.error;
               }
             }
           }
           if (failed && !full) { var e2 = new Error(failed); e2.status = 503; throw e2; }
+          if (fin === null && full) { var e3 = new Error('Aloqa uzildi'); e3.incomplete = true; throw e3; }
+          if (fin !== null && cutFlag) fin += '\n\n' + T('… (javob uzunligi chegarasiga yetdi. Davomi uchun «davom et» deb yozing.)', '… (достигнут предел длины ответа. Напишите «продолжи», чтобы продолжить.)');
           return fin !== null ? fin : full;
         } finally { clearTimeout(tm); }
       },
@@ -17550,7 +17552,11 @@ async function fbOpenChat(info, ensure) {
       tx.textContent = out;
       return { streamed: true, t: out };
     } catch (e) {
-      if (last.length > 10) { tx.textContent = last; return { streamed: true, t: last }; }
+      // aloqa uzildi (ilovadan chiqib ketdingiz, tarmoq o'chdi): server javobni oxirigacha yozib tarixga saqlaydi
+      if (!e.status || e.incomplete) {
+        tx.textContent = (last ? last + '\n\n' : '') + T('⏳ Javob davom etmoqda, tayyor bo‘lgach shu yerda ko‘rinadi…', '⏳ Ответ ещё формируется, появится здесь, когда будет готов…');
+        return { streamed: true, t: last, partial: true, node: tx };
+      }
       if (bub.parentNode) bub.parentNode.removeChild(bub);
       if (o.soft && e.status !== 429) return null;
       return e.status ? e.message : T('Robot bilan aloqa yo‘q. Keyinroq urinib ko‘ring.', 'Нет связи с роботом. Попробуйте позже.');
@@ -17676,9 +17682,26 @@ async function fbOpenChat(info, ensure) {
     histSeq++;
     bubble(text, 'outgoing');
     var r = await reply(text);
-    if (r && typeof r === 'object' && r.streamed) r = r.t; else bubble(r, 'incoming');
-    persist([{ who: 'u', t: text }, { who: 'b', t: r }]);
+    var part = false, node = null;
+    if (r && typeof r === 'object' && r.streamed) { part = !!r.partial; node = r.node || null; r = r.t; } else bubble(r, 'incoming');
+    if (part) waitServer(text, node);   // uzilgan javob: serverda tayyor bo'lishini kutamiz (yarim matn saqlanmaydi)
+    else persist([{ who: 'u', t: text }, { who: 'b', t: r }]);
     busy = false;
+  }
+  // server javobni tugatib tarixga yozguncha har 6 soniyada tekshiradi (ko'pi bilan ~4 daqiqa)
+  function waitServer(text, node) {
+    var tries = 0;
+    (function poll() {
+      tries++;
+      BotStore.hist(8).then(function (j) {
+        var it = (j && j.msgs) || [];
+        for (var i = it.length - 2; i >= 0; i--) {
+          if (it[i].who === 'u' && it[i].t === text && it[i + 1] && it[i + 1].who === 'b') { loadHist(); return; }
+        }
+        if (tries < 40) setTimeout(poll, 6000);
+        else if (node) node.textContent = T('Javob olinmadi. Qayta yozib ko‘ring.', 'Ответ не получен. Попробуйте ещё раз.');
+      }).catch(function () { if (tries < 40) setTimeout(poll, 6000); });
+    })();
   }
   $('botSend').addEventListener('click', send);
   input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); send(); } });
