@@ -1,4 +1,4 @@
-// VERSION: search-v6 (v5 + shaxsiy xotira sozlamalari /mem /prefs, avtomatik fakt ajratish, ertangi kuzatuv /followup, chuqur rejim, tarix o'chmaydi, /oyrat /xotira /unut /tozala olib tashlandi) | satr: 527
+// VERSION: search-v6.2 (javob uzunligi cheklovi olib tashlandi: 600 belgi va 250 token; javob uzilsa ham server oxirigacha yozib tarixga saqlaydi; chegaraga yetsa 'davom et' belgisi) (v5 + shaxsiy xotira sozlamalari /mem /prefs, avtomatik fakt ajratish, ertangi kuzatuv /followup, chuqur rejim, tarix o'chmaydi, /oyrat /xotira /unut /tozala olib tashlandi) | satr: 534
 process.umask(0o077);
 const express=require('express');
 const fs=require('fs');
@@ -274,9 +274,9 @@ catch(e){res.status(401).json({error:'Kirish tasdiqlanmadi'});}
 
 // ---------- LLM (llama.cpp) — faqat shu serverning ichida, tashqariga ochilmaydi ----------
 const LLM_URL=process.env.LLM_URL||'http://127.0.0.1:8080';
-const MAXTOK=parseInt(process.env.LLM_MAXTOK,10)||250; // bir javobning yuqori chegarasi (token); ~100 so'z
+const MAXTOK=parseInt(process.env.LLM_MAXTOK,10)||1500; // amalda cheklov yo'q: javob uzunligini llama-server kontekst oynasi (-c) belgilaydi
 const DEEP_ON=process.env.DEEP_THINK!=='0';                 // chuqur rejim: xuddi shu savol 2-marta berilganda o'ylash yoqiladi
-const DEEP_MAXTOK=parseInt(process.env.DEEP_MAXTOK,10)||500; // chuqur rejimda o'ylash + javob uchun umumiy token chegarasi
+const DEEP_MAXTOK=parseInt(process.env.DEEP_MAXTOK,10)||1500; // chuqur rejimda o'ylash + javob uchun umumiy token chegarasi
 const SYS_UZ="Sen PLDN robotisan. Do'stona va samimiy gapir. Odatda qisqa (1-2 gap) javob ber, lekin foydalanuvchi batafsil so'rasa, to'liq tushuntir. Faqat oddiy o'zbek tilida javob ber, murakkab so'z ishlatma. Ba'zan yengil hazil qil. Bilmasang, o'ylab topma: \"Bilmayman\" de.";
 const FEW=[
 {role:'user',content:'Salom'},{role:'assistant',content:'Salom! Qalaysan, bugun nima yangilik?'},
@@ -323,7 +323,7 @@ return [{role:'system',content:SYS_UZ}].concat(FEW,histForLLM(uid,o.deep?8:4),[{
 function tidy(s,fin){
 s=String(s||'').replace(/<think>[\s\S]*?<\/think>/g,'').replace(/^\s*(Robot|PLDN)\s*:\s*/i,'').trim();
 if(fin==='length'){const i=Math.max(s.lastIndexOf('.'),s.lastIndexOf('!'),s.lastIndexOf('?'));if(i>=15)s=s.slice(0,i+1);}
-return s.slice(0,600);
+return s.slice(0,20000);
 }
 async function callLLM(messages){
 const ctl=new AbortController();
@@ -425,8 +425,12 @@ if(llmWait>=3)return res.status(503).json({error:'Robot hozir band, biroz keyin 
 res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});
 const send=o=>{try{res.write('data: '+JSON.stringify(o)+'\n\n');}catch(e){}};
 const ctl=new AbortController();
-res.on('close',()=>ctl.abort());
-const tmo=setTimeout(()=>ctl.abort(),420000);
+// mijoz (ilova) uzilsa ham javob oxirigacha yoziladi va tarixga saqlanadi
+let closed=false;
+res.on('close',()=>{closed=true;});
+const tmo=setTimeout(()=>ctl.abort(),1800000);
+const lang=b.lang==='ru'?'ru':'uz';
+const CUT=lang==='ru'?'… (достигнут предел длины ответа. Напишите «продолжи», чтобы продолжить.)':'… (javob uzunligi chegarasiga yetdi. Davomi uchun «davom et» deb yozing.)';
 let full='',raw='',fin='',thinkSent=0;
 // <think>...</think> bloklari foydalanuvchiga ko'rsatilmaydi
 const emit=d=>{
@@ -453,11 +457,14 @@ if(ctl.signal.aborted)return;
 await run(deep,deep?DEEP_MAXTOK:MAXTOK,messages);
 if(!full.trim()&&deep&&!ctl.signal.aborted){send({think:0});await run(false,MAXTOK,messages);}
 });
-if(full)send({done:true,text:tidy(full,fin)});
+const finalText=tidy(full,fin),cut=fin==='length';
+const lost=closed;
+if(full)send({done:true,text:finalText,cut});
 else send({error:'Robot hozir javob bera olmadi. Keyinroq urinib ko‘ring.'});
+if(lost&&finalText){addMsg(req.uid,'u',text);addMsg(req.uid,'b',finalText+(cut?'\n\n'+CUT:''));learn(req.uid,text);}
 }catch(e){
 console.error('chat/stream',e.message);
-if(full)send({done:true,text:tidy(full,'length')});
+if(full){const ft=tidy(full,'length');const lost2=closed;send({done:true,text:ft,cut:true});if(lost2&&ft){addMsg(req.uid,'u',text);addMsg(req.uid,'b',ft+'\n\n'+CUT);learn(req.uid,text);}}
 else send({error:e.busy?'Robot hozir band, biroz keyin yozing.':'Robot hozir javob bera olmadi. Keyinroq urinib ko‘ring.'});
 }finally{clearTimeout(tmo);try{res.end();}catch(e){}}
 });
