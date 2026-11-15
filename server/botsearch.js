@@ -1,4 +1,4 @@
-// VERSION: search-v5 (v4 + /chat/stream: LLM javobi oqim bilan, so'z chegarasi kengaytirildi) | satr: 421
+// VERSION: search-v6 (v5 + shaxsiy xotira sozlamalari /mem /prefs, avtomatik fakt ajratish, ertangi kuzatuv /followup, chuqur rejim, tarix o'chmaydi, /oyrat /xotira /unut /tozala olib tashlandi) | satr: 527
 process.umask(0o077);
 const express=require('express');
 const fs=require('fs');
@@ -67,6 +67,9 @@ CREATE INDEX IF NOT EXISTS mem_u ON mem(uid,id);
 CREATE TABLE IF NOT EXISTS rem(id INTEGER PRIMARY KEY AUTOINCREMENT,uid TEXT NOT NULL,due INTEGER NOT NULL,created INTEGER NOT NULL,t BLOB NOT NULL,sent INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS rem_due ON rem(sent,due);
 CREATE INDEX IF NOT EXISTS rem_u ON rem(uid,sent,due);
+CREATE TABLE IF NOT EXISTS prefs(uid TEXT NOT NULL,k TEXT NOT NULL,v TEXT NOT NULL,PRIMARY KEY(uid,k));
+CREATE TABLE IF NOT EXISTS fol(id INTEGER PRIMARY KEY AUTOINCREMENT,uid TEXT NOT NULL,ts INTEGER NOT NULL,kind TEXT NOT NULL,state INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS fol_u ON fol(uid,state,ts);
 `);
 const ukeys=new Map();
 function ukey(uid){let k=ukeys.get(uid);if(!k){k=Buffer.from(crypto.hkdfSync('sha256',MASTER,Buffer.alloc(0),'pldn-bot:'+uid,32));if(ukeys.size>500)ukeys.clear();ukeys.set(uid,k);}return k;}
@@ -74,12 +77,10 @@ function enc(uid,s){const iv=crypto.randomBytes(12);const c=crypto.createCipheri
 function dec(uid,b){try{const iv=b.subarray(0,12),tag=b.subarray(12,28),ct=b.subarray(28);const d=crypto.createDecipheriv('aes-256-gcm',ukey(uid),iv);d.setAAD(Buffer.from(uid));d.setAuthTag(tag);return Buffer.concat([d.update(ct),d.final()]).toString('utf8');}catch(e){return null;}}
 
 // --- suhbat tarixi ---
-const HIST_MAX=1000;
+// tarix hech qachon o'zi o'chmaydi (v6)
 function addMsg(uid,who,t){
 t=String(t||'').slice(0,2000);if(!t)return;
 sdb.prepare('INSERT INTO msgs(uid,ts,who,enc) VALUES(?,?,?,?)').run(uid,Date.now(),who==='b'?'b':'u',enc(uid,t));
-const n=sdb.prepare('SELECT COUNT(*) c FROM msgs WHERE uid=?').get(uid).c;
-if(n>HIST_MAX)sdb.prepare('DELETE FROM msgs WHERE id IN (SELECT id FROM msgs WHERE uid=? ORDER BY id ASC LIMIT ?)').run(uid,n-HIST_MAX);
 }
 function getMsgs(uid,before,limit){
 const rows=before?sdb.prepare('SELECT id,ts,who,enc FROM msgs WHERE uid=? AND id<? ORDER BY id DESC LIMIT ?').all(uid,before,limit):sdb.prepare('SELECT id,ts,who,enc FROM msgs WHERE uid=? ORDER BY id DESC LIMIT ?').all(uid,limit);
@@ -131,8 +132,8 @@ return {due,rest:m[3]};
 return null;
 }
 
-const HELP_UZ='Buyruqlar:\n/esla kalit = qiymat — eslab qolaman\n/xotira — saqlanganlar ro‘yxati\n/unut 2 yoki /unut hammasi\n/eslat 21:30 matn\n/eslat 25.10 09:00 matn\n/eslat 2 soat matn (yoki daqiqa, kun)\n/royxat — eslatmalar ro‘yxati\n/ochir 2 — eslatmani bekor qilish\n/tozala — suhbat tarixini o‘chirish\n/oyrat javob — bot bilmagan savolga javob o‘rgatish\n/ai savol — robot bilan erkin suhbat (sinov)';
-const HELP_RU='Команды:\n/esla ключ = значение — запомню\n/xotira — список сохранённого\n/unut 2 или /unut hammasi\n/eslat 21:30 текст\n/eslat 25.10 09:00 текст\n/eslat 2 soat текст (или daqiqa, kun)\n/royxat — список напоминаний\n/ochir 2 — отменить напоминание\n/tozala — очистить историю чата\n/oyrat ответ — научить бота ответу на неизвестный вопрос\n/ai вопрос — свободный разговор с роботом (тест)';
+const HELP_UZ='Buyruqlar:\n/esla kalit = qiymat — eslab qolaman\n/eslat 21:30 matn\n/eslat 25.10 09:00 matn\n/eslat 2 soat matn (yoki daqiqa, kun)\n/royxat — eslatmalar ro‘yxati\n/ochir 2 — eslatmani bekor qilish\n/ai savol — robot bilan erkin suhbat\n\nXotirani ko‘rish va o‘chirish: robot menyusi → Sozlamalar.';
+const HELP_RU='Команды:\n/esla ключ = значение — запомню\n/eslat 21:30 текст\n/eslat 25.10 09:00 текст\n/eslat 2 soat текст (или daqiqa, kun)\n/royxat — список напоминаний\n/ochir 2 — отменить напоминание\n/ai вопрос — свободный разговор с роботом\n\nПросмотр и удаление памяти: меню робота → Настройки.';
 function runCmd(uid,text,lang,tz){
 const T=(u,r)=>lang==='ru'?r:u;
 const m=text.trim().match(/^\/(\S+)\s*([\s\S]*)$/);
@@ -146,21 +147,9 @@ if(!k||!v||keyOf(k).length<2)return {reply:T('Shunday yozing: /esla mening mashi
 const items=memAll(uid);
 const same=items.find(x=>keyOf(x.k)===keyOf(k));
 if(same){sdb.prepare('UPDATE mem SET v=?,ts=? WHERE id=? AND uid=?').run(enc(uid,v),now,same.id,uid);return {reply:T('Yangiladim ✓','Обновил ✓')};}
-if(items.length>=MEM_MAX)return {reply:T('Xotira to‘ldi (200 ta). Ba’zilarini /unut bilan o‘chiring.','Память заполнена (200). Удалите часть через /unut.')};
+if(items.length>=MEM_MAX)return {reply:T('Xotira to‘ldi (200 ta). Ba’zilarini robot sozlamalarida o‘chiring.','Память заполнена (200). Удалите часть в настройках робота.')};
 sdb.prepare('INSERT INTO mem(uid,ts,k,v) VALUES(?,?,?,?)').run(uid,now,enc(uid,k),enc(uid,v));
 return {reply:T('Eslab qoldim ✓','Запомнил ✓')};
-}
-if(name==='xotira'){
-const items=memAll(uid);
-if(!items.length)return {reply:T('Xotira bo‘sh. /esla kalit = qiymat','Память пуста. /esla ключ = значение')};
-return {reply:items.map((x,i)=>(i+1)+'. '+x.k+' = '+x.v).join('\n')};
-}
-if(name==='unut'){
-if(/^(hammasi|все|всё)$/i.test(arg)){sdb.prepare('DELETE FROM mem WHERE uid=?').run(uid);return {reply:T('Xotira tozalandi ✓','Память очищена ✓')};}
-const n=parseInt(arg,10),items=memAll(uid);
-if(!n||n<1||n>items.length)return {reply:T('Raqamni yozing: /unut 2 (ro‘yxat: /xotira)','Укажите номер: /unut 2 (список: /xotira)')};
-sdb.prepare('DELETE FROM mem WHERE id=? AND uid=?').run(items[n-1].id,uid);
-return {reply:T('O‘chirildi ✓','Удалено ✓')};
 }
 if(name==='eslat'){
 const w=parseWhen(arg,tz,now);
@@ -182,12 +171,56 @@ if(!n||n<1||n>l.length)return {reply:T('Raqamni yozing: /ochir 2 (ro‘yxat: /ro
 sdb.prepare('DELETE FROM rem WHERE id=? AND uid=?').run(l[n-1].id,uid);
 return {reply:T('Eslatma bekor qilindi ✓','Напоминание отменено ✓')};
 }
-if(name==='tozala'){
-sdb.prepare('DELETE FROM msgs WHERE uid=?').run(uid);
-return {reply:T('Suhbat tarixi o‘chirildi ✓','История чата очищена ✓'),clear:true};
-}
 return {reply:T('Noma‘lum buyruq. /yordam','Неизвестная команда. /yordam')};
 }
+
+
+// ---------- v6: sozlamalar, avtomatik fakt ajratish, ertangi kuzatuv ----------
+function prefGet(uid,k,d){const r=sdb.prepare('SELECT v FROM prefs WHERE uid=? AND k=?').get(uid,k);return r?r.v:d;}
+function prefSet(uid,k,v){sdb.prepare('INSERT INTO prefs(uid,k,v) VALUES(?,?,?) ON CONFLICT(uid,k) DO UPDATE SET v=excluded.v').run(uid,k,String(v));}
+function memRows(uid){return sdb.prepare('SELECT id,ts,k,v FROM mem WHERE uid=? ORDER BY id DESC').all(uid).map(r=>({id:r.id,ts:r.ts,k:dec(uid,r.k)||'',v:dec(uid,r.v)||''}));}
+function memPut(uid,k,v){
+k=clean(k,100);v=clean(v,500);
+if(!k||!v||keyOf(k).length<2)return false;
+const items=memAll(uid);
+const same=items.find(x=>keyOf(x.k)===keyOf(k));
+const now=Date.now();
+if(same){if(same.v===v)return true;sdb.prepare('UPDATE mem SET v=?,ts=? WHERE id=? AND uid=?').run(enc(uid,v),now,same.id,uid);return true;}
+if(items.length>=MEM_MAX)return false;
+sdb.prepare('INSERT INTO mem(uid,ts,k,v) VALUES(?,?,?,?)').run(uid,now,enc(uid,k),enc(uid,v));
+return true;
+}
+// foydalanuvchi o'zi aytgan faktlarni qoidalar bilan ajratish (LLM ishlatilmaydi: CPU tejash uchun)
+const LEARN=[
+[/(?:mening\s+)?ismim\s+([\p{L}]{2,20})/u,m=>['mening ismim',m[1]]],
+[/меня зовут\s+([\p{L}]{2,20})/u,m=>['меня зовут',m[1]]],
+[/(?:mening\s+)?yoshim\s+(\d{1,2})(?!\d)/u,m=>['mening yoshim',m[1]+' yosh']],
+[/мне\s+(\d{1,2})\s+(?:лет|года|год)/u,m=>['мой возраст',m[1]]],
+[/men\s+([\p{L} ]{2,25}?)\s*(?:da|dan|shahrida|viloyatida)\s+yashayman/u,m=>['men yashaydigan joy',m[1]]],
+[/я живу в\s+([\p{L} -]{2,25})/u,m=>['я живу',m[1]]],
+[/men\s+([\p{L} ]{2,30}?)\s*(?:da|dagi|ida)\s+ishlayman/u,m=>['men ishlaydigan joy',m[1]]],
+[/(?:men\s+)?([\p{L} ]{2,30}?)ni\s+yoqtiraman/u,m=>['men yoqtiraman: '+m[1],m[1]]],
+[/(?:men\s+)?([\p{L} ]{2,30}?)ni\s+yoqtirmayman/u,m=>['men yoqtirmayman: '+m[1],m[1]]],
+[/я люблю\s+([\p{L} ]{2,30})/u,m=>['я люблю: '+m[1],m[1]]]
+];
+const MOOD_BAD=[/kayfiyat(?:im)?\s+(?:juda\s+|ancha\s+)?(?:yomon|past|yoq|buzuq)/u,/настроени[еяю]\s+(?:у меня\s+)?(?:плох|паршив|ужасн|никак)/u,/плохо[ей]\s+настроени/u,/мне\s+грустно|я\s+расстроен/u];
+const CAPK=new Set(['mening ismim','меня зовут','men yashaydigan joy','я живу','men ishlaydigan joy']);
+function cap(v){return String(v).replace(/(^|\s)(\p{L})/gu,(m,a,b)=>a+b.toUpperCase());}
+function lcText(t){return String(t||'').toLowerCase().replace(/[\u02bb\u02bc\u2018\u2019\u0060\u00b4']/g,'').replace(/\s+/g,' ').trim();}
+function learn(uid,text){
+try{
+const lc=lcText(text);
+if(!lc||lc[0]==='/')return;
+if(prefGet(uid,'auto','1')==='1'){
+for(const [re,fn] of LEARN){const m=lc.match(re);if(m){const kv=fn(m);if(kv)memPut(uid,kv[0],CAPK.has(kv[0])?cap(kv[1]):kv[1]);}}
+}
+if(prefGet(uid,'fol','1')==='1'&&MOOD_BAD.some(re=>re.test(lc))){
+const recent=sdb.prepare("SELECT id FROM fol WHERE uid=? AND kind='mood_bad' AND state=0 AND ts>?").get(uid,Date.now()-20*3600000);
+if(!recent)sdb.prepare('INSERT INTO fol(uid,ts,kind) VALUES(?,?,?)').run(uid,Date.now(),'mood_bad');
+}
+}catch(e){console.error('learn',e.message);}
+}
+function localMidnight(now,tz){const d=new Date(now+tz*60000);return Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())-tz*60000;}
 
 // --- eslatma yuboruvchi (har 20 soniyada) va zaxira nusxa ---
 async function pushTo(uid,body){
@@ -242,6 +275,8 @@ catch(e){res.status(401).json({error:'Kirish tasdiqlanmadi'});}
 // ---------- LLM (llama.cpp) — faqat shu serverning ichida, tashqariga ochilmaydi ----------
 const LLM_URL=process.env.LLM_URL||'http://127.0.0.1:8080';
 const MAXTOK=parseInt(process.env.LLM_MAXTOK,10)||250; // bir javobning yuqori chegarasi (token); ~100 so'z
+const DEEP_ON=process.env.DEEP_THINK!=='0';                 // chuqur rejim: xuddi shu savol 2-marta berilganda o'ylash yoqiladi
+const DEEP_MAXTOK=parseInt(process.env.DEEP_MAXTOK,10)||500; // chuqur rejimda o'ylash + javob uchun umumiy token chegarasi
 const SYS_UZ="Sen PLDN robotisan. Do'stona va samimiy gapir. Odatda qisqa (1-2 gap) javob ber, lekin foydalanuvchi batafsil so'rasa, to'liq tushuntir. Faqat oddiy o'zbek tilida javob ber, murakkab so'z ishlatma. Ba'zan yengil hazil qil. Bilmasang, o'ylab topma: \"Bilmayman\" de.";
 const FEW=[
 {role:'user',content:'Salom'},{role:'assistant',content:'Salom! Qalaysan, bugun nima yangilik?'},
@@ -258,19 +293,32 @@ if(nameCache.size>500)nameCache.clear();
 nameCache.set(uid,{t:Date.now(),n});
 return n;
 }
-function histForLLM(uid){
-const h=getMsgs(uid,0,10).filter(m=>m.t&&m.t[0]!=='/'&&m.t.indexOf('✓')<0&&m.t.indexOf('⏰')<0&&!/o‘rganilmagan|не выучен|Shuni nazarda tutdingizmi/.test(m.t));
-return h.slice(-6).map(m=>({role:m.who==='u'?'user':'assistant',content:String(m.t).slice(0,300)}));
+function histForLLM(uid,n){
+const h=getMsgs(uid,0,12).filter(m=>m.t&&m.t[0]!=='/'&&m.t.indexOf('✓')<0&&m.t.indexOf('⏰')<0&&!/o‘rganilmagan|не выучен|Shuni nazarda tutdingizmi/.test(m.t));
+return h.slice(-(n||4)).map(m=>({role:m.who==='u'?'user':'assistant',content:String(m.t).slice(0,220)}));
 }
-async function buildMessages(uid,text){
-let sys=SYS_UZ;
+// savolga eng mos 3-5 ta fakt (hammasi emas: prompt qisqa bo'lsin, CPU'da tez ishlasin)
+function factsFor(uid,text,n){
+const items=memAll(uid);if(!items.length)return [];
+const t=mtoks(text);const qv=t.length?vec(t):null;
+const sc=items.map((m,i)=>{let s=0;const mt=mtoks(m.k+' '+m.v);if(qv&&mt.length)s=cos(qv,vec(mt));if(/ism|имя|зовут/i.test(m.k))s+=0.15;return {m,s,i};});
+sc.sort((a,b)=>b.s-a.s||b.i-a.i);
+return sc.filter(x=>x.s>0).slice(0,n).map(x=>x.m);
+}
+// o'zgarmas boshlanish (SYS+FEW) keshda qoladi; fakt/kontekst oxirgi xabar oldiga qo'yiladi
+async function buildMessages(uid,text,o){
+o=o||{};
+let pre='';
 try{
 const nm=await userName(uid);
-const facts=memAll(uid).slice(-8).map(x=>clean(x.k,40)+': '+clean(x.v,80)).join('; ');
-if(nm)sys+=' Foydalanuvchining ismi: '+nm+'.';
-if(facts)sys+=' U haqida bilganlaring: '+facts+'.';
+const fs=factsFor(uid,text,o.deep?8:4).map(x=>clean(x.k,40)+': '+clean(x.v,80));
+if(nm)pre+='Foydalanuvchi ismi: '+nm+'. ';
+if(fs.length)pre+='U haqida bilganlaring: '+fs.join('; ')+'. ';
 }catch(e){console.error('prompt',e.message);}
-return [{role:'system',content:sys}].concat(FEW,histForLLM(uid),[{role:'user',content:text}]);
+if(o.ctx&&o.ctx.length)pre+='Bilimlar bazasidan ma’lumot: '+o.ctx.join(' | ')+' — shunga tayanib, o‘zingcha tabiiy javob ber. ';
+if(o.deep)pre+='Foydalanuvchi bu savolni qayta berdi: oldingi javob yetarli bo‘lmagan. Chuqurroq o‘ylab, aniq va to‘liq javob ber. ';
+const content=pre?('['+pre.trim()+']\n'+text):text;
+return [{role:'system',content:SYS_UZ}].concat(FEW,histForLLM(uid,o.deep?8:4),[{role:'user',content}]);
 }
 function tidy(s,fin){
 s=String(s||'').replace(/<think>[\s\S]*?<\/think>/g,'').replace(/^\s*(Robot|PLDN)\s*:\s*/i,'').trim();
@@ -281,7 +329,7 @@ async function callLLM(messages){
 const ctl=new AbortController();
 const tm=setTimeout(()=>ctl.abort(),150000);
 try{
-const r=await fetch(LLM_URL+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},signal:ctl.signal,body:JSON.stringify({messages,max_tokens:MAXTOK,temperature:0.5,top_p:0.9,repeat_penalty:1.1,chat_template_kwargs:{enable_thinking:false}})});
+const r=await fetch(LLM_URL+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},signal:ctl.signal,body:JSON.stringify({messages,max_tokens:MAXTOK,temperature:0.5,top_p:0.9,repeat_penalty:1.1,cache_prompt:true,chat_template_kwargs:{enable_thinking:false}})});
 if(!r.ok)throw new Error('llm http '+r.status);
 const j=await r.json();
 const c=j.choices&&j.choices[0];
@@ -299,8 +347,9 @@ return p;
 }
 function askLLM(messages){return llmQueue(()=>callLLM(messages));}
 // oqim: llama.cpp'dan kelgan har bir bo'lakni onDelta ga beradi, tugagach finish_reason qaytaradi
-async function streamLLM(messages,onDelta,signal){
-const r=await fetch(LLM_URL+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},signal,body:JSON.stringify({messages,max_tokens:MAXTOK,temperature:0.5,top_p:0.9,repeat_penalty:1.1,stream:true,chat_template_kwargs:{enable_thinking:false}})});
+async function streamLLM(messages,onDelta,signal,o){
+o=o||{};
+const r=await fetch(LLM_URL+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},signal,body:JSON.stringify({messages,max_tokens:o.maxtok||MAXTOK,temperature:o.think?0.6:0.5,top_p:0.9,repeat_penalty:1.1,stream:true,cache_prompt:true,chat_template_kwargs:{enable_thinking:!!o.think}})});
 if(!r.ok)throw new Error('llm http '+r.status);
 const dec=new TextDecoder();
 let buf='',fin='';
@@ -312,7 +361,9 @@ const line=buf.slice(0,i).trim();buf=buf.slice(i+1);
 if(line.indexOf('data:')!==0)continue;
 const d=line.slice(5).trim();
 if(d==='[DONE]')return fin;
-try{const j=JSON.parse(d);const c=j.choices&&j.choices[0];if(c&&c.delta&&c.delta.content)onDelta(c.delta.content);if(c&&c.finish_reason)fin=c.finish_reason;}catch(e){}
+try{const j=JSON.parse(d);const c=j.choices&&j.choices[0];
+if(c&&c.delta){if(c.delta.reasoning_content&&o.onThink)o.onThink();if(c.delta.content)onDelta(c.delta.content);}
+if(c&&c.finish_reason)fin=c.finish_reason;}catch(e){}
 }
 }
 return fin;
@@ -339,19 +390,6 @@ if(key.length>=3)db.collection('botUnanswered').doc(key).set({q,key,count:FieldV
 res.json(r);
 });
 
-app.post('/teach',auth,async(req,res)=>{
-if(limited(req.uid,'t',5,3600000))return res.status(429).json({error:'Soatiga 5 tagacha javob yuborish mumkin. Keyinroq urinib ko‘ring.'});
-const b=req.body||{};
-const q=clean(b.q,300);
-const t=String(b.t||'').replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g,' ').trim().slice(0,1500);
-const lang=b.lang==='ru'?'ru':'uz';
-if(keyOf(q).length<3||!t)return res.status(400).json({error:'Savol yoki javob noto‘g‘ri'});
-try{
-await db.collection('botPending').add({q,key:keyOf(q),t,lang,by:req.uid,at:Date.now()});
-res.json({ok:true});
-}catch(e){console.error('teach',e.message);res.status(500).json({error:'Server xatosi'});}
-});
-
 app.post('/cmd',auth,(req,res)=>{
 if(limited(req.uid,'c',30,60000))return res.status(429).json({error:'Juda tez-tez yozayapsiz. Biroz kuting.'});
 const b=req.body||{};
@@ -362,7 +400,7 @@ catch(e){console.error('cmd',e.message);res.status(500).json({error:'Server xato
 });
 
 app.post('/chat',auth,async(req,res)=>{
-if(limited(req.uid,'ai',8,600000))return res.status(429).json({error:'Robot bilan juda tez-tez gaplashyapsiz. Biroz kuting.'});
+if(limited(req.uid,'ai',20,600000))return res.status(429).json({error:'Robot bilan juda tez-tez gaplashyapsiz. Biroz kuting.'});
 const text=clean((req.body||{}).text,500);
 if(!text)return res.status(400).json({error:'Matn bo‘sh'});
 try{
@@ -377,21 +415,43 @@ res.status(503).json({error:'Robot hozir javob bera olmadi. Keyinroq urinib ko�
 });
 
 app.post('/chat/stream',auth,async(req,res)=>{
-if(limited(req.uid,'ai',8,600000))return res.status(429).json({error:'Robot bilan juda tez-tez gaplashyapsiz. Biroz kuting.'});
-const text=clean((req.body||{}).text,500);
+if(limited(req.uid,'ai',20,600000))return res.status(429).json({error:'Robot bilan juda tez-tez gaplashyapsiz. Biroz kuting.'});
+const b=req.body||{};
+const text=clean(b.text,500);
 if(!text)return res.status(400).json({error:'Matn bo‘sh'});
+const deep=b.deep===true&&DEEP_ON;
+const ctx=Array.isArray(b.ctx)?b.ctx.slice(0,2).map(x=>clean(x,300)).filter(Boolean):[];
 if(llmWait>=3)return res.status(503).json({error:'Robot hozir band, biroz keyin yozing.'});
 res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});
 const send=o=>{try{res.write('data: '+JSON.stringify(o)+'\n\n');}catch(e){}};
 const ctl=new AbortController();
 res.on('close',()=>ctl.abort());
-const tmo=setTimeout(()=>ctl.abort(),240000);
-let full='',fin='';
+const tmo=setTimeout(()=>ctl.abort(),420000);
+let full='',raw='',fin='',thinkSent=0;
+// <think>...</think> bloklari foydalanuvchiga ko'rsatilmaydi
+const emit=d=>{
+raw+=d;
+const t=raw.replace(/^\s+/,'');
+if(t.length<7&&'<think>'.indexOf(t)===0)return;
+if(t.indexOf('<think>')===0){
+const i=t.indexOf('</think>');
+if(i<0){if(!thinkSent){thinkSent=1;send({think:1});}return;}
+const after=t.slice(i+8).replace(/^\s+/,'');
+if(after.length>full.length){send({d:after.slice(full.length)});full=after;}
+return;
+}
+full+=d;send({d});
+};
+const run=async(think,maxtok,messages)=>{
+full='';raw='';thinkSent=0;
+fin=await streamLLM(messages,emit,ctl.signal,{think,maxtok,onThink:()=>{if(!thinkSent){thinkSent=1;send({think:1});}}});
+};
 try{
-const messages=await buildMessages(req.uid,text);
+const messages=await buildMessages(req.uid,text,{deep,ctx});
 await llmQueue(async()=>{
 if(ctl.signal.aborted)return;
-fin=await streamLLM(messages,d=>{full+=d;send({d});},ctl.signal);
+await run(deep,deep?DEEP_MAXTOK:MAXTOK,messages);
+if(!full.trim()&&deep&&!ctl.signal.aborted){send({think:0});await run(false,MAXTOK,messages);}
 });
 if(full)send({done:true,text:tidy(full,fin)});
 else send({error:'Robot hozir javob bera olmadi. Keyinroq urinib ko‘ring.'});
@@ -412,10 +472,56 @@ catch(e){console.error('hist',e.message);res.status(500).json({error:'Server xat
 app.post('/hist',auth,(req,res)=>{
 if(limited(req.uid,'h',60,60000))return res.status(429).json({error:'Juda tez-tez'});
 const items=Array.isArray(req.body&&req.body.items)?req.body.items.slice(0,4):[];
-try{for(const it of items)addMsg(req.uid,it&&it.who,it&&it.t);res.json({ok:true});}
+try{for(const it of items){addMsg(req.uid,it&&it.who,it&&it.t);if(it&&it.who==='u')learn(req.uid,it.t);}res.json({ok:true});}
 catch(e){console.error('hist yozish',e.message);res.status(500).json({error:'Server xatosi'});}
 });
 
-app.listen(3001,'127.0.0.1',()=>console.log('3001-portda qidiruv (v5, LLM: '+LLM_URL+')'));
+
+// ---------- v6: robot sozlamalari (xotira, sozlamalar, kuzatuv) ----------
+app.get('/mem',auth,(req,res)=>{
+try{res.json({items:memRows(req.uid)});}
+catch(e){console.error('mem',e.message);res.status(500).json({error:'Server xatosi'});}
+});
+app.post('/mem',auth,(req,res)=>{
+if(limited(req.uid,'m',30,60000))return res.status(429).json({error:'Juda tez-tez'});
+const b=req.body||{};
+try{
+if(b.clear===true){sdb.prepare('DELETE FROM mem WHERE uid=?').run(req.uid);return res.json({ok:true});}
+const id=parseInt(b.del,10);
+if(id){sdb.prepare('DELETE FROM mem WHERE id=? AND uid=?').run(id,req.uid);return res.json({ok:true});}
+if(!memPut(req.uid,b.k,b.v))return res.status(400).json({error:'Nom/qiymat noto‘g‘ri yoki xotira to‘lgan'});
+res.json({ok:true});
+}catch(e){console.error('mem',e.message);res.status(500).json({error:'Server xatosi'});}
+});
+app.get('/prefs',auth,(req,res)=>{
+try{res.json({auto:prefGet(req.uid,'auto','1')==='1',fol:prefGet(req.uid,'fol','1')==='1'});}
+catch(e){res.status(500).json({error:'Server xatosi'});}
+});
+app.post('/prefs',auth,(req,res)=>{
+const b=req.body||{};
+try{
+if(typeof b.auto==='boolean')prefSet(req.uid,'auto',b.auto?'1':'0');
+if(typeof b.fol==='boolean')prefSet(req.uid,'fol',b.fol?'1':'0');
+res.json({auto:prefGet(req.uid,'auto','1')==='1',fol:prefGet(req.uid,'fol','1')==='1'});
+}catch(e){res.status(500).json({error:'Server xatosi'});}
+});
+app.get('/followup',auth,(req,res)=>{
+let tz=Math.round(+req.query.tz);if(!isFinite(tz)||Math.abs(tz)>840)tz=300;
+try{
+if(prefGet(req.uid,'fol','1')!=='1')return res.json({});
+const mid=localMidnight(Date.now(),tz);
+const r=sdb.prepare('SELECT id,ts,kind FROM fol WHERE uid=? AND state=0 AND ts<? AND ts>? ORDER BY ts DESC LIMIT 1').get(req.uid,mid,mid-3*86400000);
+if(!r)return res.json({});
+const days=Math.max(1,Math.round((mid-localMidnight(r.ts,tz))/86400000));
+res.json({item:{id:r.id,kind:r.kind,days}});
+}catch(e){console.error('followup',e.message);res.status(500).json({error:'Server xatosi'});}
+});
+app.post('/followup',auth,(req,res)=>{
+const id=parseInt((req.body||{}).id,10);
+try{if(id)sdb.prepare('UPDATE fol SET state=1 WHERE id=? AND uid=?').run(id,req.uid);res.json({ok:true});}
+catch(e){res.status(500).json({error:'Server xatosi'});}
+});
+
+app.listen(3001,'127.0.0.1',()=>console.log('3001-portda qidiruv (v6, LLM: '+LLM_URL+')'));
 // END
                                                                                                                   
