@@ -1,5 +1,5 @@
 <!-- VERSION: 266 -->
-<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: bot-stream-1.0 | satr: 23935 | 14-noy-2026 -->
+<!-- PLDN-FAYL: index.html | uyg'otish versiyasi: bot-mem-2.0 | satr: 24100 | 14-noy-2026 -->
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -17390,7 +17390,7 @@ async function fbOpenChat(info, ensure) {
 })();
 </script>
 <script>
-// ===== PLDN BOT — 2-BOSQICH ===== VERSION: bot-v6 (serverda shifrlangan tarix, xotira, eslatmalar + Qwen LLM suhbati: /chat, /ai, oqim bilan: /chat/stream)
+// ===== PLDN BOT — 2-BOSQICH ===== VERSION: bot-v7 (v6 + /oyrat yo'q, avtomatik xotira serverda, 'nima deding' takrori, ikkinchi savolda chuqur rejim, bilimdan keyin LLM, qoralama saqlash)
 // Bilimlar bazasi asosidagi bot (tashqi AI yo'q). Bot kodi ma'lumotni FAQAT BotStore orqali oladi:
 // keyinroq boshqa bulutli xotiraga o'tish uchun faqat BotStore ichini almashtirish kifoya.
 (function () {
@@ -17427,15 +17427,16 @@ async function fbOpenChat(info, ensure) {
       cmd: function (text) { return this.call('/cmd', { method: 'POST', body: JSON.stringify({ text: text, lang: lang(), tz: -new Date().getTimezoneOffset() }) }); },
       chat: function (text) { return this.call('/chat', { method: 'POST', body: JSON.stringify({ text: text, lang: lang() }), timeout: 160000 }); },
       // LLM javobi oqim bilan (SSE): har bir bo'lakda onDelta(hozirgiMatn) chaqiriladi, oxirida yakuniy matn qaytadi
-      chatStream: async function (text, onDelta) {
+      chatStream: async function (text, onDelta, opt) {
+        opt = opt || {};
         if (!window.ReadableStream) { var jj = await this.chat(text); return (jj && jj.reply) || ''; }
         var u = me();
         if (!u) throw new Error('Kirish kerak');
         var tk = await u.getIdToken();
         var ctl = new AbortController();
-        var tm = setTimeout(function () { ctl.abort(); }, 300000);
+        var tm = setTimeout(function () { ctl.abort(); }, 480000);
         try {
-          var r = await fetch(BOT_API + '/chat/stream', { method: 'POST', headers: { Authorization: 'Bearer ' + tk, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text, lang: lang() }), signal: ctl.signal });
+          var r = await fetch(BOT_API + '/chat/stream', { method: 'POST', headers: { Authorization: 'Bearer ' + tk, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text, lang: lang(), deep: !!opt.deep, ctx: opt.ctx || [] }), signal: ctl.signal });
           if (!r.ok) { var j = await r.json().catch(function () { return {}; }); var er = new Error(j.error || ('http ' + r.status)); er.status = r.status; throw er; }
           if (!r.body || !r.body.getReader) { var j2 = await r.text(); return j2; }
           var rd = r.body.getReader(), dec = new TextDecoder(), buf = '', full = '', fin = null, failed = '';
@@ -17452,6 +17453,7 @@ async function fbOpenChat(info, ensure) {
                 var o = null;
                 try { o = JSON.parse(lines[k].slice(5)); } catch (_) { continue; }
                 if (o.d) { full += o.d; onDelta(full); }
+                else if (o.think) { if (opt.onThink) opt.onThink(); }
                 else if (typeof o.text === 'string' && o.done) fin = o.text;
                 else if (o.error) failed = o.error;
               }
@@ -17463,7 +17465,13 @@ async function fbOpenChat(info, ensure) {
       },
       hist: function (limit) { return this.call('/hist?limit=' + (limit || 40)); },
       saveHist: function (items) { return this.call('/hist', { method: 'POST', body: JSON.stringify({ items: items }) }); },
-      teach: function (q, t, lg) { return this.call('/teach', { method: 'POST', body: JSON.stringify({ q: q, t: t, lang: lg }) }); },
+      memList: function () { return this.call('/mem'); },
+      memDel: function (id) { return this.call('/mem', { method: 'POST', body: JSON.stringify({ del: id }) }); },
+      memClear: function () { return this.call('/mem', { method: 'POST', body: JSON.stringify({ clear: true }) }); },
+      prefs: function () { return this.call('/prefs'); },
+      setPrefs: function (p) { return this.call('/prefs', { method: 'POST', body: JSON.stringify(p) }); },
+      followup: function () { return this.call('/followup?tz=' + (-new Date().getTimezoneOffset())); },
+      followupDone: function (id) { return this.call('/followup', { method: 'POST', body: JSON.stringify({ id: id }) }); },
       unanswered: async function () {
         var s = await fbDb.collection('botUnanswered').orderBy('count', 'desc').limit(50).get();
         return s.docs.map(function (d) { var x = d.data(); return { id: d.id, q: x.q || d.id, count: x.count || 1 }; });
@@ -17506,49 +17514,37 @@ async function fbOpenChat(info, ensure) {
       .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
   }
   function keyOf(s) { return norm(s).replace(/ /g, '_').slice(0, 200); }
-  var pending = null;     // "Shuni nazarda tutdingizmi?" savoliga javob kutilmoqda
-  var lastUnknown = null; // bot bilmagan oxirgi savol (/oyrat uchun)
   var isAdm = false;
-  var skipHist = false;   // /tozala dan keyin tarixga yozilmaydi
   var histSeq = 0;
-  var YES = /^(ha|xa|ha shu|ha shuni|shu|shunday|togri|да|yes|ok)$/;
-  var NO = /^(yoq|yo q|нет|no|net)$/;
   function pick(arr) {
     var L = lang();
     var same = arr.filter(function (a) { return !a.lang || a.lang === L; });
     var use = same.length ? same : arr;
     return use[Math.floor(Math.random() * use.length)].t;
   }
-  function none(hint) {
-    var s = T('Bu savolga hali javob o‘rganilmagan.', 'На этот вопрос ответ ещё не выучен.');
-    if (hint) s += T(' Javobini bilsangiz, «/oyrat javob matni» deb yozing: admin tasdiqlasa, bot o‘rganadi.', ' Если знаете ответ, напишите «/oyrat текст ответа»: после одобрения админом бот его выучит.');
-    return s;
+  function none() { return T('Bu savolga hali aniq javobim yo‘q.', 'На этот вопрос у меня пока нет точного ответа.'); }
+  var REPEAT = /^(nima deding|nima dedingiz|nima dedin|yana ayt|qayta ayt|qaytar|что ты сказал|что ты сказала|повтори|ещё раз|еще раз)$/;
+  function lastBotText() {
+    var a = cacheGet();
+    for (var i = a.length - 1; i >= 0; i--) if (a[i].who === 'b' && a[i].t) return a[i].t;
+    return '';
   }
-  async function teachCmd(arg) {
-    if (!lastUnknown) return T('Avval bot bilmagan savolni yozing, keyin «/oyrat javob matni» deb yuboring.', 'Сначала задайте вопрос, на который бот не знает ответа, затем напишите «/oyrat текст ответа».');
-    if (!arg) return T('Javob matnini ham yozing: /oyrat javob matni', 'Напишите и текст ответа: /oyrat текст ответа');
-    var q = lastUnknown, u = me();
-    if (!u) return T('Avval hisobga kiring.', 'Сначала войдите в аккаунт.');
-    try {
-      if (isAdm) {
-        var key = keyOf(q);
-        if (!key) return none();
-        await BotStore.addAnswer(q, key, arg.slice(0, 1500), lang(), u.uid);
-        lastUnknown = null;
-        return T('Bazaga qo‘shildi ✓', 'Добавлено в базу ✓');
-      }
-      await BotStore.teach(q, arg, lang());
-      lastUnknown = null;
-      return T('Rahmat! Javobingiz adminga yuborildi. Tasdiqlansa, bot shuni o‘rganadi.', 'Спасибо! Ваш ответ отправлен админу. Если одобрит, бот его выучит.');
-    } catch (e) { return T('Yuborib bo‘lmadi: ', 'Не удалось отправить: ') + (e.message || ''); }
+  // shu savol oldin ham berilganmi (oxirgi xabarlar ichida)? Bo'lsa — chuqur rejim
+  function seenBefore(n) {
+    if (n.length < 12) return false;
+    var a = cacheGet();
+    for (var i = 0; i < a.length; i++) if (a[i].who === 'u' && norm(a[i].t) === n) return true;
+    return false;
   }
-  // ---- Qwen LLM bilan suhbat (VPS ichidagi llama.cpp, /chat orqali) ----
   // ---- Qwen LLM bilan suhbat (VPS ichidagi llama.cpp, /chat/stream orqali, javob so'zma-so'z chiqadi) ----
-  async function llmReply(text, soft) {
+  // o: { soft: server xatosida null qaytar, deep: chuqur rejim, ctx: bilimlar bazasidan javoblar }
+  async function llmReply(text, o) {
+    o = o || {};
     if (!text) return T('Savolni ham yozing: /ai salom', 'Напишите и вопрос: /ai привет');
-    var tx = bubble('…', 'incoming'), bub = tx.parentNode, last = '';
+    var tx = bubble(o.deep ? T('🤔 chuqurroq o‘ylayapman…', '🤔 думаю глубже…') : '…', 'incoming'), bub = tx.parentNode, last = '';
     try {
-      var out = await BotStore.chatStream(text, function (st) { last = st; tx.textContent = st; area.scrollTop = area.scrollHeight; });
+      var out = await BotStore.chatStream(text, function (st) { last = st; tx.textContent = st; area.scrollTop = area.scrollHeight; },
+        { deep: !!o.deep, ctx: o.ctx || [], onThink: function () { if (!last) tx.textContent = T('🤔 o‘ylayapman…', '🤔 думаю…'); } });
       out = String(out || '').trim();
       if (!out) throw new Error('bo‘sh javob');
       tx.textContent = out;
@@ -17556,19 +17552,17 @@ async function fbOpenChat(info, ensure) {
     } catch (e) {
       if (last.length > 10) { tx.textContent = last; return { streamed: true, t: last }; }
       if (bub.parentNode) bub.parentNode.removeChild(bub);
-      if (soft && e.status !== 429) return null;
+      if (o.soft && e.status !== 429) return null;
       return e.status ? e.message : T('Robot bilan aloqa yo‘q. Keyinroq urinib ko‘ring.', 'Нет связи с роботом. Попробуйте позже.');
     }
   }
+  // Tartib: 1) shaxsiy xotira + bilimlar bazasi (serverdagi /search), 2) LLM (kontekst bilan)
   async function reply(text) {
     var cmd = text.trim().match(/^\/(\S+)\s*([\s\S]*)$/);
     if (cmd) {
-      pending = null;
-      if (cmd[1].toLowerCase() === 'oyrat') return teachCmd(cmd[2].trim());
-      if (cmd[1].toLowerCase() === 'ai') return llmReply(cmd[2].trim(), false);
+      if (cmd[1].toLowerCase() === 'ai') return llmReply(cmd[2].trim(), { soft: false });
       try {
         var cr = await BotStore.cmd(text.trim());
-        if (cr.clear) { skipHist = true; area.textContent = ''; cacheSet([]); }
         return cr.reply || '';
       } catch (e) {
         if (e.status) return e.message;
@@ -17576,12 +17570,9 @@ async function fbOpenChat(info, ensure) {
       }
     }
     var n = norm(text);
-    if (pending) {
-      var p = pending; pending = null;
-      if (YES.test(n)) return pick(p.answers);
-      if (NO.test(n)) return T('Mayli, savolingizni boshqacha yozib ko‘ring.', 'Хорошо, попробуйте переформулировать вопрос.');
-    }
     if (!n) return none();
+    if (REPEAT.test(n)) return lastBotText() || T('Hali hech narsa demadim.', 'Я пока ничего не говорил.');
+    if (seenBefore(n)) { var dr = await llmReply(text, { deep: true, soft: true }); if (dr) return dr; }
     var r = null, err = null;
     try { r = await BotStore.search(text); } catch (e) { r = null; err = e; }
     if (!r) { // server javob bermadi: faqat aynan mos savol bo'yicha mahalliy qidiruv
@@ -17593,16 +17584,12 @@ async function fbOpenChat(info, ensure) {
       return none();
     }
     if (r.status === 'answer' && r.answers && r.answers.length) {
-      if (typeof r.second === 'number' && r.score - r.second < 0.1) r.status = 'suggest';
+      if (typeof r.second === 'number' && r.score - r.second < 0.1) r.status = 'suggest'; // ikki nomzod yaqin: LLM tanlasin
       else return pick(r.answers);
     }
-    if (r.status === 'suggest' && r.answers && r.answers.length) {
-      pending = { answers: r.answers };
-      return T('Shuni nazarda tutdingizmi: «', 'Вы имели в виду: «') + r.q + T('»? (ha / yo‘q)', '»? (да / нет)');
-    }
-    lastUnknown = text.trim().slice(0, 300);
-    var lr = await llmReply(text, true);
-    return lr || none(true);
+    var ctx = (r.status === 'suggest' && r.answers && r.answers.length) ? r.answers.slice(0, 2).map(function (x) { return x.t; }) : null;
+    var lr = await llmReply(text, { soft: true, ctx: ctx });
+    return lr || (ctx ? pick(r.answers) : none());
   }
 
   // ---------- 3) EKRAN ----------
@@ -17675,17 +17662,22 @@ async function fbOpenChat(info, ensure) {
       renderHist(list);
     } catch (e) { /* server yo'q: mahalliy nusxa qoladi */ }
   }
+  // qoralama: yozilgan matn o'chmaydi (chiqib qaytsangiz ham turadi), faqat yuborilganda tozalanadi
+  function dkey() { var u = me(); return 'pldn_bot_draft_' + (u ? u.uid : ''); }
+  function saveDraft() { try { localStorage.setItem(dkey(), input.value); } catch (e) {} }
+  function clearDraft() { try { localStorage.removeItem(dkey()); } catch (e) {} }
+  function restoreDraft() { try { if (!input.value) input.value = localStorage.getItem(dkey()) || ''; } catch (e) {} }
+  input.addEventListener('input', saveDraft);
   var busy = false;
   async function send() {
     var text = input.value.trim();
     if (!text || busy) return;
-    busy = true; input.value = '';
+    busy = true; input.value = ''; clearDraft();
     histSeq++;
     bubble(text, 'outgoing');
     var r = await reply(text);
     if (r && typeof r === 'object' && r.streamed) r = r.t; else bubble(r, 'incoming');
-    if (skipHist) skipHist = false;
-    else persist([{ who: 'u', t: text }, { who: 'b', t: r }]);
+    persist([{ who: 'u', t: text }, { who: 'b', t: r }]);
     busy = false;
   }
   $('botSend').addEventListener('click', send);
@@ -17795,6 +17787,7 @@ async function fbOpenChat(info, ensure) {
   function openBot() {
     goToScreen('botScreen');
     loadHist();
+    restoreDraft();
     var u = me();
     if (u && !adminChecked) {
       adminChecked = true;
@@ -17802,6 +17795,7 @@ async function fbOpenChat(info, ensure) {
     }
   }
   window.PLDNBotOpen = openBot;
+  window.PLDNBotSend = function (t) { openBot(); input.value = t; send(); };
   row.addEventListener('click', openBot);
   $('botBackBtn').addEventListener('click', function () { goToScreen('screen4'); });
 
@@ -19056,6 +19050,177 @@ getAction: function (id) { var f = null; ITEMS.forEach(function (it) { if (it.id
       });
     }
   } catch (e) {}
+})();
+// ===== PLDN ROBOT SOZLAMALARI + KUZATUV OYNASI ===== VERSION: robot-settings-1.0
+// Robot menyusi → Sozlamalar: shaxsiy xotira (faqat foydalanuvchining o'ziga ko'rinadi), avtomatik eslab qolish va kuzatuvchi savollar tugmalari
+(function () {
+  'use strict';
+  var T = function (a, b) { try { return typeof fbT === 'function' ? fbT(a, b) : a; } catch (e) { return a; } };
+  var $ = function (id) { return document.getElementById(id); };
+  function me() { return (typeof fbAuth !== 'undefined' && fbAuth && fbAuth.currentUser) || null; }
+  function store() { return window.PLDNBotStore || null; }
+  var s4 = $('screen4');
+  if (!s4) return;
+
+  var css = document.createElement('style');
+  css.textContent =
+    '.rs-ov{position:fixed;inset:0;z-index:100060;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity .2s}' +
+    '.rs-ov.in{opacity:1}' +
+    '.rs-card{position:relative;width:100%;max-width:480px;box-sizing:border-box;background:var(--bg-elevated);color:var(--text-primary);border-radius:18px 18px 0 0;padding:18px 16px calc(16px + env(safe-area-inset-bottom,0px));transform:translateY(30px);transition:transform .2s}' +
+    '.rs-ov.in .rs-card{transform:none}' +
+    '.rs-pop{align-items:center;padding:20px}' +
+    '.rs-pop .rs-card{border-radius:18px;padding:18px 16px 16px}' +
+    '.rs-btn{flex:1;border:0;border-radius:12px;padding:12px;font-size:15px;background:var(--bg-card);color:var(--text-primary);cursor:pointer}' +
+    '.rs-btn.bad{background:#ff3b30;color:#fff}.rs-btn.pri{background:#2AABEE;color:#fff}' +
+    '.rs-x{position:absolute;top:8px;right:8px;width:38px;height:38px;border:0;border-radius:50%;background:var(--bg-card);color:var(--text-primary);font-size:18px;cursor:pointer}' +
+    '.rs-row{display:flex;align-items:flex-start;gap:10px;padding:10px 6px;border-bottom:1px solid var(--border-color)}' +
+    '.rs-del{border:0;background:none;font-size:20px;padding:2px 6px;color:inherit;cursor:pointer}';
+  document.head.appendChild(css);
+
+  // ---- ikki bosqichli tasdiq (tasodifan bosib yuborishdan himoya)
+  function sheet(msg, yes, danger) {
+    return new Promise(function (res) {
+      var ov = document.createElement('div'); ov.className = 'rs-ov';
+      ov.innerHTML = '<div class="rs-card"><div class="rs-msg" style="font-size:16px;margin-bottom:14px;line-height:1.4;white-space:pre-wrap;word-break:break-word"></div><div style="display:flex;gap:10px"><button class="rs-btn"></button><button class="rs-btn ' + (danger ? 'bad' : 'pri') + '"></button></div></div>';
+      ov.querySelector('.rs-msg').textContent = msg;
+      var bs = ov.querySelectorAll('button');
+      bs[0].textContent = T('Bekor qilish', 'Отмена'); bs[1].textContent = yes;
+      var done = function (v) { ov.classList.remove('in'); setTimeout(function () { if (ov.parentNode) ov.parentNode.removeChild(ov); }, 200); res(v); };
+      ov.addEventListener('click', function (e) { if (e.target === ov) done(false); });
+      bs[0].addEventListener('click', function () { done(false); });
+      bs[1].addEventListener('click', function () { done(true); });
+      document.body.appendChild(ov); void ov.offsetWidth; ov.classList.add('in');
+    });
+  }
+  function confirm2(m1, m2) {
+    return sheet(m1, T('Ha', 'Да'), false).then(function (ok) { return ok ? sheet(m2, T('Ha, o‘chirish', 'Да, удалить'), true) : false; });
+  }
+
+  // ---- ekran
+  var screen = document.createElement('div');
+  screen.className = 'screen'; screen.id = 'robotSettingsScreen';
+  screen.innerHTML =
+    '<div class="chat-detail-header"><button class="chat-back-btn" id="rsBack"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>' +
+    '<div class="chat-detail-info"><div class="chat-detail-name" id="rsTitle"></div></div></div>' +
+    '<div class="settings-body">' +
+    '<div class="settings-group">' +
+    '<div class="settings-item" style="cursor:default"><span class="settings-icon">🧠</span><span class="settings-label" id="rsAutoL"></span><label class="pldn-toggle"><input type="checkbox" id="rsAuto" checked><span class="pldn-toggle-slider"></span></label></div>' +
+    '<div class="settings-item" style="cursor:default"><span class="settings-icon">💬</span><span class="settings-label" id="rsFolL"></span><label class="pldn-toggle"><input type="checkbox" id="rsFol" checked><span class="pldn-toggle-slider"></span></label></div>' +
+    '</div>' +
+    '<p class="logout-modal-text" id="rsNote" style="text-align:left;padding:0 6px"></p>' +
+    '<div id="rsMemT" style="font-weight:600;padding:14px 6px 4px"></div>' +
+    '<div id="rsList"></div>' +
+    '<div style="padding:14px 6px 0"><button class="rs-btn bad" id="rsClear" style="width:100%;display:none"></button></div>' +
+    '<div class="settings-group" style="margin-top:18px"><div class="settings-item" id="rsOld"><span class="settings-icon">⚙️</span><span class="settings-label" id="rsOldL"></span><span class="settings-arrow">›</span></div></div>' +
+    '</div>';
+  s4.parentNode.appendChild(screen);
+  $('rsTitle').textContent = T('Robot sozlamalari', 'Настройки робота');
+  $('rsAutoL').textContent = T('Suhbatdan o‘zi eslab qolish', 'Запоминать из разговора');
+  $('rsFolL').textContent = T('Kuzatuvchi savollar', 'Вопросы-напоминания');
+  $('rsNote').textContent = T('Xotira faqat sizga ko‘rinadi va serverda shifrlangan holda saqlanadi. Kuzatuvchi savol: kecha aytganingiz bo‘yicha ertasi kuni robot so‘raydi.', 'Память видна только вам и хранится на сервере в зашифрованном виде. Вопросы-напоминания: робот спросит на следующий день о том, что вы говорили вчера.');
+  $('rsMemT').textContent = T('Robot xotirasi', 'Память робота');
+  $('rsClear').textContent = T('Hammasini o‘chirish', 'Удалить всё');
+  $('rsOldL').textContent = T('PLDN sozlamalari', 'Настройки PLDN');
+  var list = $('rsList'), clearBtn = $('rsClear'), autoI = $('rsAuto'), folI = $('rsFol');
+
+  function showText(it) { return it.k.indexOf(':') >= 0 ? it.k : (it.k + ': ' + it.v); }
+  function emptyNote() { list.textContent = ''; var d = document.createElement('div'); d.style.cssText = 'opacity:.65;padding:8px 6px'; d.textContent = T('Hali hech narsa eslab qolinmagan.', 'Пока ничего не запомнено.'); list.appendChild(d); clearBtn.style.display = 'none'; }
+  function collapse(row, after) {
+    row.style.overflow = 'hidden'; row.style.maxHeight = row.offsetHeight + 'px';
+    row.style.transition = 'max-height .25s, opacity .25s, padding .25s';
+    void row.offsetHeight;
+    row.style.maxHeight = '0'; row.style.opacity = '0'; row.style.paddingTop = '0'; row.style.paddingBottom = '0';
+    setTimeout(function () { if (row.parentNode) row.parentNode.removeChild(row); if (after) after(); }, 270);
+  }
+  function render(items) {
+    list.textContent = '';
+    if (!items.length) { emptyNote(); return; }
+    clearBtn.style.display = '';
+    items.forEach(function (it) {
+      var row = document.createElement('div'); row.className = 'rs-row';
+      var tx = document.createElement('div'); tx.style.cssText = 'flex:1;min-width:0;word-break:break-word'; tx.textContent = showText(it);
+      var del = document.createElement('button'); del.className = 'rs-del'; del.textContent = '🗑️'; del.setAttribute('aria-label', T('O‘chirish', 'Удалить'));
+      del.addEventListener('click', async function () {
+        var ok = await confirm2(T('Bu yozuv o‘chirilsinmi?', 'Удалить эту запись?') + '\n«' + showText(it) + '»', T('Rostdan ham o‘chirilsinmi? Qaytarib bo‘lmaydi.', 'Точно удалить? Это нельзя вернуть.'));
+        if (!ok) return;
+        try { await store().memDel(it.id); collapse(row, function () { if (!list.querySelector('.rs-row')) emptyNote(); }); }
+        catch (e) { alert(e.message || T('O‘chirib bo‘lmadi', 'Не удалось удалить')); }
+      });
+      row.appendChild(tx); row.appendChild(del); list.appendChild(row);
+    });
+  }
+  async function load() {
+    var st = store(); if (!st) { list.textContent = T('Bot tayyor emas', 'Бот не готов'); return; }
+    list.textContent = '…';
+    try {
+      var p = await st.prefs(); autoI.checked = !!p.auto; folI.checked = !!p.fol;
+      var m = await st.memList(); render(m.items || []);
+    } catch (e) { list.textContent = e.message || T('Serverga ulanib bo‘lmadi', 'Не удалось подключиться к серверу'); }
+  }
+  function bindToggle(inp, key) {
+    inp.addEventListener('change', async function () {
+      var v = inp.checked, o = {}; o[key] = v;
+      try { await store().setPrefs(o); } catch (e) { inp.checked = !v; alert(e.message || T('Saqlab bo‘lmadi', 'Не удалось сохранить')); }
+    });
+  }
+  bindToggle(autoI, 'auto'); bindToggle(folI, 'fol');
+  clearBtn.addEventListener('click', async function () {
+    var ok = await confirm2(T('Robot xotirasidagi hamma yozuvlar o‘chirilsinmi?', 'Удалить все записи из памяти робота?'), T('Rostdan ham hammasi o‘chirilsinmi? Qaytarib bo‘lmaydi.', 'Точно удалить всё? Это нельзя вернуть.'));
+    if (!ok) return;
+    try { await store().memClear(); emptyNote(); } catch (e) { alert(e.message || T('O‘chirib bo‘lmadi', 'Не удалось удалить')); }
+  });
+  $('rsBack').addEventListener('click', function () { goToScreen('screen4'); });
+  $('rsOld').addEventListener('click', function () { goToScreen('pldnSettingsScreen'); });
+  function openRobotSettings() { goToScreen('robotSettingsScreen'); load(); }
+  window.PLDNRobotSettingsOpen = openRobotSettings;
+  if (window.PLDNRobotMenu && PLDNRobotMenu.setAction) PLDNRobotMenu.setAction('settings', openRobotSettings);
+
+  var prevBack = window.pldnBack;
+  window.pldnBack = function () {
+    if (screen.classList.contains('active')) { goToScreen('screen4'); return true; }
+    return prevBack ? prevBack.apply(this, arguments) : false;
+  };
+
+  // ---- ertangi kuzatuv oynasi: kunning birinchi kirishida, ✕ bilan yopiladi
+  function showFollowup(item) {
+    var st = store(); if (!st) return;
+    var ov = document.createElement('div'); ov.className = 'rs-ov rs-pop';
+    ov.innerHTML = '<div class="rs-card"><button class="rs-x" aria-label="✕">✕</button><div style="font-weight:600;font-size:16px;margin:0 40px 10px 0">🤖 PLDN Bot</div><div class="rs-q" style="font-size:16px;line-height:1.4;margin-bottom:14px"></div><div style="display:flex;flex-direction:column;gap:8px"><button class="rs-btn pri" data-a="good"></button><button class="rs-btn" data-a="bad"></button><button class="rs-btn" data-a="talk"></button></div></div>';
+    ov.querySelector('.rs-q').textContent = item.days === 1
+      ? T('Kecha kayfiyating yomon edi. Bugun yaxshimi?', 'Вчера у тебя было плохое настроение. Сегодня лучше?')
+      : T('Yaqinda kayfiyating yomon edi. Hozir yaxshimi?', 'Недавно у тебя было плохое настроение. Сейчас лучше?');
+    var bs = ov.querySelectorAll('.rs-btn');
+    bs[0].textContent = T('Yaxshi 😊', 'Хорошо 😊');
+    bs[1].textContent = T('Hali ham yomon 😔', 'Всё ещё плохо 😔');
+    bs[2].textContent = T('Gaplashamiz 💬', 'Поговорим 💬');
+    var closed = false;
+    function close() {
+      if (closed) return; closed = true;
+      st.followupDone(item.id).catch(function () {});
+      ov.classList.remove('in'); setTimeout(function () { if (ov.parentNode) ov.parentNode.removeChild(ov); }, 200);
+    }
+    ov.querySelector('.rs-x').addEventListener('click', close);
+    ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+    bs[0].addEventListener('click', function () { close(); if (window.PLDNBotSend) window.PLDNBotSend(T('Bugun kayfiyatim yaxshi (kecha yomon edi)', 'Сегодня у меня хорошее настроение (вчера было плохое)')); });
+    bs[1].addEventListener('click', function () { close(); if (window.PLDNBotSend) window.PLDNBotSend(T('Bugun ham kayfiyatim yomon', 'Сегодня настроение тоже плохое')); });
+    bs[2].addEventListener('click', function () { close(); if (window.PLDNBotOpen) window.PLDNBotOpen(); });
+    document.body.appendChild(ov); void ov.offsetWidth; ov.classList.add('in');
+  }
+  function dayKey() { var d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
+  function checkFollowup() {
+    var u = me(), st = store(); if (!u || !st) return;
+    var k = 'pldn_fol_day_' + u.uid;
+    try { if (localStorage.getItem(k) === dayKey()) return; } catch (e) {}
+    st.followup().then(function (j) {
+      try { localStorage.setItem(k, dayKey()); } catch (e) {}
+      if (j && j.item) showFollowup(j.item);
+    }).catch(function () {});
+  }
+  var tries = 0, iv = setInterval(function () {
+    tries++;
+    if (me()) { clearInterval(iv); setTimeout(checkFollowup, 4000); } else if (tries > 60) clearInterval(iv);
+  }, 1500);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) setTimeout(checkFollowup, 1500); });
 })();
 // ===== PLDN ROBOT BATAREYA VA QUVVATLASH ===== VERSION: robot-battery-7.0
 // Hisob-kitob vaqt farqiga asoslangan: diskka faqat holat o'zgarganda yoziladi (joylash/chiqarish),
